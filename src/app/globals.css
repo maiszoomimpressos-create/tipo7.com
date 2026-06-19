@@ -1,26 +1,61 @@
 @import "tailwindcss";
 
+/* =============================================================
+   Tipo7 — Design System Global
+   Cores, fontes e variáveis usadas em todo o projeto
+   ============================================================= */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Paleta principal */
+  --background:     #070707;   /* preto profundo */
+  --surface:        #111111;   /* superfície de cards */
+  --surface-hover:  #1a1a1a;   /* hover de cards */
+  --border:         #222222;   /* bordas sutis */
+
+  /* Dourado — cor de destaque da marca */
+  --gold:           #E8B84B;
+  --gold-hover:     #F0C96A;
+  --gold-muted:     rgba(232, 184, 75, 0.15);
+
+  /* Texto */
+  --text-primary:   #F5F5F5;
+  --text-secondary: #888888;
+  --text-muted:     #444444;
+
+  /* Fontes (injetadas via next/font no layout.tsx) */
+  --font-display:  var(--font-syne);    /* logo e elementos de marca */
+  --font-heading:  var(--font-outfit);  /* títulos de eventos e headings */
+  --font-body:     var(--font-dm-sans); /* corpo de texto e UI */
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background:    var(--background);
+  --color-foreground:    var(--text-primary);
+  --color-gold:          var(--gold);
+  --color-gold-hover:    var(--gold-hover);
+  --color-gold-muted:    var(--gold-muted);
+  --color-surface:       var(--surface);
+  --color-border:        var(--border);
+  --font-sans:           var(--font-body);
+  --font-display:        var(--font-display);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Base global */
+html {
+  background: var(--background);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
 }
 
 body {
+  font-family: var(--font-body), sans-serif;
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100dvh;
 }
+
+/* Scrollbar personalizada */
+::-webkit-scrollbar       { width: 4px; }
+::-webkit-scrollbar-track { background: var(--background); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gold-muted); }
