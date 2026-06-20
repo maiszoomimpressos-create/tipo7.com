@@ -1,7 +1,16 @@
 // Cliente Supabase para uso no servidor (Server Components, Server Actions, Route Handlers)
 // Lê e escreve cookies para manter a sessão do usuário
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
+
+// Cliente com service role — bypassa RLS, usar apenas em rotas de servidor seguras
+export function createServiceClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+}
 
 export async function createClient() {
   const cookieStore = await cookies()

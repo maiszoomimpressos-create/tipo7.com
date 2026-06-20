@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import Image from 'next/image'
 import {
   MapPin, Calendar, Clock, Tag, ChevronDown, ChevronUp,
-  Ticket, AlertCircle, ExternalLink, Music,
+  Ticket, AlertCircle, ExternalLink, Music, Loader2,
 } from 'lucide-react'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -124,8 +124,10 @@ function TicketRow({
 
 export function EventoPageClient({ evento, dias, ingressos, isOwner }: Props) {
   // Índice do dia aberto no accordion de programação (0 = primeiro aberto por padrão)
-  const [openDay,   setOpenDay]   = useState(0)
-  const [selection, setSelection] = useState<Record<string, number>>({})
+  const [openDay,    setOpenDay]    = useState(0)
+  const [selection,  setSelection]  = useState<Record<string, number>>({})
+  const [loading,    setLoading]    = useState(false)
+  const [checkoutError, setCheckoutError] = useState<string | null>(null)
 
   const setQty = (id: string, qty: number, max: number) =>
     setSelection(prev => ({ ...prev, [id]: Math.max(0, Math.min(qty, max)) }))
@@ -147,6 +149,38 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner }: Props) {
   const modoSimples = evento.ticketMode === null || evento.ticketMode === 'individual'
 
   const isRascunho = evento.status === 'rascunho'
+
+  async function handleCheckout() {
+    const items = Object.entries(selection)
+      .filter(([, qty]) => qty > 0)
+      .map(([ticketId, quantity]) => ({ ticketId, quantity }))
+
+    if (!items.length) return
+
+    setLoading(true)
+    setCheckoutError(null)
+
+    try {
+      const res = await fetch('/api/checkout', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ eventoId: evento.id, items }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setCheckoutError(data.error ?? 'Erro ao processar checkout')
+        return
+      }
+
+      window.location.href = data.checkoutUrl
+    } catch {
+      setCheckoutError('Erro de conexão. Tente novamente.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <>
@@ -176,15 +210,15 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner }: Props) {
                 src={evento.bannerUrl}
                 alt={evento.title}
                 fill
-                className="object-cover"
+                className="object-cover brightness-110"
                 sizes="780px"
                 priority
                 unoptimized
               />
             : <div className="absolute inset-0 bg-gradient-to-br from-[#111] to-[#0d0d0d]" />
           }
-          {/* Gradiente escuro no rodapé do banner para o texto ser legível */}
-          <div className="absolute inset-0 bg-gradient-to-t from-[#070707] via-[#070707]/50 to-transparent" />
+          {/* Gradiente apenas no rodapé para o texto ser legível, topo livre */}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#070707] via-[#070707]/25 to-transparent" />
 
           {/* Título e categoria no rodapé do banner */}
           <div className="absolute bottom-0 left-0 right-0 px-6 pb-8">
@@ -502,25 +536,27 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner }: Props) {
                     </span>
                   </div>
 
-                  {/* Botão "em breve" */}
-                  <div className="relative pt-2">
-                    <button
-                      disabled
-                      className="w-full py-3.5 rounded-xl text-sm font-semibold text-[#444] bg-[#111] border border-[#1a1a1a] cursor-not-allowed"
-                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Finalizar compra
-                    </button>
-                    <span
-                      className="absolute -top-0 left-1/2 -translate-x-1/2 text-[10px] px-2.5 py-0.5 rounded-full font-semibold whitespace-nowrap"
-                      style={{
-                        background: `${ACCENT}15`,
-                        color:      ACCENT,
-                        border:     `1px solid ${ACCENT}35`,
-                        fontFamily: 'var(--font-dm-sans)',
-                      }}>
-                      Em breve
-                    </span>
-                  </div>
+                  {checkoutError && (
+                    <p className="text-red-400 text-xs text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {checkoutError}
+                    </p>
+                  )}
+
+                  <button
+                    onClick={handleCheckout}
+                    disabled={loading || totalItems === 0}
+                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110"
+                    style={{
+                      background:  totalItems > 0 ? ACCENT : '#111',
+                      color:       totalItems > 0 ? '#070707' : '#444',
+                      border:      totalItems > 0 ? 'none' : '1px solid #1a1a1a',
+                      fontFamily:  'var(--font-dm-sans)',
+                    }}>
+                    {loading
+                      ? <><Loader2 size={14} className="animate-spin" /> Processando...</>
+                      : 'Finalizar compra'
+                    }
+                  </button>
                 </div>
               )}
             </div>

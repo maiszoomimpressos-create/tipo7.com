@@ -207,14 +207,14 @@ export function Carousel() {
                   src={imgSrc}
                   alt={evento.title}
                   fill
-                  className="object-cover"
+                  className="object-cover brightness-110"
                   sizes="780px"
                   priority={index === 0}
                   unoptimized
                 />
 
-                {/* Overlay escuro para o texto ficar legível sobre a imagem */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/10" />
+                {/* Overlay apenas no rodapé para o texto ficar legível */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-transparent" />
 
                 {/* Cidade do evento */}
                 <div className="absolute top-6 left-6 z-10">
