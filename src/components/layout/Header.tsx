@@ -4,7 +4,9 @@
 // Quando logado: exibe inicial do usuário + menu dropdown com opções de conta
 // Quando deslogado: exibe botão "Entrar / Cadastrar" que vai para /auth
 import { useState, useEffect, useRef } from 'react'
-import { Ticket, Menu, X, ArrowRight, LogOut, User, ChevronDown, CalendarPlus } from 'lucide-react'
+import { Ticket, Menu, X, ArrowRight, LogOut, User, ChevronDown, CalendarPlus, Settings2 } from 'lucide-react'
+
+const ADMIN_EMAIL = 'maiszoomimpressos@gmail.com'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProfileStatus } from '@/hooks/useProfileStatus'
@@ -125,6 +127,21 @@ export function Header() {
 
             {/* Usuário LOGADO — avatar + dropdown */}
             {!loading && user && (
+              <div className="flex items-center gap-2">
+
+              {/* Botão admin — só aparece para o dono da plataforma */}
+              {user.email === ADMIN_EMAIL && (
+                <a
+                  href="/admin"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-[#E8B84B] border border-[#E8B84B]/25 hover:bg-[#E8B84B]/8 transition-colors"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                  title="Painel de gerenciamento"
+                >
+                  <Settings2 size={13} />
+                  Ger. Sistema
+                </a>
+              )}
+
               <div className="relative" ref={userMenuRef}>
                 <button
                   onClick={() => setUserMenuOpen(v => !v)}
@@ -240,6 +257,7 @@ export function Header() {
                   </div>
                 )}
               </div>
+              </div>
             )}
           </div>
 
@@ -332,6 +350,18 @@ export function Header() {
                   <CalendarPlus size={15} />
                   Criar evento
                 </a>
+                {/* Botão admin — só aparece para o dono da plataforma */}
+                {user.email === ADMIN_EMAIL && (
+                  <a
+                    href="/admin"
+                    onClick={() => setMenuOpen(false)}
+                    className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-[#E8B84B]/30 text-[#E8B84B] text-sm font-medium"
+                    style={{ fontFamily: 'var(--font-dm-sans)' }}
+                  >
+                    <Settings2 size={15} />
+                    Ger. Sistema
+                  </a>
+                )}
               </div>
 
               <button
