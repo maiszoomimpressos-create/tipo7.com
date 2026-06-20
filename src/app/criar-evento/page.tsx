@@ -28,7 +28,7 @@ export default async function CriarEventoPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('full_name, phone, cpf, birth_date, zip_code, street, street_number, neighborhood, city, state, address_type')
+    .select('full_name, phone, cpf, birth_date, zip_code, street, street_number, neighborhood, city, state, address_type, complement')
     .eq('id', user.id)
     .single()
 
@@ -41,12 +41,11 @@ export default async function CriarEventoPage() {
     .eq('user_id', user.id)
     .single()
 
-  // Busca a organização do usuário para listar rascunhos
+  // Busca a organização do usuário (promotora ou estabelecimento)
   const { data: org } = await supabase
     .from('organizations')
     .select('id')
     .eq('owner_id', user.id)
-    .eq('type', 'promotora')
     .maybeSingle()
 
   const { data: eventos } = org
@@ -118,6 +117,16 @@ export default async function CriarEventoPage() {
             promotorId={promotorProfile?.id ?? null}
             tipoPessoaAtual={(promotorProfile?.tipo_pessoa ?? null) as 'pf' | 'pj' | null}
             nomeUsuario={profile?.full_name ?? 'Promotor'}
+            profile={{
+              phone:         profile?.phone         ?? '',
+              zip_code:      profile?.zip_code      ?? '',
+              street:        profile?.street        ?? '',
+              street_number: profile?.street_number ?? '',
+              neighborhood:  profile?.neighborhood  ?? '',
+              city:          profile?.city          ?? '',
+              state:         profile?.state         ?? '',
+              complement:    profile?.complement    ?? '',
+            }}
             eventos={(eventos ?? []).map(e => ({
               id:         e.id,
               title:      e.title ?? 'Novo evento',

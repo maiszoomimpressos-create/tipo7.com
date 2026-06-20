@@ -6,7 +6,7 @@ import {
   ExternalLink, ImageIcon, Ticket, Settings,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { TipoPessoaModal } from './TipoPessoaModal'
+import { TipoPessoaModal, type ProfileData } from './TipoPessoaModal'
 
 interface EventoItem {
   id:         string
@@ -20,6 +20,7 @@ interface Props {
   promotorId:      string | null
   tipoPessoaAtual: 'pf' | 'pj' | null
   nomeUsuario:     string
+  profile:         ProfileData
   eventos:         EventoItem[]
 }
 
@@ -31,7 +32,7 @@ const formatData = (iso: string) => {
   return `${d.getDate()} de ${MESES_PT[d.getMonth()]} de ${d.getFullYear()}`
 }
 
-export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, eventos: inicial }: Props) {
+export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, profile, eventos: inicial }: Props) {
   const [modalAberto, setModalAberto] = useState(false)
   const [lista,       setLista]       = useState<EventoItem[]>(inicial)
   const [excluindo,   setExcluindo]   = useState<string | null>(null)
@@ -180,6 +181,7 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, ev
           promotorId={promotorId}
           tipoPessoaAtual={tipoPessoaAtual}
           nomeUsuario={nomeUsuario}
+          profile={profile}
           onFechar={() => setModalAberto(false)}
         />
       )}
