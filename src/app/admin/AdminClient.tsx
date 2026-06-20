@@ -1,12 +1,11 @@
 'use client'
 
-// Painel admin — Checklist (listas de tarefas) + Bloco de Ideias
-// Ideias podem ser salvas em qualquer lista ou criar uma lista nova
-// Tudo persiste em localStorage
+// Painel admin — sidebar de navegação + Listas de Tarefas + Bloco de Ideias
+// Seletor de lista usa checkboxes (multi-seleção): uma ideia pode ir para várias listas
 import { useState, useEffect, useRef } from 'react'
 import {
   CheckCircle2, Circle, Lightbulb, Plus, Trash2,
-  ClipboardList, ChevronDown, X, FolderPlus,
+  ClipboardList, X, FolderPlus, Check,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
@@ -16,7 +15,7 @@ import {
 type TaskList = {
   id:        string
   name:      string
-  isDefault: boolean // listas MVP não podem ser deletadas
+  isDefault: boolean
 }
 
 type Task = {
@@ -27,15 +26,15 @@ type Task = {
 }
 
 type Idea = {
-  id:        string
-  text:      string
-  createdAt: string
-  listId?:   string
-  listName?: string
+  id:         string
+  text:       string
+  createdAt:  string
+  listIds:    string[]
+  listNames:  string[]
 }
 
 // ---------------------------------------------------------------------------
-// Dados iniciais — listas MVP + tarefas
+// Dados iniciais
 // ---------------------------------------------------------------------------
 
 const DEFAULT_LISTS: TaskList[] = [
@@ -83,26 +82,25 @@ const DONE_BY_DEFAULT = new Set([
 ])
 
 // ---------------------------------------------------------------------------
-// Subcomponente — seletor de lista com opção "Nova lista"
+// Seletor de lista com checkboxes (multi-seleção)
 // ---------------------------------------------------------------------------
 
 function ListSelector({
   lists,
-  value,
+  selected,
   onChange,
   onCreateList,
 }: {
-  lists:         TaskList[]
-  value:         string        // '' = nenhuma selecionada
-  onChange:      (id: string) => void
-  onCreateList:  (name: string) => string  // retorna o id da lista criada
+  lists:        TaskList[]
+  selected:     string[]
+  onChange:     (ids: string[]) => void
+  onCreateList: (name: string) => string
 }) {
-  const [open,       setOpen]       = useState(false)
-  const [creating,   setCreating]   = useState(false)
-  const [newName,    setNewName]    = useState('')
+  const [open,     setOpen]     = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [newName,  setNewName]  = useState('')
   const ref = useRef<HTMLDivElement>(null)
 
-  // Fecha ao clicar fora
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -115,17 +113,28 @@ function ListSelector({
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const selectedList = lists.find(l => l.id === value)
+  function toggle(id: string) {
+    onChange(
+      selected.includes(id)
+        ? selected.filter(s => s !== id)
+        : [...selected, id]
+    )
+  }
 
   function handleCreate() {
     const name = newName.trim()
     if (!name) return
     const id = onCreateList(name)
-    onChange(id)
+    onChange([...selected, id])
     setCreating(false)
     setNewName('')
-    setOpen(false)
   }
+
+  const label = selected.length === 0
+    ? 'Selecionar lista(s)…'
+    : selected.length === 1
+      ? lists.find(l => l.id === selected[0])?.name ?? '1 lista'
+      : `${selected.length} listas selecionadas`
 
   return (
     <div className="relative" ref={ref}>
@@ -135,41 +144,61 @@ function ListSelector({
         className="w-full flex items-center justify-between gap-2 bg-[#070707] border border-[#1a1a1a] rounded-xl px-4 py-2.5 text-sm text-left hover:border-[#2a2a2a] transition-colors focus:outline-none focus:border-[#E8B84B]/40"
         style={{ fontFamily: 'var(--font-dm-sans)' }}
       >
-        <span className={selectedList ? 'text-white' : 'text-[#333]'}>
-          {selectedList ? selectedList.name : 'Selecionar lista…'}
-        </span>
-        <ChevronDown size={14} className={`text-[#444] transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span className={selected.length > 0 ? 'text-white' : 'text-[#333]'}>{label}</span>
+        <div className="flex items-center gap-2">
+          {selected.length > 0 && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onChange([]) }}
+              className="text-[#444] hover:text-white transition-colors"
+            >
+              <X size={13} />
+            </button>
+          )}
+          <span className="text-[#444] text-[10px]">▼</span>
+        </div>
       </button>
 
       {open && (
         <div className="absolute z-20 top-[calc(100%+6px)] left-0 right-0 bg-[#0d0d0d] border border-[#1c1c1c] rounded-xl overflow-hidden shadow-xl shadow-black/60">
 
-          {/* Opção: nenhuma lista */}
+          {/* Nenhuma lista */}
           <button
             type="button"
-            onClick={() => { onChange(''); setOpen(false) }}
+            onClick={() => { onChange([]); setOpen(false) }}
             className="w-full px-4 py-2.5 text-sm text-left text-[#444] hover:text-white hover:bg-white/5 transition-colors"
             style={{ fontFamily: 'var(--font-dm-sans)' }}
           >
-            Nenhuma lista (só salvar ideia)
+            Nenhuma (só salvar como nota)
           </button>
 
           <div className="h-px bg-[#1a1a1a]" />
 
-          {/* Listas existentes */}
-          {lists.map(list => (
-            <button
-              key={list.id}
-              type="button"
-              onClick={() => { onChange(list.id); setOpen(false) }}
-              className={`w-full px-4 py-2.5 text-sm text-left transition-colors hover:bg-white/5 ${
-                list.id === value ? 'text-[#E8B84B]' : 'text-[#bbb] hover:text-white'
-              }`}
-              style={{ fontFamily: 'var(--font-dm-sans)' }}
-            >
-              {list.name}
-            </button>
-          ))}
+          {/* Listas com checkbox */}
+          {lists.map(list => {
+            const checked = selected.includes(list.id)
+            return (
+              <button
+                key={list.id}
+                type="button"
+                onClick={() => toggle(list.id)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-white/5 transition-colors"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              >
+                {/* Checkbox visual */}
+                <span className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 transition-colors ${
+                  checked
+                    ? 'bg-[#E8B84B] border-[#E8B84B]'
+                    : 'border-[#2a2a2a] bg-transparent'
+                }`}>
+                  {checked && <Check size={10} className="text-[#070707]" strokeWidth={3} />}
+                </span>
+                <span className={checked ? 'text-[#E8B84B]' : 'text-[#bbb]'}>
+                  {list.name}
+                </span>
+              </button>
+            )
+          })}
 
           <div className="h-px bg-[#1a1a1a]" />
 
@@ -180,7 +209,10 @@ function ListSelector({
                 autoFocus
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setCreating(false) }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleCreate()
+                  if (e.key === 'Escape') setCreating(false)
+                }}
                 placeholder="Nome da lista…"
                 className="flex-1 bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-sm text-white placeholder-[#333] focus:outline-none focus:border-[#E8B84B]/40"
                 style={{ fontFamily: 'var(--font-dm-sans)' }}
@@ -218,152 +250,152 @@ function ListSelector({
 // Componente principal
 // ---------------------------------------------------------------------------
 
+type Tab = 'checklist' | 'ideias'
+
 export function AdminClient() {
-  const [tab,   setTab]   = useState<'checklist' | 'ideias'>('checklist')
+  const [tab,   setTab]   = useState<Tab>('checklist')
   const [lists, setLists] = useState<TaskList[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [ideas, setIdeas] = useState<Idea[]>([])
 
-  // Estado do formulário de nova ideia
-  const [draft,         setDraft]         = useState('')
-  const [selectedListId, setSelectedListId] = useState('')
+  const [draft,        setDraft]        = useState('')
+  const [selectedIds,  setSelectedIds]  = useState<string[]>([])
 
-  // --------------- carrega estado do localStorage ---------------
+  // --------------- carrega localStorage ---------------
   useEffect(() => {
     const savedLists = localStorage.getItem('admin_lists')
     const savedTasks = localStorage.getItem('admin_tasks_v2')
-    const savedIdeas = localStorage.getItem('admin_ideas')
+    const savedIdeas = localStorage.getItem('admin_ideas_v2')
 
-    if (savedLists) {
-      setLists(JSON.parse(savedLists))
-    } else {
-      setLists(DEFAULT_LISTS)
-    }
-
-    if (savedTasks) {
-      setTasks(JSON.parse(savedTasks))
-    } else {
-      setTasks(INITIAL_TASKS.map(t => ({ ...t, done: DONE_BY_DEFAULT.has(t.id) })))
-    }
-
-    if (savedIdeas) setIdeas(JSON.parse(savedIdeas))
+    setLists(savedLists ? JSON.parse(savedLists) : DEFAULT_LISTS)
+    setTasks(savedTasks ? JSON.parse(savedTasks) : INITIAL_TASKS.map(t => ({ ...t, done: DONE_BY_DEFAULT.has(t.id) })))
+    setIdeas(savedIdeas ? JSON.parse(savedIdeas) : [])
   }, [])
 
-  // --------------- persiste ---------------
-  useEffect(() => { if (lists.length > 0) localStorage.setItem('admin_lists', JSON.stringify(lists)) }, [lists])
+  useEffect(() => { if (lists.length > 0) localStorage.setItem('admin_lists',    JSON.stringify(lists)) }, [lists])
   useEffect(() => { if (tasks.length > 0) localStorage.setItem('admin_tasks_v2', JSON.stringify(tasks)) }, [tasks])
-  useEffect(() => { localStorage.setItem('admin_ideas', JSON.stringify(ideas)) }, [ideas])
+  useEffect(() => {                        localStorage.setItem('admin_ideas_v2', JSON.stringify(ideas)) }, [ideas])
 
-  // --------------- criar nova lista ---------------
   function createList(name: string): string {
     const id = crypto.randomUUID()
     setLists(prev => [...prev, { id, name, isDefault: false }])
     return id
   }
 
-  // --------------- toggle tarefa ---------------
   function toggleTask(id: string) {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t))
   }
 
-  // --------------- deletar tarefa de lista customizada ---------------
   function deleteTask(id: string) {
     setTasks(prev => prev.filter(t => t.id !== id))
   }
 
-  // --------------- salvar ideia ---------------
   function saveIdea() {
     const text = draft.trim()
     if (!text) return
 
-    const targetList = lists.find(l => l.id === selectedListId)
+    const targetLists = lists.filter(l => selectedIds.includes(l.id))
 
     const idea: Idea = {
       id:        crypto.randomUUID(),
       text,
       createdAt: new Date().toLocaleDateString('pt-BR'),
-      listId:    targetList?.id,
-      listName:  targetList?.name,
+      listIds:   targetLists.map(l => l.id),
+      listNames: targetLists.map(l => l.name),
     }
 
     setIdeas(prev => [idea, ...prev])
 
-    // Se uma lista foi selecionada, cria a tarefa correspondente nela
-    if (targetList) {
-      const task: Task = {
+    // Cria uma tarefa em cada lista selecionada
+    if (targetLists.length > 0) {
+      const newTasks: Task[] = targetLists.map(list => ({
         id:     crypto.randomUUID(),
         label:  text,
         done:   false,
-        listId: targetList.id,
-      }
-      setTasks(prev => [...prev, task])
+        listId: list.id,
+      }))
+      setTasks(prev => [...prev, ...newTasks])
     }
 
     setDraft('')
-    setSelectedListId('')
+    setSelectedIds([])
   }
 
-  // --------------- remover ideia ---------------
   function removeIdea(id: string) {
     setIdeas(prev => prev.filter(i => i.id !== id))
   }
 
-  // --------------- métricas do checklist ---------------
+  // Métricas gerais
   const total = tasks.length
   const done  = tasks.filter(t => t.done).length
   const pct   = total > 0 ? Math.round((done / total) * 100) : 0
 
-  // --------------- render ---------------
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  const NAV: { key: Tab; label: string; icon: React.ReactNode }[] = [
+    { key: 'checklist', label: 'Listas',  icon: <ClipboardList size={16} /> },
+    { key: 'ideias',    label: 'Ideias',  icon: <Lightbulb     size={16} /> },
+  ]
+
   return (
-    <div>
+    <div className="flex gap-5 items-start">
 
-      {/* Abas */}
-      <div className="flex gap-1 p-1 bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl mb-6 w-fit">
-        {([
-          { key: 'checklist', label: 'Listas de Tarefas', icon: ClipboardList },
-          { key: 'ideias',    label: 'Bloco de Ideias',   icon: Lightbulb },
-        ] as const).map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm transition-all ${
-              tab === key
-                ? 'bg-[#E8B84B] text-[#070707] font-semibold'
-                : 'text-[#555] hover:text-white'
-            }`}
-            style={{ fontFamily: 'var(--font-dm-sans)' }}
-          >
-            <Icon size={15} />
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* ── Sidebar ─────────────────────────────────────────────── */}
+      <aside className="w-48 shrink-0 sticky top-[80px]">
+        <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
 
-      {/* ============================================================
-          ABA: LISTAS DE TAREFAS
-         ============================================================ */}
-      {tab === 'checklist' && (
-        <div>
+          <div className="px-4 py-3 border-b border-[#1a1a1a]">
+            <p className="text-[#333] text-[11px] uppercase tracking-widest" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Navegação
+            </p>
+          </div>
 
-          {/* Progresso geral */}
-          <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl p-5 mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Progresso total
-              </span>
-              <span className="text-[#E8B84B] text-sm font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>
-                {done} / {total} — {pct}%
-              </span>
+          <nav className="p-2 flex flex-col gap-0.5">
+            {NAV.map(({ key, label, icon }) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-left transition-all ${
+                  tab === key
+                    ? 'bg-[#E8B84B]/12 text-[#E8B84B] font-medium'
+                    : 'text-[#555] hover:text-white hover:bg-white/5'
+                }`}
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              >
+                {icon}
+                {label}
+              </button>
+            ))}
+          </nav>
+
+          {/* Progresso resumido na sidebar */}
+          <div className="px-4 pb-4 pt-1 border-t border-[#131313] mt-1">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[#333] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>MVP</span>
+              <span className="text-[#E8B84B] text-[11px] font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>{pct}%</span>
             </div>
-            <div className="h-2 bg-[#1a1a1a] rounded-full overflow-hidden">
+            <div className="h-1 bg-[#1a1a1a] rounded-full overflow-hidden">
               <div
                 className="h-full bg-[#E8B84B] rounded-full transition-all duration-500"
                 style={{ width: `${pct}%` }}
               />
             </div>
+            <p className="text-[#2a2a2a] text-[10px] mt-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {done} de {total} tarefas
+            </p>
           </div>
+        </div>
+      </aside>
 
-          {/* Uma seção por lista */}
+      {/* ── Conteúdo principal ───────────────────────────────────── */}
+      <div className="flex-1 min-w-0">
+
+        {/* ============================================================
+            ABA: LISTAS DE TAREFAS
+           ============================================================ */}
+        {tab === 'checklist' && (
           <div className="space-y-4">
             {lists.map(list => {
               const items     = tasks.filter(t => t.listId === list.id)
@@ -373,8 +405,6 @@ export function AdminClient() {
 
               return (
                 <div key={list.id} className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
-
-                  {/* Cabeçalho da lista */}
                   <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1a1a1a]">
                     <span className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-outfit)' }}>
                       {list.name}
@@ -384,21 +414,16 @@ export function AdminClient() {
                     </span>
                   </div>
 
-                  {/* Itens */}
                   {listTotal === 0 ? (
                     <p className="px-5 py-4 text-[#2a2a2a] text-sm italic" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Nenhuma tarefa ainda — adicione via Bloco de Ideias.
+                      Nenhuma tarefa — adicione via Ideias.
                     </p>
                   ) : (
                     <ul className="divide-y divide-[#131313]">
                       {items.map(task => (
                         <li key={task.id} className="group">
                           <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-[#111] transition-colors">
-                            <button
-                              onClick={() => toggleTask(task.id)}
-                              className="shrink-0"
-                              aria-label={task.done ? 'Desmarcar' : 'Marcar como feito'}
-                            >
+                            <button onClick={() => toggleTask(task.id)} className="shrink-0">
                               {task.done
                                 ? <CheckCircle2 size={18} className="text-[#E8B84B]" />
                                 : <Circle       size={18} className="text-[#2a2a2a]" />
@@ -412,12 +437,10 @@ export function AdminClient() {
                             >
                               {task.label}
                             </span>
-                            {/* Deletar só para tarefas de listas customizadas */}
                             {!list.isDefault && (
                               <button
                                 onClick={() => deleteTask(task.id)}
                                 className="text-[#2a2a2a] hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                                title="Remover tarefa"
                               >
                                 <Trash2 size={13} />
                               </button>
@@ -431,106 +454,110 @@ export function AdminClient() {
               )
             })}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ============================================================
-          ABA: BLOCO DE IDEIAS
-         ============================================================ */}
-      {tab === 'ideias' && (
-        <div>
-
-          {/* Formulário de nova ideia */}
-          <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl p-5 mb-4">
-            <p className="text-[#555] text-xs mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              Anote uma ideia e escolha em qual lista ela vai entrar como tarefa — ou salve apenas como nota.
-            </p>
-
-            {/* Textarea */}
-            <textarea
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') saveIdea() }}
-              placeholder="Escreva sua ideia aqui…"
-              rows={3}
-              className="w-full bg-[#070707] border border-[#1a1a1a] rounded-xl px-4 py-3 text-sm text-white placeholder-[#333] resize-none focus:outline-none focus:border-[#E8B84B]/40 transition-colors mb-3"
-              style={{ fontFamily: 'var(--font-dm-sans)' }}
-            />
-
-            {/* Seletor de lista */}
-            <ListSelector
-              lists={lists}
-              value={selectedListId}
-              onChange={setSelectedListId}
-              onCreateList={createList}
-            />
-
-            {/* Rodapé do formulário */}
-            <div className="flex items-center justify-between mt-3">
-              <span className="text-[#2a2a2a] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Ctrl + Enter para salvar
-              </span>
-              <button
-                onClick={saveIdea}
-                disabled={!draft.trim()}
-                className="flex items-center gap-2 bg-[#E8B84B] text-[#070707] text-sm font-semibold px-4 py-2 rounded-xl disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#d4a73e] transition-colors"
-                style={{ fontFamily: 'var(--font-dm-sans)' }}
-              >
-                <Plus size={15} />
-                {selectedListId ? 'Salvar e adicionar à lista' : 'Salvar ideia'}
-              </button>
-            </div>
-          </div>
-
-          {/* Lista de ideias salvas */}
-          {ideas.length === 0 ? (
-            <div className="text-center py-16">
-              <Lightbulb size={32} className="text-[#1a1a1a] mx-auto mb-3" />
-              <p className="text-[#333] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Nenhuma ideia salva ainda.
+        {/* ============================================================
+            ABA: BLOCO DE IDEIAS
+           ============================================================ */}
+        {tab === 'ideias' && (
+          <div>
+            {/* Formulário */}
+            <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl p-5 mb-4">
+              <p className="text-[#555] text-xs mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Escreva uma ideia e selecione em quais listas ela deve entrar como tarefa.
+                Uma ideia pode ir para várias listas ao mesmo tempo.
               </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {ideas.map(idea => (
-                <div
-                  key={idea.id}
-                  className="group flex items-start gap-3 bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl px-5 py-4 hover:border-[#222] transition-colors"
-                >
-                  <Lightbulb size={15} className="text-[#E8B84B] shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-[#bbb] leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {idea.text}
-                    </p>
-                    {/* Tag da lista vinculada */}
-                    {idea.listName && (
-                      <span
-                        className="inline-block mt-2 px-2 py-0.5 rounded-md text-[11px] bg-[#E8B84B]/10 text-[#E8B84B]/70 border border-[#E8B84B]/15"
-                        style={{ fontFamily: 'var(--font-dm-sans)' }}
-                      >
-                        → {idea.listName}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[#2a2a2a] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {idea.createdAt}
-                    </span>
-                    <button
-                      onClick={() => removeIdea(idea.id)}
-                      className="text-[#2a2a2a] hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                      title="Remover ideia"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
+              <textarea
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') saveIdea() }}
+                placeholder="Escreva sua ideia aqui…"
+                rows={3}
+                className="w-full bg-[#070707] border border-[#1a1a1a] rounded-xl px-4 py-3 text-sm text-white placeholder-[#333] resize-none focus:outline-none focus:border-[#E8B84B]/40 transition-colors mb-3"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              />
+
+              <ListSelector
+                lists={lists}
+                selected={selectedIds}
+                onChange={setSelectedIds}
+                onCreateList={createList}
+              />
+
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-[#2a2a2a] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Ctrl + Enter para salvar
+                </span>
+                <button
+                  onClick={saveIdea}
+                  disabled={!draft.trim()}
+                  className="flex items-center gap-2 bg-[#E8B84B] text-[#070707] text-sm font-semibold px-4 py-2 rounded-xl disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#d4a73e] transition-colors"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  <Plus size={15} />
+                  {selectedIds.length > 0
+                    ? `Salvar e adicionar a ${selectedIds.length > 1 ? `${selectedIds.length} listas` : '1 lista'}`
+                    : 'Salvar ideia'
+                  }
+                </button>
+              </div>
+            </div>
+
+            {/* Lista de ideias */}
+            {ideas.length === 0 ? (
+              <div className="text-center py-16">
+                <Lightbulb size={32} className="text-[#1a1a1a] mx-auto mb-3" />
+                <p className="text-[#333] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Nenhuma ideia salva ainda.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {ideas.map(idea => (
+                  <div
+                    key={idea.id}
+                    className="group flex items-start gap-3 bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl px-5 py-4 hover:border-[#222] transition-colors"
+                  >
+                    <Lightbulb size={15} className="text-[#E8B84B] shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-[#bbb] leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        {idea.text}
+                      </p>
+                      {/* Tags das listas vinculadas */}
+                      {idea.listNames.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {idea.listNames.map(name => (
+                            <span
+                              key={name}
+                              className="inline-block px-2 py-0.5 rounded-md text-[11px] bg-[#E8B84B]/10 text-[#E8B84B]/70 border border-[#E8B84B]/15"
+                              style={{ fontFamily: 'var(--font-dm-sans)' }}
+                            >
+                              → {name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[#2a2a2a] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        {idea.createdAt}
+                      </span>
+                      <button
+                        onClick={() => removeIdea(idea.id)}
+                        className="text-[#2a2a2a] hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
     </div>
   )
 }

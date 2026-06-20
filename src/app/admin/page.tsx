@@ -19,7 +19,7 @@ export default async function AdminPage() {
     <div className="min-h-dvh bg-[#070707]">
       <Header />
 
-      <main className="max-w-4xl mx-auto px-4 py-10">
+      <main className="max-w-6xl mx-auto px-4 py-10">
 
         {/* Cabeçalho */}
         <div className="mb-8 flex items-center gap-3">
