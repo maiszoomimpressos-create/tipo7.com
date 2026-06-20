@@ -220,7 +220,7 @@ export function Header() {
                         Meu perfil
                       </a>
                       <a
-                        href="/comprador/ingressos"
+                        href="/meus-ingressos"
                         onClick={() => setUserMenuOpen(false)}
                         className="flex items-center gap-3 px-4 py-2.5 text-sm text-[#bbb] hover:text-white hover:bg-white/5 transition-colors"
                         style={{ fontFamily: 'var(--font-dm-sans)' }}
@@ -332,7 +332,7 @@ export function Header() {
                   Meu perfil
                 </a>
                 <a
-                  href="/comprador/ingressos"
+                  href="/meus-ingressos"
                   onClick={() => setMenuOpen(false)}
                   className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-[#222] text-white text-sm"
                   style={{ fontFamily: 'var(--font-dm-sans)' }}
