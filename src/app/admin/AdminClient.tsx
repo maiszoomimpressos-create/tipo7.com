@@ -240,6 +240,24 @@ function ListSelector({
               Nova lista…
             </button>
           )}
+
+          {/* Botão confirmar — fecha o dropdown */}
+          {selected.length > 0 && (
+            <>
+              <div className="h-px bg-[#1a1a1a]" />
+              <div className="p-2">
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-[#E8B84B] text-[#070707] text-sm font-semibold transition-colors hover:bg-[#d4a73e]"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  <Check size={14} strokeWidth={3} />
+                  Confirmar {selected.length > 1 ? `(${selected.length} listas)` : '(1 lista)'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
