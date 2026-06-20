@@ -141,38 +141,34 @@ export function MeusIngressosClient({ orders }: Props) {
             key={order.id}
             className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden"
           >
-            {/* Banner do evento — topo do card */}
-            {evento?.banner_url ? (
-              <div className="relative h-28 overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={evento.banner_url}
-                  alt={evento.title ?? ''}
-                  className="w-full h-full object-cover brightness-75"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0d0d0d] via-[#0d0d0d]/30 to-transparent" />
-                {/* Status badge sobre o banner */}
-                <div className="absolute top-3 right-3">
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${st.bg} ${st.color}`}
-                    style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    <Icon size={11} />
-                    {st.label}
-                  </span>
+            {/* Banner do evento — max 350px, proporção 780×420 */}
+            <div className="px-5 pt-5">
+              {evento?.banner_url ? (
+                <div className="relative overflow-hidden rounded-xl" style={{ maxWidth: 350, aspectRatio: '780/420' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={evento.banner_url}
+                    alt={evento.title ?? ''}
+                    className="w-full h-full object-cover"
+                  />
+                  {/* Status badge sobre o banner */}
+                  <div className="absolute top-2.5 right-2.5">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${st.bg} ${st.color}`}
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      <Icon size={11} />
+                      {st.label}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              /* Sem banner: faixa de status no topo */
-              <div className={`flex items-center justify-between px-5 py-3 border-b border-[#131313]`}>
-                <span className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Pedido • {dataPedido}
-                </span>
+              ) : (
+                /* Sem banner: badge de status isolado */
                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${st.bg} ${st.color}`}
                   style={{ fontFamily: 'var(--font-dm-sans)' }}>
                   <Icon size={11} />
                   {st.label}
                 </span>
-              </div>
-            )}
+              )}
+            </div>
 
             <div className="px-5 py-4">
 
