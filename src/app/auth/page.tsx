@@ -52,10 +52,25 @@ const isValidCPF = (v: string) => {
   return r === +d[10]
 }
 
-// Valida se tem pelo menos 13 anos (para restrição de idade)
+const formatBirthDate = (raw: string) => {
+  const d = raw.replace(/\D/g, '').slice(0, 8)
+  if (d.length <= 2) return d
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`
+}
+
+const displayToISO = (display: string) => {
+  const parts = display.split('/')
+  if (parts.length !== 3 || parts[2].length < 4) return ''
+  return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+}
+
+// Valida se tem pelo menos 13 anos (para restrição de idade) — aceita DD/MM/AAAA
 const isValidBirthDate = (v: string) => {
-  if (!v) return true // opcional
-  const birth = new Date(v)
+  if (!v) return true
+  const iso = displayToISO(v)
+  if (!iso) return false
+  const birth = new Date(iso)
   const age = (Date.now() - birth.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
   return age >= 13
 }
@@ -149,16 +164,33 @@ export default function AuthPage() {
     setRegLoading(true)
     setRegError(null)
     try {
+      // Verifica CPF duplicado antes de tentar criar conta
+      const cpfNumeros = regCPF.replace(/\D/g, '')
+      const cpfCheck = await fetch(`/api/check-cpf?cpf=${cpfNumeros}`).then(r => r.json())
+      if (cpfCheck.exists) {
+        setRegError('Este CPF já está cadastrado. Se você já tem conta, faça login com o e-mail que usou no cadastro.')
+        setRegLoading(false)
+        return
+      }
+
       const { error } = await signUp({
         name:      regName,
         email:     regEmail,
         password:  regPassword,
         phone:     regPhone,
         cpf:       regCPF,
-        birthDate: regBirthDate,
+        birthDate: displayToISO(regBirthDate),
       })
-      if (error) { setRegError(error); return }
+      if (error) {
+        // Supabase às vezes retorna '{}' ou '[]' quando o erro é interno/trigger
+        const useful = typeof error === 'string' && error.length > 3
+          && !error.trim().startsWith('{') && !error.trim().startsWith('[')
+        setRegError(useful ? error : 'Erro ao criar conta. Verifique os dados ou tente com outro e-mail.')
+        return
+      }
       setRegSuccess(true)
+    } catch {
+      setRegError('Erro ao criar conta. Verifique sua conexão e tente novamente.')
     } finally {
       setRegLoading(false)
     }
@@ -469,14 +501,15 @@ export default function AuthPage() {
                     Data de nascimento
                   </label>
                   <input
-                    type="date"
+                    type="text"
+                    inputMode="numeric"
                     value={regBirthDate}
-                    onChange={e => setRegBirthDate(e.target.value)}
+                    onChange={e => setRegBirthDate(formatBirthDate(e.target.value))}
                     onBlur={e => touch('regBirthDate', e.target.value)}
-                    max={new Date().toISOString().split('T')[0]}
+                    placeholder="DD/MM/AAAA"
+                    maxLength={10}
                     className={cn(
-                      'w-full bg-[#111] border rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:bg-[#131313]',
-                      '[color-scheme:dark]',
+                      'w-full bg-[#111] border rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:bg-[#131313] placeholder:text-[#383838]',
                       fields.regBirthDate.touched && fields.regBirthDate.error
                         ? 'border-red-500/50 focus:border-red-500/70'
                         : fields.regBirthDate.touched && !fields.regBirthDate.error && regBirthDate

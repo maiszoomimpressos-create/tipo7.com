@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   CalendarPlus, Plus, Pencil, Trash2,
-  ExternalLink, ImageIcon, Ticket, Settings,
+  ExternalLink, ImageIcon, Ticket, Settings, AlertTriangle, X,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { TipoPessoaModal, type ProfileData } from './TipoPessoaModal'
@@ -32,27 +32,100 @@ const formatData = (iso: string) => {
   return `${d.getDate()} de ${MESES_PT[d.getMonth()]} de ${d.getFullYear()}`
 }
 
+// ── Modal de confirmação de exclusão ──────────────────────────────────────
+function ConfirmDeleteModal({
+  titulo,
+  onConfirm,
+  onCancel,
+  loading,
+}: {
+  titulo:    string
+  onConfirm: () => void
+  onCancel:  () => void
+  loading:   boolean
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.80)', backdropFilter: 'blur(4px)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-xs rounded-2xl p-6"
+        style={{ background: '#0d0d0d', border: '1px solid #1e1e1e' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+               style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            <AlertTriangle size={18} className="text-red-400" />
+          </div>
+          <div>
+            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Excluir evento?</p>
+            <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Esta ação não pode ser desfeita</p>
+          </div>
+          <button onClick={onCancel} className="ml-auto text-[#333] hover:text-[#666] transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mb-5 px-3 py-2.5 rounded-xl" style={{ background: '#111', border: '1px solid #1a1a1a' }}>
+          <p className="text-[#888] text-sm truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>{titulo || 'Sem nome'}</p>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl text-sm text-[#555] hover:text-white border border-[#1e1e1e] hover:border-[#333] transition-colors"
+            style={{ fontFamily: 'var(--font-dm-sans)' }}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-colors"
+            style={{ background: '#dc2626', fontFamily: 'var(--font-dm-sans)' }}
+          >
+            {loading ? 'Excluindo...' : 'Excluir'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Componente principal ────────────────────────────────────────────────────
 export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, profile, eventos: inicial }: Props) {
-  const [modalAberto, setModalAberto] = useState(false)
-  const [lista,       setLista]       = useState<EventoItem[]>(inicial)
-  const [excluindo,   setExcluindo]   = useState<string | null>(null)
+  const [modalAberto,    setModalAberto]    = useState(false)
+  const [lista,          setLista]          = useState<EventoItem[]>(inicial)
+  const [excluindo,      setExcluindo]      = useState<string | null>(null)
+  const [confirmarId,    setConfirmarId]    = useState<string | null>(null)
   const supabase = createClient()
 
-  const excluirEvento = async (id: string, e: React.MouseEvent) => {
+  const abrirConfirmar = (id: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    if (!confirm('Excluir este evento? Esta ação não pode ser desfeita.')) return
-    setExcluindo(id)
-    await supabase.from('events').delete().eq('id', id)
-    setLista(prev => prev.filter(r => r.id !== id))
+    setConfirmarId(id)
+  }
+
+  const excluirEvento = async () => {
+    if (!confirmarId) return
+    setExcluindo(confirmarId)
+    await supabase.from('events').delete().eq('id', confirmarId)
+    setLista(prev => prev.filter(r => r.id !== confirmarId))
+    setConfirmarId(null)
     setExcluindo(null)
   }
+
+  const eventoConfirmar = lista.find(e => e.id === confirmarId)
 
   return (
     <>
       <div className="flex flex-col gap-8">
 
-        {/* ── Cabeçalho da seção ── */}
         {lista.length > 0 && (
           <div className="flex items-center justify-between">
             <div>
@@ -72,18 +145,15 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, pr
           </div>
         )}
 
-        {/* ── Grid de cards ── */}
         {lista.length > 0 && (
           <div className="grid grid-cols-2 gap-4">
             {lista.map(ev => (
               <div key={ev.id}
                 className="group relative bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden hover:border-[#2a2a2a] transition-colors">
 
-                {/* Thumbnail */}
                 <div className="relative w-full h-[250px] bg-[#0a0a0a] flex items-center justify-center overflow-hidden">
                   <ImageIcon size={32} className="text-[#1e1e1e]" />
 
-                  {/* Overlay no hover com ações rápidas */}
                   <div className="absolute inset-0 bg-black/75 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-2 p-4">
                     <a href={`/criar-evento/${ev.id}`}
                       className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors"
@@ -109,8 +179,8 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, pr
                     )}
                   </div>
 
-                  {/* Botão excluir — canto superior direito */}
-                  <button type="button" onClick={e => excluirEvento(ev.id, e)}
+                  {/* Botão excluir — abre modal de confirmação */}
+                  <button type="button" onClick={e => abrirConfirmar(ev.id, e)}
                     disabled={excluindo === ev.id}
                     className="absolute top-2.5 right-2.5 w-7 h-7 rounded-lg bg-black/60 flex items-center justify-center text-[#444] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
                     title="Excluir">
@@ -118,10 +188,8 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, pr
                   </button>
                 </div>
 
-                {/* Info abaixo do thumbnail */}
                 <div className="px-4 py-3">
                   <div className="flex items-center gap-2 mb-0.5">
-                    {/* Marcação de status */}
                     <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ev.status === 'publicado' ? 'bg-green-400' : 'bg-[#444]'}`} />
                     <p className="text-white text-sm font-medium truncate"
                        style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -139,7 +207,6 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, pr
           </div>
         )}
 
-        {/* ── Estado vazio ── */}
         {lista.length === 0 && (
           <div className="text-center py-8">
             <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"
@@ -176,6 +243,7 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, pr
 
       </div>
 
+      {/* Modal de criação */}
       {modalAberto && (
         <TipoPessoaModal
           promotorId={promotorId}
@@ -183,6 +251,16 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, pr
           nomeUsuario={nomeUsuario}
           profile={profile}
           onFechar={() => setModalAberto(false)}
+        />
+      )}
+
+      {/* Modal de confirmação de exclusão */}
+      {confirmarId && eventoConfirmar && (
+        <ConfirmDeleteModal
+          titulo={eventoConfirmar.title}
+          onConfirm={excluirEvento}
+          onCancel={() => setConfirmarId(null)}
+          loading={excluindo === confirmarId}
         />
       )}
     </>

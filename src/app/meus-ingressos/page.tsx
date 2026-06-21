@@ -11,7 +11,7 @@ export default async function MeusIngressosPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth?next=/meus-ingressos')
 
-  // Busca pedidos com evento e itens (ingressos)
+  // Busca pedidos com evento, itens e portadores já cadastrados
   const { data: orders } = await supabase
     .from('orders')
     .select(`
@@ -36,6 +36,13 @@ export default async function MeusIngressosPage() {
         event_tickets (
           id,
           name
+        ),
+        ticket_holders (
+          slot_number,
+          full_name,
+          cpf,
+          email,
+          birth_date
         )
       )
     `)

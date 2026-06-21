@@ -1,10 +1,10 @@
 // Página inicial — landing page do Tipo7
-import { Header }       from '@/components/layout/Header'
-import { Carousel }     from '@/components/home/Carousel'
-import { LocationBar }  from '@/components/home/LocationBar'
-import { EventGrid }    from '@/components/home/EventGrid'
-import { PromoterCTA }  from '@/components/home/PromoterCTA'
-import { Footer }       from '@/components/layout/Footer'
+import { Header }         from '@/components/layout/Header'
+import { Carousel }       from '@/components/home/Carousel'
+import { LocationBar }    from '@/components/home/LocationBar'
+import { SearchSection }  from '@/components/home/SearchSection'
+import { PromoterCTA }    from '@/components/home/PromoterCTA'
+import { Footer }         from '@/components/layout/Footer'
 import { LocationProvider } from '@/contexts/LocationContext'
 
 export default function Home() {
@@ -15,7 +15,7 @@ export default function Home() {
         <main className="flex-1">
           <LocationBar />
           <Carousel />
-          <EventGrid />
+          <SearchSection />
           <PromoterCTA />
         </main>
         <Footer />

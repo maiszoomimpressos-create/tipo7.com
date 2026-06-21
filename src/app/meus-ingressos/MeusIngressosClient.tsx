@@ -1,17 +1,29 @@
 'use client'
 
-// Lista de pedidos do comprador com status, evento e ingressos
-import { CalendarDays, MapPin, Ticket, CheckCircle2, Clock, XCircle, AlertCircle } from 'lucide-react'
+// Lista de ingressos agrupada por evento, com modal de detalhes e portadores
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Ticket, CalendarDays, MapPin, Users } from 'lucide-react'
+import { EventModal } from './EventModal'
 
 // ---------------------------------------------------------------------------
-// Tipos inferidos do Supabase
+// Tipos
 // ---------------------------------------------------------------------------
+
+type TicketHolder = {
+  slot_number: number
+  full_name:   string
+  cpf:         string
+  email:       string
+  birth_date:  string
+}
 
 type OrderItem = {
-  id:          string
-  quantity:    number
-  unit_price:  number
-  event_tickets: { id: string; name: string } | null
+  id:              string
+  quantity:        number
+  unit_price:      number
+  event_tickets:   { id: string; name: string } | null
+  ticket_holders:  TicketHolder[]
 }
 
 export type Order = {
@@ -32,57 +44,23 @@ export type Order = {
   order_items: OrderItem[]
 }
 
+export type EventGroup = {
+  event:         Order['events']
+  orders:        Order[]
+  items:         { item: OrderItem; orderId: string }[]
+  totalTickets:  number
+  totalPaid:     number
+  allApproved:   boolean
+  holdersFilled: number
+}
+
 interface Props {
   orders: Order[]
 }
 
 // ---------------------------------------------------------------------------
-// Helpers de status
+// Helpers
 // ---------------------------------------------------------------------------
-
-const STATUS = {
-  approved: {
-    label: 'Aprovado',
-    icon:  CheckCircle2,
-    color: 'text-green-400',
-    bg:    'bg-green-400/10 border-green-400/20',
-  },
-  in_process: {
-    label: 'Em processamento',
-    icon:  Clock,
-    color: 'text-yellow-400',
-    bg:    'bg-yellow-400/10 border-yellow-400/20',
-  },
-  pending: {
-    label: 'Pendente',
-    icon:  Clock,
-    color: 'text-yellow-400',
-    bg:    'bg-yellow-400/10 border-yellow-400/20',
-  },
-  rejected: {
-    label: 'Recusado',
-    icon:  XCircle,
-    color: 'text-red-400',
-    bg:    'bg-red-400/10 border-red-400/20',
-  },
-  cancelled: {
-    label: 'Cancelado',
-    icon:  XCircle,
-    color: 'text-red-400',
-    bg:    'bg-red-400/10 border-red-400/20',
-  },
-} as const
-
-type StatusKey = keyof typeof STATUS
-
-function getStatus(s: string) {
-  return STATUS[s as StatusKey] ?? {
-    label: s,
-    icon:  AlertCircle,
-    color: 'text-[#555]',
-    bg:    'bg-white/5 border-white/10',
-  }
-}
 
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
 
@@ -92,15 +70,132 @@ function formatDate(iso: string | null) {
   return `${d.getDate()} de ${MESES[d.getMonth()]} de ${d.getFullYear()}`
 }
 
-function formatMoney(value: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+function groupByEvent(orders: Order[]): EventGroup[] {
+  const map = new Map<string, EventGroup>()
+
+  for (const order of orders) {
+    const eventId = order.events?.id ?? '__sem_evento__'
+    if (!map.has(eventId)) {
+      map.set(eventId, {
+        event:         order.events,
+        orders:        [],
+        items:         [],
+        totalTickets:  0,
+        totalPaid:     0,
+        allApproved:   true,
+        holdersFilled: 0,
+      })
+    }
+    const group = map.get(eventId)!
+    group.orders.push(order)
+    if (order.status !== 'approved') group.allApproved = false
+    group.totalPaid += Number(order.total)
+
+    for (const item of order.order_items) {
+      group.items.push({ item, orderId: order.id })
+      group.totalTickets  += item.quantity
+      group.holdersFilled += (item.ticket_holders ?? []).length
+    }
+  }
+
+  return Array.from(map.values())
 }
 
 // ---------------------------------------------------------------------------
-// Componente
+// Card de evento
+// ---------------------------------------------------------------------------
+
+function EventCard({ group, onClick }: { group: EventGroup; onClick: () => void }) {
+  const ev          = group.event
+  const allFilled   = group.holdersFilled >= group.totalTickets
+  const needHolders = group.allApproved && !allFilled
+
+  return (
+    <button type="button" onClick={onClick} className="w-full text-left group cursor-pointer">
+      <div
+        className="relative overflow-hidden rounded-2xl transition-all duration-200 group-hover:border-[#2a2a2a]"
+        style={{ border: '1px solid #1a1a1a', background: '#0d0d0d' }}
+      >
+        {/* Banner */}
+        <div className="relative" style={{ aspectRatio: '780/380' }}>
+          {ev?.banner_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={ev.banner_url}
+              alt={ev.title ?? ''}
+              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            />
+          ) : (
+            <div className="w-full h-full" style={{ background: '#111' }} />
+          )}
+
+          {/* Gradiente de baixo */}
+          <div
+            className="absolute inset-0"
+            style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.05) 30%, rgba(7,7,7,0.97) 100%)' }}
+          />
+
+          {/* Badge quantidade — topo DIREITO */}
+          <div className="absolute top-3.5 right-3.5">
+            <span
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold text-[#070707]"
+              style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <Ticket size={11} />
+              {group.totalTickets} {group.totalTickets === 1 ? 'ingresso' : 'ingressos'}
+            </span>
+          </div>
+
+          {/* Info do evento */}
+          <div className="absolute bottom-0 left-0 right-0 px-4 pb-4">
+            <h3
+              className="text-white text-lg leading-snug mb-1.5"
+              style={{ fontFamily: 'var(--font-outfit)', fontWeight: 600 }}
+            >
+              {ev?.title ?? 'Evento'}
+            </h3>
+            <div className="flex flex-col gap-1">
+              {ev?.date_start && (
+                <div className="flex items-center gap-1.5 text-[#888] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  <CalendarDays size={11} className="shrink-0" />
+                  {formatDate(ev.date_start)}
+                </div>
+              )}
+              {(ev?.venue_name || ev?.city) && (
+                <div className="flex items-center gap-1.5 text-[#888] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  <MapPin size={11} className="shrink-0" />
+                  {[ev.venue_name, ev.city, ev.state].filter(Boolean).join(' · ')}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Aviso portadores pendentes */}
+        {needHolders && (
+          <div
+            className="flex items-center gap-3 px-4 py-3"
+            style={{ borderTop: '1px solid rgba(232,184,75,0.12)', background: 'rgba(232,184,75,0.04)' }}
+          >
+            <Users size={14} className="text-[#E8B84B] shrink-0" />
+            <p className="text-[#E8B84B] text-xs flex-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Informe quem vai usar os ingressos
+            </p>
+            <span className="text-[#E8B84B]/40 text-xs">→</span>
+          </div>
+        )}
+      </div>
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Componente principal
 // ---------------------------------------------------------------------------
 
 export function MeusIngressosClient({ orders }: Props) {
+  const router = useRouter()
+  const [activeGroup, setActiveGroup] = useState<EventGroup | null>(null)
 
   if (orders.length === 0) {
     return (
@@ -128,115 +223,30 @@ export function MeusIngressosClient({ orders }: Props) {
     )
   }
 
+  const groups = groupByEvent(orders)
+
   return (
-    <div className="space-y-4">
-      {orders.map(order => {
-        const st      = getStatus(order.status)
-        const Icon    = st.icon
-        const evento  = order.events
-        const dataPedido = formatDate(order.created_at)
+    <>
+      <div className="space-y-4">
+        {groups.map((group, i) => (
+          <EventCard
+            key={group.event?.id ?? i}
+            group={group}
+            onClick={() => setActiveGroup(group)}
+          />
+        ))}
+      </div>
 
-        return (
-          <div
-            key={order.id}
-            className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden"
-          >
-            {/* Banner do evento — max 350px, proporção 780×420 */}
-            <div className="px-5 pt-5">
-              {evento?.banner_url ? (
-                <div className="relative overflow-hidden rounded-xl" style={{ maxWidth: 350, aspectRatio: '780/420' }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={evento.banner_url}
-                    alt={evento.title ?? ''}
-                    className="w-full h-full object-cover"
-                  />
-                  {/* Status badge sobre o banner */}
-                  <div className="absolute top-2.5 right-2.5">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${st.bg} ${st.color}`}
-                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      <Icon size={11} />
-                      {st.label}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                /* Sem banner: badge de status isolado */
-                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${st.bg} ${st.color}`}
-                  style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  <Icon size={11} />
-                  {st.label}
-                </span>
-              )}
-            </div>
-
-            <div className="px-5 py-4">
-
-              {/* Nome do evento */}
-              <h3
-                className="text-white font-medium mb-3 leading-snug"
-                style={{ fontFamily: 'var(--font-outfit)' }}
-              >
-                {evento?.title ?? 'Evento'}
-              </h3>
-
-              {/* Data e local */}
-              <div className="flex flex-col gap-1.5 mb-4">
-                {evento?.date_start && (
-                  <div className="flex items-center gap-2 text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    <CalendarDays size={13} className="shrink-0" />
-                    {formatDate(evento.date_start)}
-                  </div>
-                )}
-                {(evento?.venue_name || evento?.city) && (
-                  <div className="flex items-center gap-2 text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    <MapPin size={13} className="shrink-0" />
-                    {[evento.venue_name, evento.city, evento.state].filter(Boolean).join(' · ')}
-                  </div>
-                )}
-              </div>
-
-              {/* Lista de ingressos */}
-              <div className="border-t border-[#131313] pt-3 mb-3 space-y-2">
-                {order.order_items.map(item => (
-                  <div key={item.id} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Ticket size={13} className="text-[#333] shrink-0" />
-                      <span className="text-[#bbb] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        {item.event_tickets?.name ?? 'Ingresso'}
-                      </span>
-                      <span className="text-[#333] text-xs">×{item.quantity}</span>
-                    </div>
-                    <span className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {formatMoney(Number(item.unit_price) * item.quantity)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Rodapé: total + link para o evento */}
-              <div className="flex items-center justify-between pt-3 border-t border-[#131313]">
-                <div>
-                  <p className="text-[#333] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>Total pago</p>
-                  <p className="text-[#E8B84B] font-semibold text-sm" style={{ fontFamily: 'var(--font-syne)' }}>
-                    {formatMoney(Number(order.total))}
-                  </p>
-                </div>
-                {evento?.id && order.status === 'approved' && (
-                  <a
-                    href={`/evento/${evento.id}`}
-                    className="text-xs text-[#444] hover:text-white transition-colors border border-[#222] hover:border-[#333] px-3 py-1.5 rounded-lg"
-                    style={{ fontFamily: 'var(--font-dm-sans)' }}
-                  >
-                    Ver evento
-                  </a>
-                )}
-              </div>
-
-            </div>
-          </div>
-        )
-      })}
-    </div>
+      {activeGroup && (
+        <EventModal
+          group={activeGroup}
+          onClose={() => setActiveGroup(null)}
+          onSaved={() => {
+            setActiveGroup(null)
+            router.refresh()
+          }}
+        />
+      )}
+    </>
   )
 }

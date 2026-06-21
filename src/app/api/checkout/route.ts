@@ -65,6 +65,9 @@ export async function POST(req: NextRequest) {
     const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN! })
     const preference = new Preference(client)
 
+    // back_urls sempre apontam para produção — MP rejeita localhost em credenciais reais
+    const MP_BASE_URL = 'https://www.tipo7.com'
+
     const result = await preference.create({
       body: {
         items: lineItems.map(({ ticket, quantity }) => ({
@@ -74,14 +77,18 @@ export async function POST(req: NextRequest) {
           unit_price:  Number(ticket.price ?? 0),
           currency_id: 'BRL',
         })),
-        payer: { email: user.email ?? '' },
+        payer: {
+          email:   user.email ?? '',
+          name:    user.user_metadata?.full_name?.split(' ')[0] ?? '',
+          surname: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') ?? '',
+        },
         back_urls: {
-          success: 'https://tipo7.com/checkout/sucesso',
-          failure: 'https://tipo7.com/checkout/falha',
-          pending: 'https://tipo7.com/checkout/pendente',
+          success: `${MP_BASE_URL}/checkout/sucesso`,
+          failure: `${MP_BASE_URL}/checkout/falha`,
+          pending: `${MP_BASE_URL}/checkout/pendente`,
         },
         auto_return:        'approved',
-        notification_url:   'https://tipo7.com/api/webhooks/mercadopago',
+        notification_url:   `${MP_BASE_URL}/api/webhooks/mercadopago`,
         external_reference: order.id,
       },
     })

@@ -39,6 +39,26 @@ const formatCEP = (v: string) => {
   return `${d.slice(0,5)}-${d.slice(5)}`
 }
 
+// Máscara DD/MM/AAAA para campo de data
+const formatBirthDate = (raw: string) => {
+  const d = raw.replace(/\D/g, '').slice(0, 8)
+  if (d.length <= 2) return d
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`
+}
+
+const isoToDisplay = (iso: string) => {
+  if (!iso || iso.length < 10) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+
+const displayToISO = (display: string) => {
+  const parts = display.split('/')
+  if (parts.length !== 3 || parts[2].length < 4) return ''
+  return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+}
+
 // ─── Validadores ───────────────────────────────────────────────────────────────
 
 // Valida CPF com algoritmo oficial
@@ -87,7 +107,7 @@ export function ProfileForm({ userId, initial }: Props) {
   const [name,      setName]      = useState(initial.full_name)
   const [phone,     setPhone]     = useState(formatPhone(initial.phone))
   const [cpf,       setCpf]       = useState(formatCPF(initial.cpf))
-  const [birthDate, setBirthDate] = useState(initial.birth_date ?? '')
+  const [birthDate, setBirthDate] = useState(isoToDisplay(initial.birth_date ?? ''))
 
   // ── Estado: avatar ──
   const [avatarUrl,     setAvatarUrl]     = useState(initial.avatar_url ?? '')
@@ -287,7 +307,7 @@ export function ProfileForm({ userId, initial }: Props) {
           full_name:    name.trim(),
           phone:        phone.replace(/\D/g,'')   || null,
           cpf:          cpf.replace(/\D/g,'')     || null,
-          birth_date:   birthDate                 || null,
+          birth_date:   displayToISO(birthDate)    || null,
           avatar_url:   novaAvatarUrl             || null,
           // Endereço
           zip_code:     zipCode.replace(/\D/g,'') || null,
@@ -450,11 +470,13 @@ export function ProfileForm({ userId, initial }: Props) {
           {/* Data de nascimento */}
           <Field label="Data de nascimento" optional>
             <input
-              type="date"
+              type="text"
+              inputMode="numeric"
               value={birthDate}
-              onChange={e => setBirthDate(e.target.value)}
-              max={new Date().toISOString().split('T')[0]}
-              className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-[#E8B84B]/40 focus:bg-[#131313] [color-scheme:dark]"
+              onChange={e => setBirthDate(formatBirthDate(e.target.value))}
+              placeholder="DD/MM/AAAA"
+              maxLength={10}
+              className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-[#E8B84B]/40 focus:bg-[#131313] placeholder:text-[#383838]"
               style={{ fontFamily: 'var(--font-dm-sans)' }}
             />
           </Field>

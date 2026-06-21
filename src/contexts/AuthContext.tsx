@@ -59,21 +59,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Cria uma nova conta e envia email de confirmação
   // Todos os dados extras são salvos via trigger no banco (tabela profiles)
   const signUp = async ({ name, email, password, phone, cpf, birthDate }: SignUpData) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name:  name,
-          phone:      phone     || null,
-          cpf:        cpf       || null,
-          birth_date: birthDate || null,
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name:  name,
+            phone:      phone     || null,
+            cpf:        cpf       || null,
+            birth_date: birthDate || null,
+          },
+          emailRedirectTo: `${location.origin}/auth/callback`,
         },
-        emailRedirectTo: `${location.origin}/auth/callback`,
-      },
-    })
-    if (error) return { error: error.message }
-    return { error: null }
+      })
+      if (error) {
+        const msg = error.message && !error.message.startsWith('{') && !error.message.startsWith('[')
+          ? error.message
+          : error.code ?? 'Erro ao criar conta. Tente novamente.'
+        return { error: msg }
+      }
+      return { error: null }
+    } catch {
+      return { error: 'Erro ao criar conta. Verifique sua conexão.' }
+    }
   }
 
   // Desloga o usuário

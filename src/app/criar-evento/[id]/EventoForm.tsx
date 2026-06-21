@@ -7,21 +7,23 @@ import { ArrowLeft, Loader2, Check, Lock, User, MapPin, Search, ArrowRight } fro
 import { cn } from '@/lib/utils'
 
 interface PlaceSuggestion {
-  placeId: string
-  nomePrincipal: string
+  placeId:        string
+  nomePrincipal:  string
   nomeSecundario: string
 }
 
 interface Responsavel {
   nome: string; cpf: string; telefone: string; email: string
 }
+
 interface Inicial {
   titulo: string; descricao: string; categoria: string
   dataInicio: string; dataFim: string
-  nomeLocal: string
+  nomeLocal: string; venueId: string | null
   cep: string; rua: string; numero: string
   bairro: string; cidade: string; estado: string; complemento: string
 }
+
 interface Props {
   eventoId:    string
   tipoPessoa:  'pf' | 'pj' | null
@@ -68,8 +70,13 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
   const [duracao,    setDuracao]    = useState('')
   const [numDias,    setNumDias]    = useState(1)
 
-  // Seção 3
-  const [nomeLocal,     setNomeLocal]     = useState(inicial.nomeLocal)
+  // Seção 3 — local (com suporte a venue salvo)
+  const [nomeLocal,      setNomeLocal]      = useState(inicial.nomeLocal)
+  const [venueId,        setVenueId]        = useState<string | null>(inicial.venueId)
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null)
+  const [selectedLat,    setSelectedLat]    = useState<number | null>(null)
+  const [selectedLng,    setSelectedLng]    = useState<number | null>(null)
+
   const [suggestions,   setSuggestions]   = useState<PlaceSuggestion[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [showDropdown,  setShowDropdown]  = useState(false)
@@ -86,12 +93,10 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
   const [cepLoading,  setCepLoading]  = useState(false)
   const [cepError,    setCepError]    = useState<string | null>(null)
 
-  // Save global
   const [saving, setSaving] = useState(false)
   const [saved,  setSaved]  = useState(false)
   const [erro,   setErro]   = useState<string | null>(null)
 
-  // Calcula data de fim com base em início + dias + duração
   const calcularFim = (inicio: string, dias: number, dur: string) => {
     if (!inicio) return
     const d = new Date(inicio)
@@ -102,20 +107,17 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
     setDataFim(d.toISOString().slice(0, 16))
   }
 
-  // Ao mudar data de início
   const handleDataInicio = (v: string) => {
     setDataInicio(v)
     if (v) calcularFim(v, numDias, duracao)
     else setDataFim(v)
   }
 
-  // Ao mudar número de dias
   const handleNumDias = (dias: number) => {
     setNumDias(dias)
     if (dataInicio) calcularFim(dataInicio, dias, duracao)
   }
 
-  // Ao mudar duração: recalcula data de fim a partir da data de início
   const handleDuracao = (v: string) => {
     setDuracao(v)
     const horas = parseFloat(v)
@@ -127,7 +129,6 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
     }
   }
 
-  // Fecha dropdown ao clicar fora
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -157,17 +158,27 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
     setNomeLocal(s.nomePrincipal)
     setShowDropdown(false)
     setSuggestions([])
-    // Busca endereço completo e preenche automaticamente
+    setSelectedPlaceId(s.placeId)
+    setVenueId(null) // será definido no save
     try {
       const res  = await fetch(`/api/places/details?place_id=${s.placeId}`)
       const data = await res.json()
-      if (data.cep)    { setCep(formatCEP(data.cep));  setCepError(null) }
+      if (data.cep)    { setCep(formatCEP(data.cep)); setCepError(null) }
       if (data.rua)    setRua(data.rua)
       if (data.numero) setNumero(data.numero)
       if (data.bairro) setBairro(data.bairro)
       if (data.cidade) setCidade(data.cidade)
       if (data.estado) setEstado(data.estado.slice(0, 2).toUpperCase())
-    } catch { /* silently ignore — user can fill manually */ }
+      if (data.lat != null) setSelectedLat(data.lat)
+      if (data.lng != null) setSelectedLng(data.lng)
+    } catch { /* usuário pode preencher manualmente */ }
+  }
+
+  // Quando o usuário digita manualmente, limpa o placeId selecionado
+  const handleNomeLocalChange = (v: string) => {
+    setNomeLocal(v)
+    if (selectedPlaceId) { setSelectedPlaceId(null); setSelectedLat(null); setSelectedLng(null) }
+    buscarSugestoes(v)
   }
 
   const buscarCEP = async (valor: string) => {
@@ -189,31 +200,56 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
     if (f.replace(/\D/g,'').length === 8) buscarCEP(f)
   }
 
-  // Campos mínimos para avançar: nome + data de início + alguma localização
   const podeContinuar = !!(
     titulo.trim() && titulo.trim() !== 'Novo evento' &&
     dataInicio &&
     (cidade.trim() || nomeLocal.trim())
   )
 
-  // Salva tudo — se continuar=true, navega para a próxima etapa
   const handleSalvar = async (continuar = false) => {
     setSaving(true); setErro(null); setSaved(false)
     try {
+      let venueIdToSave = venueId
+
+      // Se um local do Google Places foi selecionado, upsert na tabela venues
+      if (selectedPlaceId) {
+        const { data: venue } = await supabase
+          .from('venues')
+          .upsert({
+            name:            nomeLocal.trim(),
+            google_place_id: selectedPlaceId,
+            zip_code:        cep.replace(/\D/g,'')  || null,
+            street:          rua                     || null,
+            street_number:   numero                  || null,
+            neighborhood:    bairro                  || null,
+            city:            cidade                  || null,
+            state:           estado                  || null,
+            lat:             selectedLat,
+            lng:             selectedLng,
+          }, { onConflict: 'google_place_id' })
+          .select('id')
+          .single()
+        if (venue) {
+          venueIdToSave = venue.id
+          setVenueId(venue.id)
+        }
+      }
+
       await supabase.from('events').update({
-        title:         titulo.trim()        || 'Novo evento',
-        description:   descricao            || null,
-        category:      categoria            || null,
-        date_start:    dataInicio           || null,
-        date_end:      dataFim              || null,
-        venue_name:    nomeLocal.trim()     || null,
+        title:         titulo.trim()         || 'Novo evento',
+        description:   descricao             || null,
+        category:      categoria             || null,
+        date_start:    dataInicio            || null,
+        date_end:      dataFim               || null,
+        venue_name:    nomeLocal.trim()      || null,
+        venue_id:      venueIdToSave,
         zip_code:      cep.replace(/\D/g,'') || null,
-        street:        rua                  || null,
-        street_number: numero               || null,
+        street:        rua                   || null,
+        street_number: numero                || null,
         neighborhood:  bairro               || null,
-        city:          cidade               || null,
-        state:         estado               || null,
-        complement:    complemento          || null,
+        city:          cidade                || null,
+        state:         estado                || null,
+        complement:    complemento           || null,
       }).eq('id', eventoId)
 
       if (continuar) {
@@ -288,7 +324,6 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
         </div>
         <div className="p-6 flex flex-col gap-4">
 
-          {/* Início + Quantidade de dias */}
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
               <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>Início</label>
@@ -332,7 +367,6 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
             )}
           </div>
 
-          {/* Duração */}
           <div className="flex flex-col gap-1.5">
             <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>
               Duração do evento{' '}
@@ -361,7 +395,6 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
             </div>
           </div>
 
-          {/* Encerramento */}
           <div className="flex flex-col gap-1.5">
             <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>
               Encerramento{' '}
@@ -380,27 +413,27 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
         </div>
       </div>
 
-      {/* ── SEÇÃO 3: Endereço ── */}
+      {/* ── SEÇÃO 3: Local do evento ── */}
       <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-[#141414]">
           <div className="flex items-center gap-2">
             <MapPin size={14} className="text-[#E8B84B]" />
-            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Endereço do evento</p>
+            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Local do evento</p>
           </div>
-          <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Local onde o evento será realizado</p>
+          <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Busque pelo nome do local — o endereço é preenchido automaticamente e salvo na plataforma
+          </p>
         </div>
         <div className="p-6 flex flex-col gap-4">
 
+          {/* Busca Google Places */}
           <div className="flex flex-col gap-1.5" ref={dropdownRef}>
-            <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              Nome do local{' '}
-              <span className="text-[#333] normal-case tracking-normal font-normal">(opcional — preenche o endereço automaticamente)</span>
-            </label>
+            <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>Nome do local</label>
             <div className="relative">
               <input
                 type="text"
                 value={nomeLocal}
-                onChange={e => { setNomeLocal(e.target.value); buscarSugestoes(e.target.value) }}
+                onChange={e => handleNomeLocalChange(e.target.value)}
                 onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
                 placeholder="Ex: Allianz Parque, Arena Fonte Nova..."
                 className={cn(inputCls, 'pr-9')}
@@ -434,6 +467,17 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
                 </div>
               )}
             </div>
+            {/* Indica se local foi vinculado a um venue salvo */}
+            {venueId && (
+              <p className="text-green-400 text-xs flex items-center gap-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <Check size={11} /> Local salvo na plataforma
+              </p>
+            )}
+            {selectedPlaceId && !venueId && (
+              <p className="text-[#E8B84B] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Local será salvo ao gravar
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -534,9 +578,8 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
 
       {erro && <p className="text-red-400 text-sm text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erro}</p>}
 
-      {/* Botão dinâmico: salvar rascunho ou salvar e continuar */}
+      {/* Botões de ação fixos */}
       <div className="flex gap-3 sticky bottom-4">
-        {/* Salvar rascunho — sempre visível, discreto quando pode continuar */}
         <button type="button" onClick={() => handleSalvar(false)} disabled={saving}
           className={cn(
             'py-3.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-40',
@@ -555,7 +598,6 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
           }
         </button>
 
-        {/* Salvar e continuar — aparece quando campos mínimos estão preenchidos */}
         {podeContinuar && (
           <button type="button" onClick={() => handleSalvar(true)} disabled={saving}
             className="flex-1 py-3.5 rounded-xl text-sm font-semibold text-[#070707] hover:brightness-110 transition-all flex items-center justify-center gap-2 disabled:opacity-40"

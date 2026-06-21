@@ -17,7 +17,7 @@ export default async function EditarEventoPage({ params }: Props) {
 
   const { data: evento } = await supabase
     .from('events')
-    .select('id, title, description, category, date_start, date_end, venue_name, zip_code, street, street_number, neighborhood, city, state, complement, status, organizations(owner_id)')
+    .select('id, title, description, category, date_start, date_end, venue_name, venue_id, zip_code, street, street_number, neighborhood, city, state, complement, status, organizations(owner_id)')
     .eq('id', id)
     .single()
 
@@ -75,6 +75,7 @@ export default async function EditarEventoPage({ params }: Props) {
             dataInicio:    evento.date_start     ?? '',
             dataFim:       evento.date_end       ?? '',
             nomeLocal:     evento.venue_name     ?? '',
+            venueId:       (evento as unknown as { venue_id: string | null }).venue_id ?? null,
             cep:           evento.zip_code       ?? '',
             rua:           evento.street         ?? '',
             numero:        evento.street_number  ?? '',

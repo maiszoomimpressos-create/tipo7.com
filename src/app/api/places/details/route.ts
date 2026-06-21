@@ -36,5 +36,7 @@ export async function GET(req: NextRequest) {
     cidade: get('administrative_area_level_2') || get('locality'),
     estado: getShort('administrative_area_level_1'),
     enderecoCompleto: data.formattedAddress ?? '',
+    lat:    data.location?.latitude  ?? null,
+    lng:    data.location?.longitude ?? null,
   })
 }

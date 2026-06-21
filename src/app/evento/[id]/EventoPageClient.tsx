@@ -126,7 +126,8 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner }: Props) {
   // Índice do dia aberto no accordion de programação (0 = primeiro aberto por padrão)
   const [openDay,    setOpenDay]    = useState(0)
   const [selection,  setSelection]  = useState<Record<string, number>>({})
-  const [loading,    setLoading]    = useState(false)
+  const [loading,     setLoading]     = useState(false)
+  const [loadingPix,  setLoadingPix]  = useState(false)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
 
   const setQty = (id: string, qty: number, max: number) =>
@@ -150,11 +151,14 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner }: Props) {
 
   const isRascunho = evento.status === 'rascunho'
 
-  async function handleCheckout() {
-    const items = Object.entries(selection)
+  function getItems() {
+    return Object.entries(selection)
       .filter(([, qty]) => qty > 0)
       .map(([ticketId, quantity]) => ({ ticketId, quantity }))
+  }
 
+  async function handleCheckout() {
+    const items = getItems()
     if (!items.length) return
 
     setLoading(true)
@@ -179,6 +183,35 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner }: Props) {
       setCheckoutError('Erro de conexão. Tente novamente.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handlePixCheckout() {
+    const items = getItems()
+    if (!items.length) return
+
+    setLoadingPix(true)
+    setCheckoutError(null)
+
+    try {
+      const res = await fetch('/api/checkout/pix', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ eventoId: evento.id, items }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setCheckoutError(data.error ?? 'Erro ao gerar PIX')
+        return
+      }
+
+      window.location.href = `/checkout/pix/${data.orderId}`
+    } catch {
+      setCheckoutError('Erro de conexão. Tente novamente.')
+    } finally {
+      setLoadingPix(false)
     }
   }
 
@@ -542,19 +575,44 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner }: Props) {
                     </p>
                   )}
 
+                  {/* Botão PIX */}
+                  <button
+                    onClick={handlePixCheckout}
+                    disabled={loadingPix || loading || totalItems === 0}
+                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-105"
+                    style={{
+                      background:  totalItems > 0 ? '#32D583' : '#0d1a12',
+                      color:       totalItems > 0 ? '#071209' : '#1a3322',
+                      border:      totalItems > 0 ? 'none' : '1px solid #0d1a12',
+                      fontFamily:  'var(--font-dm-sans)',
+                    }}>
+                    {loadingPix
+                      ? <><Loader2 size={14} className="animate-spin" /> Gerando PIX...</>
+                      : 'Pagar com PIX'
+                    }
+                  </button>
+
+                  {/* Separador */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-px bg-[#111]" />
+                    <span className="text-[#2a2a2a] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>ou</span>
+                    <div className="flex-1 h-px bg-[#111]" />
+                  </div>
+
+                  {/* Botão Cartão/Boleto */}
                   <button
                     onClick={handleCheckout}
-                    disabled={loading || totalItems === 0}
-                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110"
+                    disabled={loading || loadingPix || totalItems === 0}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110"
                     style={{
-                      background:  totalItems > 0 ? ACCENT : '#111',
-                      color:       totalItems > 0 ? '#070707' : '#444',
-                      border:      totalItems > 0 ? 'none' : '1px solid #1a1a1a',
+                      background:  'transparent',
+                      color:       totalItems > 0 ? ACCENT : '#333',
+                      border:      `1px solid ${totalItems > 0 ? ACCENT + '40' : '#1a1a1a'}`,
                       fontFamily:  'var(--font-dm-sans)',
                     }}>
                     {loading
                       ? <><Loader2 size={14} className="animate-spin" /> Processando...</>
-                      : 'Finalizar compra'
+                      : 'Cartão ou Boleto'
                     }
                   </button>
                 </div>
