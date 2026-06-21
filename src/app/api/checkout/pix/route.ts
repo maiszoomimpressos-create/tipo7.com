@@ -1,5 +1,22 @@
 // POST /api/checkout/pix
-// Cria pagamento PIX via MP Payments API e retorna QR code
+// ─────────────────────────────────────────────────────────────────────────────
+// Checkout Transparente com PIX via Mercado Pago Payments API.
+//
+// Fluxo:
+//   1. Verifica autenticação do comprador
+//   2. Valida ingressos e calcula total (preços sempre do banco, nunca do cliente)
+//   3. Exige CPF no perfil — MP obriga CPF para pagamentos PIX
+//   4. Cria pedido (orders) e itens (order_items) como "pending"
+//   5. Chama MP Payments API → recebe QR code + código copia-e-cola
+//   6. Salva dados PIX no pedido para a tela de pagamento buscar depois
+//   7. Retorna orderId para redirecionar o comprador para /checkout/pix/[orderId]
+//
+// O webhook /api/webhooks/mercadopago atualiza o status do pedido quando
+// o MP confirmar o pagamento.
+//
+// ATENÇÃO: Use sempre o token de produção (APP_USR-...) no Vercel.
+// Token errado causa "Unauthorized use of live credentials" no MP.
+// ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
@@ -11,6 +28,7 @@ export async function POST(req: NextRequest) {
       items: { ticketId: string; quantity: number }[]
     }
 
+    // Verifica sessão do comprador
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
@@ -19,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     const admin = createServiceClient()
 
-    // Busca ingressos e evento para validar preços e pegar título
+    // Busca ingressos e título do evento em paralelo para validar preços
     const ticketIds = items.map(i => i.ticketId)
     const [{ data: tickets }, { data: evento }] = await Promise.all([
       admin.from('event_tickets').select('id, name, price, quantity').in('id', ticketIds).eq('event_id', eventoId),
@@ -28,6 +46,7 @@ export async function POST(req: NextRequest) {
 
     if (!tickets?.length) return NextResponse.json({ error: 'Ingressos não encontrados' }, { status: 400 })
 
+    // Monta itens com preços do banco (nunca confiar no que vem do cliente)
     const lineItems = items.map(item => {
       const ticket = tickets.find(t => t.id === item.ticketId)
       if (!ticket) throw new Error(`Ingresso ${item.ticketId} não encontrado`)
@@ -37,14 +56,15 @@ export async function POST(req: NextRequest) {
     const total = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0)
     if (total <= 0) return NextResponse.json({ error: 'PIX não disponível para ingressos gratuitos' }, { status: 400 })
 
-    // Busca CPF do usuário na tabela de perfis (obrigatório para PIX)
+    // CPF é obrigatório para criar pagamento PIX no MP
+    // Se o comprador não tiver CPF cadastrado no perfil, pedimos para preencher antes
     const { data: profile } = await admin.from('profiles').select('cpf, full_name').eq('id', user.id).single()
     const cpf = profile?.cpf?.replace(/\D/g, '')
     if (!cpf || cpf.length !== 11) {
       return NextResponse.json({ error: 'Cadastre seu CPF no perfil antes de pagar com PIX.' }, { status: 422 })
     }
 
-    // Cria pedido pendente
+    // Cria pedido com status pending — atualizado para approved pelo webhook do MP
     const { data: order, error: orderError } = await admin
       .from('orders')
       .insert({ user_id: user.id, event_id: eventoId, total, status: 'pending' })
@@ -55,7 +75,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: orderError?.message ?? 'Erro ao criar pedido' }, { status: 500 })
     }
 
-    // Cria itens do pedido
+    // Registra quais ingressos e quantidades fazem parte deste pedido
     await admin.from('order_items').insert(
       lineItems.map(({ ticket, quantity }) => ({
         order_id:   order.id,
@@ -65,36 +85,43 @@ export async function POST(req: NextRequest) {
       }))
     )
 
-    // Cria pagamento PIX no Mercado Pago
+    // Chama a API de Pagamentos do Mercado Pago para gerar o QR PIX
     const mpClient = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN! })
     const payment  = new Payment(mpClient)
 
     const fullName  = profile?.full_name ?? user.user_metadata?.full_name ?? ''
     const nameParts = fullName.trim().split(' ')
     const firstName = nameParts[0] ?? ''
+    // MP exige last_name preenchido — usa o primeiro nome como fallback se for nome único
     const lastName  = nameParts.slice(1).join(' ') || firstName
 
     const result = await payment.create({
       body: {
         transaction_amount: total,
+        // description limitado a 255 chars pois o MP rejeita textos mais longos
         description:        `Ingressos - ${evento?.title ?? 'Evento'}`.slice(0, 255),
         payment_method_id:  'pix',
         payer: {
-          email:      user.email ?? '',
-          first_name: firstName,
-          last_name:  lastName,
+          email:          user.email ?? '',
+          first_name:     firstName,
+          last_name:      lastName,
+          // CPF é obrigatório para PIX no Brasil (requisito do Banco Central)
           identification: { type: 'CPF', number: cpf },
         },
+        // notification_url: o MP chama este endpoint quando o status muda
+        // O webhook atualiza orders.status para approved/rejected/etc.
         notification_url:   'https://www.tipo7.com/api/webhooks/mercadopago',
         external_reference: order.id,
       },
     })
 
-    const qrCode       = result.point_of_interaction?.transaction_data?.qr_code       ?? null
+    // QR code para exibir como imagem; qr_code é o código copia-e-cola
+    const qrCode       = result.point_of_interaction?.transaction_data?.qr_code        ?? null
     const qrCodeBase64 = result.point_of_interaction?.transaction_data?.qr_code_base64 ?? null
+    // PIX expira em 30 minutos por padrão no MP
     const expiresAt    = result.date_of_expiration ?? null
 
-    // Salva o pagamento e QR code no pedido
+    // Persiste dados do PIX no pedido para a página /checkout/pix/[orderId] buscar
     await admin.from('orders').update({
       mp_payment_id:      String(result.id),
       pix_qr_code:        qrCode,
@@ -102,17 +129,12 @@ export async function POST(req: NextRequest) {
       pix_expires_at:     expiresAt,
     }).eq('id', order.id)
 
-    return NextResponse.json({
-      orderId:       order.id,
-      qrCode,
-      qrCodeBase64,
-      expiresAt,
-      total,
-    })
+    return NextResponse.json({ orderId: order.id, qrCode, qrCodeBase64, expiresAt, total })
 
   } catch (err) {
-    // O SDK do MP lança o corpo JSON da API — pode não ser instância de Error
-    console.error('[checkout/pix] raw error:', JSON.stringify(err))
+    // O SDK do MP lança o corpo JSON bruto da API quando recebe erro HTTP
+    // Isso significa que o erro pode não ser instância de Error — tratar os dois casos
+    console.error('[checkout/pix]', JSON.stringify(err))
     let msg = 'Erro interno'
     if (err instanceof Error) {
       msg = err.message
