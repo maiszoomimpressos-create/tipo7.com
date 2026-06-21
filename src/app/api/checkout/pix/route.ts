@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
     const result = await payment.create({
       body: {
         transaction_amount: total,
-        description:        `Ingressos — ${evento?.title ?? 'Evento'}`,
+        description:        `Ingressos - ${evento?.title ?? 'Evento'}`.slice(0, 255),
         payment_method_id:  'pix',
         payer: {
           email:      user.email ?? '',
@@ -111,8 +111,15 @@ export async function POST(req: NextRequest) {
     })
 
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Erro interno'
-    console.error('[checkout/pix]', msg)
+    // O SDK do MP lança o corpo JSON da API — pode não ser instância de Error
+    console.error('[checkout/pix] raw error:', JSON.stringify(err))
+    let msg = 'Erro interno'
+    if (err instanceof Error) {
+      msg = err.message
+    } else if (err && typeof err === 'object') {
+      const e = err as Record<string, unknown>
+      msg = String(e.message ?? e.error ?? e.cause ?? JSON.stringify(err))
+    }
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
