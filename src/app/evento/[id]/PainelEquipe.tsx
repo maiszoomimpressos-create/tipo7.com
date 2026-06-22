@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Users, UserPlus, Trash2, Loader2, Check, AlertTriangle, Shield } from 'lucide-react'
+import { Users, UserPlus, Trash2, Loader2, Check, AlertTriangle, Shield, Link2 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
 
@@ -27,6 +27,7 @@ export function PainelEquipe({ eventoId }: Props) {
   const [membros,      setMembros]      = useState<Membro[]>([])
   const [loading,      setLoading]      = useState(true)
   const [adicionando,  setAdicionando]  = useState(false)
+  const [linkCopiado,  setLinkCopiado]  = useState(false)
   const [salvando,     setSalvando]     = useState(false)
   const [removendo,    setRemovendo]    = useState<string | null>(null)
   const [err,          setErr]          = useState<string | null>(null)
@@ -97,7 +98,7 @@ export function PainelEquipe({ eventoId }: Props) {
   return (
     <div className="flex flex-col gap-4">
 
-      {/* Cabeçalho + botão adicionar */}
+      {/* Cabeçalho + botões */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Users size={14} style={{ color: ACCENT }} />
@@ -105,17 +106,40 @@ export function PainelEquipe({ eventoId }: Props) {
             Equipe do evento
           </span>
         </div>
-        {!adicionando && (
+        <div className="flex items-center gap-2">
+          {/* Link do scanner */}
           <button
             type="button"
-            onClick={() => { setAdicionando(true); setErr(null); setSucesso(false) }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-[#070707] transition-colors hover:brightness-110"
-            style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+            onClick={() => {
+              navigator.clipboard.writeText(`${window.location.origin}/scanner/${eventoId}`)
+              setLinkCopiado(true)
+              setTimeout(() => setLinkCopiado(false), 2000)
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            style={{
+              background:  linkCopiado ? '#4ade8015' : '#111',
+              border:      `1px solid ${linkCopiado ? '#4ade8040' : '#222'}`,
+              color:       linkCopiado ? '#4ade80' : '#666',
+              fontFamily:  'var(--font-dm-sans)',
+            }}
+            title="Copiar link do scanner para compartilhar com a equipe"
           >
-            <UserPlus size={12} />
-            Adicionar
+            {linkCopiado ? <Check size={12} /> : <Link2 size={12} />}
+            {linkCopiado ? 'Copiado!' : 'Link scanner'}
           </button>
-        )}
+
+          {!adicionando && (
+            <button
+              type="button"
+              onClick={() => { setAdicionando(true); setErr(null); setSucesso(false) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-[#070707] transition-colors hover:brightness-110"
+              style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <UserPlus size={12} />
+              Adicionar
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Formulário de novo membro */}
