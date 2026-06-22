@@ -43,6 +43,11 @@ export default async function MeusIngressosPage() {
           cpf,
           email,
           birth_date
+        ),
+        tickets (
+          slot_number,
+          qr_token,
+          status
         )
       )
     `)

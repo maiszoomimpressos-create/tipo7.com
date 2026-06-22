@@ -18,12 +18,19 @@ type TicketHolder = {
   birth_date:  string
 }
 
+type TicketQR = {
+  slot_number: number
+  qr_token:    string
+  status:      string
+}
+
 type OrderItem = {
   id:              string
   quantity:        number
   unit_price:      number
   event_tickets:   { id: string; name: string } | null
   ticket_holders:  TicketHolder[]
+  tickets:         TicketQR[]
 }
 
 export type Order = {

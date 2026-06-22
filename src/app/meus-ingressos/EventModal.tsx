@@ -1,8 +1,9 @@
 'use client'
 
-// Modal de detalhes do evento + gestão de portadores (edição inline por slot)
+// Modal de detalhes do evento + gestão de portadores (edição inline por slot) + QR codes
 import { useEffect, useRef, useState } from 'react'
-import { X, CalendarDays, MapPin, Ticket, Pencil, Check, Loader2, Users } from 'lucide-react'
+import { X, CalendarDays, MapPin, Ticket, Pencil, Check, Loader2, Users, QrCode } from 'lucide-react'
+import QRCode from 'react-qr-code'
 import type { EventGroup } from './MeusIngressosClient'
 
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
@@ -64,17 +65,20 @@ function SlotRow({
   ticketName,
   slotNumber,
   initial,
+  qrToken,
   onSaved,
 }: {
   orderItemId: string
   ticketName:  string
   slotNumber:  number
   initial:     SlotData | null
+  qrToken:     string | null
   onSaved:     (data: SlotData) => void
 }) {
-  const [editing, setEditing] = useState(!initial)
-  const [saving,  setSaving]  = useState(false)
-  const [err,     setErr]     = useState<string | null>(null)
+  const [editing,    setEditing]    = useState(!initial)
+  const [saving,     setSaving]     = useState(false)
+  const [err,        setErr]        = useState<string | null>(null)
+  const [showQR,     setShowQR]     = useState(false)
   const [form, setForm] = useState<SlotData>(
     initial
       ? { ...initial, birth_date: isoToDisplay(initial.birth_date) }
@@ -127,10 +131,88 @@ function SlotRow({
     }
   }
 
-  // Linha de exibição (não editando)
-  if (!editing) {
+  // Formulário de edição inline
+  if (editing) {
     return (
-      <div className="flex items-center justify-between py-2.5 px-3 rounded-xl" style={{ background: '#111', border: '1px solid #1a1a1a' }}>
+      <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(232,184,75,0.2)', background: '#0d0d0d' }}>
+        <div className="px-3 py-2 border-b border-[#1a1a1a]">
+          <p className="text-[#E8B84B] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            {ticketName} · Portador {slotNumber}
+          </p>
+        </div>
+        <div className="px-3 py-3 space-y-2.5">
+          <input
+            type="text"
+            value={form.full_name}
+            onChange={e => set('full_name', e.target.value)}
+            placeholder="Nome completo"
+            className="w-full bg-[#111] border border-[#1e1e1e] rounded-lg px-3 py-2 text-white text-sm placeholder-[#333] focus:outline-none focus:border-[#E8B84B]/40 transition-colors"
+            style={{ fontFamily: 'var(--font-dm-sans)' }}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="text"
+              value={form.cpf}
+              onChange={e => set('cpf', e.target.value)}
+              placeholder="CPF"
+              maxLength={14}
+              className="w-full bg-[#111] border border-[#1e1e1e] rounded-lg px-3 py-2 text-white text-sm placeholder-[#333] focus:outline-none focus:border-[#E8B84B]/40 transition-colors"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            />
+            <input
+              type="text"
+              inputMode="numeric"
+              value={form.birth_date}
+              onChange={e => set('birth_date', e.target.value)}
+              placeholder="DD/MM/AAAA"
+              maxLength={10}
+              className="w-full bg-[#111] border border-[#1e1e1e] rounded-lg px-3 py-2 text-white text-sm placeholder-[#333] focus:outline-none focus:border-[#E8B84B]/40 transition-colors"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            />
+          </div>
+          <input
+            type="email"
+            value={form.email}
+            onChange={e => set('email', e.target.value)}
+            placeholder="E-mail"
+            className="w-full bg-[#111] border border-[#1e1e1e] rounded-lg px-3 py-2 text-white text-sm placeholder-[#333] focus:outline-none focus:border-[#E8B84B]/40 transition-colors"
+            style={{ fontFamily: 'var(--font-dm-sans)' }}
+          />
+
+          {err && <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{err}</p>}
+
+          <div className="flex gap-2 pt-0.5">
+            {initial && (
+              <button
+                type="button"
+                onClick={() => { setEditing(false); setForm(initial) }}
+                className="flex-1 py-2 rounded-lg text-xs text-[#444] border border-[#1e1e1e] hover:border-[#333] hover:text-white transition-colors"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              >
+                Cancelar
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-[#070707] disabled:opacity-60"
+              style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}
+            >
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              {saving ? 'Salvando...' : 'Confirmar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Linha de exibição (não editando)
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #1a1a1a', background: '#111' }}>
+      {/* Linha principal */}
+      <div className="flex items-center justify-between px-3 py-2.5">
         <div>
           <p className="text-[#555] text-[10px] mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
             {ticketName} · Portador {slotNumber}
@@ -139,89 +221,48 @@ function SlotRow({
             {form.full_name}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors hover:bg-[#1a1a1a]"
-        >
-          <Pencil size={13} className="text-[#444] hover:text-white" />
-        </button>
-      </div>
-    )
-  }
-
-  // Formulário de edição inline
-  return (
-    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(232,184,75,0.2)', background: '#0d0d0d' }}>
-      <div className="px-3 py-2 border-b border-[#1a1a1a]">
-        <p className="text-[#E8B84B] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          {ticketName} · Portador {slotNumber}
-        </p>
-      </div>
-      <div className="px-3 py-3 space-y-2.5">
-        <input
-          type="text"
-          value={form.full_name}
-          onChange={e => set('full_name', e.target.value)}
-          placeholder="Nome completo"
-          className="w-full bg-[#111] border border-[#1e1e1e] rounded-lg px-3 py-2 text-white text-sm placeholder-[#333] focus:outline-none focus:border-[#E8B84B]/40 transition-colors"
-          style={{ fontFamily: 'var(--font-dm-sans)' }}
-        />
-        <div className="grid grid-cols-2 gap-2">
-          <input
-            type="text"
-            value={form.cpf}
-            onChange={e => set('cpf', e.target.value)}
-            placeholder="CPF"
-            maxLength={14}
-            className="w-full bg-[#111] border border-[#1e1e1e] rounded-lg px-3 py-2 text-white text-sm placeholder-[#333] focus:outline-none focus:border-[#E8B84B]/40 transition-colors"
-            style={{ fontFamily: 'var(--font-dm-sans)' }}
-          />
-          <input
-            type="text"
-            inputMode="numeric"
-            value={form.birth_date}
-            onChange={e => set('birth_date', e.target.value)}
-            placeholder="DD/MM/AAAA"
-            maxLength={10}
-            className="w-full bg-[#111] border border-[#1e1e1e] rounded-lg px-3 py-2 text-white text-sm placeholder-[#333] focus:outline-none focus:border-[#E8B84B]/40 transition-colors"
-            style={{ fontFamily: 'var(--font-dm-sans)' }}
-          />
-        </div>
-        <input
-          type="email"
-          value={form.email}
-          onChange={e => set('email', e.target.value)}
-          placeholder="E-mail"
-          className="w-full bg-[#111] border border-[#1e1e1e] rounded-lg px-3 py-2 text-white text-sm placeholder-[#333] focus:outline-none focus:border-[#E8B84B]/40 transition-colors"
-          style={{ fontFamily: 'var(--font-dm-sans)' }}
-        />
-
-        {err && <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{err}</p>}
-
-        <div className="flex gap-2 pt-0.5">
-          {initial && (
+        <div className="flex items-center gap-1">
+          {/* Botão QR — só aparece se o ticket já foi gerado */}
+          {qrToken && (
             <button
               type="button"
-              onClick={() => { setEditing(false); setForm(initial) }}
-              className="flex-1 py-2 rounded-lg text-xs text-[#444] border border-[#1e1e1e] hover:border-[#333] hover:text-white transition-colors"
-              style={{ fontFamily: 'var(--font-dm-sans)' }}
+              onClick={() => setShowQR(q => !q)}
+              className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors hover:bg-[#1a1a1a]"
+              title={showQR ? 'Ocultar QR' : 'Ver QR code'}
             >
-              Cancelar
+              <QrCode size={13} className={showQR ? 'text-[#E8B84B]' : 'text-[#444] hover:text-white'} />
             </button>
           )}
           <button
             type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-[#070707] disabled:opacity-60"
-            style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}
+            onClick={() => setEditing(true)}
+            className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors hover:bg-[#1a1a1a]"
           >
-            {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-            {saving ? 'Salvando...' : 'Confirmar'}
+            <Pencil size={13} className="text-[#444] hover:text-white" />
           </button>
         </div>
       </div>
+
+      {/* QR code expandido */}
+      {showQR && qrToken && (
+        <div
+          className="px-3 pb-4 pt-1 flex flex-col items-center gap-3"
+          style={{ borderTop: '1px solid #1a1a1a' }}
+        >
+          <div className="bg-white p-3 rounded-xl">
+            <QRCode
+              value={qrToken}
+              size={160}
+              fgColor="#070707"
+              bgColor="#ffffff"
+              level="M"
+            />
+          </div>
+          <p className="text-[#333] text-[10px] text-center break-all" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            {qrToken}
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -340,7 +381,7 @@ export function EventModal({ group, onClose, onSaved }: Props) {
             </span>
           </div>
 
-          {/* Portadores */}
+          {/* Portadores + QR codes */}
           {group.allApproved && (
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -363,6 +404,8 @@ export function EventModal({ group, onClose, onSaved }: Props) {
                   Array.from({ length: item.quantity }, (_, i) => {
                     const key     = `${item.id}-${i + 1}`
                     const initial = localHolders[key] ?? null
+                    // Encontra o qr_token do slot correspondente
+                    const qrToken = item.tickets?.find(t => t.slot_number === i + 1)?.qr_token ?? null
                     return (
                       <SlotRow
                         key={key}
@@ -370,6 +413,7 @@ export function EventModal({ group, onClose, onSaved }: Props) {
                         ticketName={item.event_tickets?.name ?? 'Ingresso'}
                         slotNumber={i + 1}
                         initial={initial}
+                        qrToken={qrToken}
                         onSaved={(data) => {
                           setLocalHolders(prev => ({ ...prev, [key]: data }))
                           onSaved()

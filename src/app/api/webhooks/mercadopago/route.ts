@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
   const newStatus = STATUS_MAP[paymentData.status ?? ''] ?? 'pending'
 
   const admin = createServiceClient()
+
   await admin
     .from('orders')
     .update({
@@ -38,6 +39,29 @@ export async function POST(req: NextRequest) {
       updated_at:     new Date().toISOString(),
     })
     .eq('id', orderId)
+
+  // Gera um ticket por slot apenas quando o pagamento for aprovado
+  if (newStatus === 'approved') {
+    const { data: items } = await admin
+      .from('order_items')
+      .select('id, quantity')
+      .eq('order_id', orderId)
+
+    if (items && items.length > 0) {
+      const ticketRows = items.flatMap(item =>
+        Array.from({ length: item.quantity }, (_, i) => ({
+          order_id:      orderId,
+          order_item_id: item.id,
+          slot_number:   i + 1,
+        }))
+      )
+
+      // ignoreDuplicates evita erro se o webhook disparar mais de uma vez
+      await admin
+        .from('tickets')
+        .upsert(ticketRows, { onConflict: 'order_item_id,slot_number', ignoreDuplicates: true })
+    }
+  }
 
   return NextResponse.json({ ok: true })
 }
