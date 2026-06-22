@@ -85,8 +85,35 @@ export async function POST(req: NextRequest) {
       }))
     )
 
+    // Busca conta MP do promotor do evento (split de pagamento)
+    const { data: eventOwnerInfo } = await admin
+      .from('events')
+      .select('organization_id, organizations(owner_id)')
+      .eq('id', eventoId)
+      .single()
+
+    const orgRaw2  = eventOwnerInfo?.organizations as unknown
+    const orgData2 = (Array.isArray(orgRaw2) ? orgRaw2[0] : orgRaw2) as { owner_id: string } | null
+    const ownerId2 = orgData2?.owner_id
+
+    let mpToken2:      string           = process.env.MP_ACCESS_TOKEN!
+    let applicationFee: number | undefined = undefined
+
+    if (ownerId2) {
+      const { data: mpAccount2 } = await admin
+        .from('promotor_mp_accounts')
+        .select('mp_access_token, fee_pct')
+        .eq('user_id', ownerId2)
+        .single()
+
+      if (mpAccount2) {
+        mpToken2       = mpAccount2.mp_access_token
+        applicationFee = Math.round(total * Number(mpAccount2.fee_pct)) / 100
+      }
+    }
+
     // Chama a API de Pagamentos do Mercado Pago para gerar o QR PIX
-    const mpClient = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN! })
+    const mpClient = new MercadoPagoConfig({ accessToken: mpToken2 })
     const payment  = new Payment(mpClient)
 
     const fullName  = profile?.full_name ?? user.user_metadata?.full_name ?? ''
@@ -112,6 +139,7 @@ export async function POST(req: NextRequest) {
         // O webhook atualiza orders.status para approved/rejected/etc.
         notification_url:   'https://www.tipo7.com/api/webhooks/mercadopago',
         external_reference: order.id,
+        application_fee:    applicationFee,
       },
     })
 

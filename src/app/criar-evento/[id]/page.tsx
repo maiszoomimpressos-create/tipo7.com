@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import { Header }     from '@/components/layout/Header'
 import { EventoForm } from './EventoForm'
+import { MPConnect }  from './MPConnect'
 import { FileEdit }   from 'lucide-react'
 
 interface Props {
@@ -86,6 +87,8 @@ export default async function EditarEventoPage({ params }: Props) {
             capacidade:    (evento as unknown as { capacity: number | null }).capacity?.toString() ?? '',
           }}
         />
+
+        <MPConnect />
 
       </main>
     </div>

@@ -61,8 +61,35 @@ export async function POST(req: NextRequest) {
       }))
     )
 
+    // Busca conta MP do promotor do evento (split de pagamento)
+    const { data: eventInfo } = await admin
+      .from('events')
+      .select('organization_id, organizations(owner_id)')
+      .eq('id', eventoId)
+      .single()
+
+    const orgRaw  = eventInfo?.organizations as unknown
+    const orgData = (Array.isArray(orgRaw) ? orgRaw[0] : orgRaw) as { owner_id: string } | null
+    const ownerId = orgData?.owner_id
+
+    let mpToken:       string           = process.env.MP_ACCESS_TOKEN!
+    let marketplaceFee: number | undefined = undefined
+
+    if (ownerId) {
+      const { data: mpAccount } = await admin
+        .from('promotor_mp_accounts')
+        .select('mp_access_token, fee_pct')
+        .eq('user_id', ownerId)
+        .single()
+
+      if (mpAccount) {
+        mpToken        = mpAccount.mp_access_token
+        marketplaceFee = Math.round(total * Number(mpAccount.fee_pct)) / 100
+      }
+    }
+
     // Cria preferência no Mercado Pago
-    const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN! })
+    const client = new MercadoPagoConfig({ accessToken: mpToken })
     const preference = new Preference(client)
 
     // back_urls sempre apontam para produção — MP rejeita localhost em credenciais reais
@@ -90,6 +117,7 @@ export async function POST(req: NextRequest) {
         auto_return:        'approved',
         notification_url:   `${MP_BASE_URL}/api/webhooks/mercadopago`,
         external_reference: order.id,
+        marketplace_fee:    marketplaceFee,
       },
     })
 

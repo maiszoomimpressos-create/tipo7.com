@@ -1,7 +1,5 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://tipo7.com'
 
 // ---------------------------------------------------------------------------
@@ -210,6 +208,7 @@ export async function sendTicketEmail({
   event:     EventEmailInfo
   tickets:   TicketEmailInfo[]
 }) {
+  const resend = new Resend(process.env.RESEND_API_KEY)
   await resend.emails.send({
     from:    'Tipo7 <ingressos@tipo7.com>',
     to:      [to],
