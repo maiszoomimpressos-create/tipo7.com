@@ -22,6 +22,7 @@ interface Inicial {
   nomeLocal: string; venueId: string | null
   cep: string; rua: string; numero: string
   bairro: string; cidade: string; estado: string; complemento: string
+  capacidade: string
 }
 
 interface Props {
@@ -90,6 +91,7 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
   const [cidade,      setCidade]      = useState(inicial.cidade)
   const [estado,      setEstado]      = useState(inicial.estado)
   const [complemento, setComplemento] = useState(inicial.complemento)
+  const [capacidade,  setCapacidade]  = useState(inicial.capacidade)
   const [cepLoading,  setCepLoading]  = useState(false)
   const [cepError,    setCepError]    = useState<string | null>(null)
 
@@ -250,6 +252,7 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
         city:          cidade                || null,
         state:         estado                || null,
         complement:    complemento           || null,
+        capacity:      capacidade ? parseInt(capacidade, 10) : null,
       }).eq('id', eventoId)
 
       if (continuar) {
@@ -530,6 +533,25 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
               <input type="text" value={estado} onChange={e => setEstado(e.target.value.toUpperCase().slice(0,2))} placeholder="PR"
                 className={inputCls} style={{ fontFamily: 'var(--font-dm-sans)' }} />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Capacidade do local{' '}
+              <span className="text-[#333] normal-case tracking-normal font-normal">(número máximo de pessoas)</span>
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={capacidade}
+              onChange={e => setCapacidade(e.target.value)}
+              placeholder="Ex: 1000"
+              className={inputCls}
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            />
+            <p className="text-[#333] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              A soma de todos os ingressos não pode ultrapassar este limite.
+            </p>
           </div>
         </div>
       </div>

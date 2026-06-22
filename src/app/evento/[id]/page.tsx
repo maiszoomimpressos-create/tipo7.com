@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound }      from 'next/navigation'
 import { Header }        from '@/components/layout/Header'
 import { EventoPageClient } from './EventoPageClient'
@@ -19,7 +19,7 @@ export default async function EventoPage({ params }: Props) {
       date_start, date_end,
       venue_name, city, state, street,
       ticket_mode, package_discount_pct,
-      banner_url, organization_id
+      banner_url, organization_id, capacity
     `)
     .eq('id', id)
     .single()
@@ -54,6 +54,22 @@ export default async function EventoPage({ params }: Props) {
     .select('id, name, price, quantity, event_day_id')
     .eq('event_id', id)
     .order('order_index')
+
+  // Para o organizador: busca quantidades vendidas por tipo (usa service client — RLS bloquearia)
+  let soldByTicket: Record<string, number> = {}
+  if (isOwner && ingressos && ingressos.length > 0) {
+    const admin = createServiceClient()
+    const ticketIds = ingressos.map(t => t.id)
+    const { data: soldRows } = await admin
+      .from('order_items')
+      .select('ticket_id, quantity, orders!inner(status)')
+      .in('ticket_id', ticketIds)
+      .eq('orders.status', 'approved')
+
+    for (const row of soldRows ?? []) {
+      soldByTicket[row.ticket_id] = (soldByTicket[row.ticket_id] ?? 0) + (row.quantity ?? 0)
+    }
+  }
 
   type AttractionRow = { name: string; scheduled_time: string | null; order_index: number }
 
@@ -95,6 +111,8 @@ export default async function EventoPage({ params }: Props) {
           eventDayId: t.event_day_id  ?? null,
         }))}
         isOwner={isOwner}
+        capacity={evento.capacity ?? null}
+        soldByTicket={soldByTicket}
       />
     </div>
   )

@@ -6,6 +6,8 @@ import {
   MapPin, Calendar, Clock, Tag, ChevronDown, ChevronUp,
   Ticket, AlertCircle, ExternalLink, Music, Loader2,
 } from 'lucide-react'
+import { PainelOrganizador } from './PainelOrganizador'
+import type { IngressoEditavel } from './PainelIngressos'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -49,10 +51,12 @@ interface Ingresso {
 }
 
 interface Props {
-  evento:    Evento
-  dias:      Dia[]
-  ingressos: Ingresso[]
-  isOwner:   boolean
+  evento:         Evento
+  dias:           Dia[]
+  ingressos:      Ingresso[]
+  isOwner:        boolean
+  capacity:       number | null
+  soldByTicket:   Record<string, number>
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -122,7 +126,7 @@ function TicketRow({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function EventoPageClient({ evento, dias, ingressos, isOwner }: Props) {
+export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, soldByTicket }: Props) {
   // Índice do dia aberto no accordion de programação (0 = primeiro aberto por padrão)
   const [openDay,    setOpenDay]    = useState(0)
   const [selection,  setSelection]  = useState<Record<string, number>>({})
@@ -430,8 +434,22 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner }: Props) {
           )}
         </div>
 
-        {/* ── Coluna direita — painel de ingressos (sticky no desktop) ──── */}
+        {/* ── Coluna direita — painel de gestão (organizador) ou compra ──── */}
         <div className="lg:sticky lg:top-24">
+          {isOwner && (
+            <PainelOrganizador
+              eventoId={evento.id}
+              capacity={capacity}
+              ingressos={ingressos.map((t): IngressoEditavel => ({
+                id:       t.id,
+                name:     t.name,
+                price:    t.price,
+                quantity: t.quantity,
+                sold:     soldByTicket[t.id] ?? 0,
+              }))}
+            />
+          )}
+          {!isOwner && (
           <div className="rounded-2xl border border-[#1a1a1a] bg-[#0d0d0d] overflow-hidden">
 
             {/* Cabeçalho do painel */}
@@ -619,6 +637,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner }: Props) {
               )}
             </div>
           </div>
+          )}
         </div>
       </div>
     </>
