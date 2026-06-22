@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Ticket, Users, Settings, ExternalLink } from 'lucide-react'
+import { Ticket, Users, Settings, ExternalLink, BarChart2 } from 'lucide-react'
 import { PainelIngressos, type IngressoEditavel } from './PainelIngressos'
 import { PainelEquipe } from './PainelEquipe'
 
@@ -35,13 +35,23 @@ export function PainelOrganizador({ eventoId, ingressos, capacity }: Props) {
               Painel do organizador
             </span>
           </div>
-          <a
-            href={`/criar-evento/${eventoId}`}
-            className="flex items-center gap-1 text-[#555] text-xs hover:text-white transition-colors"
-            style={{ fontFamily: 'var(--font-dm-sans)' }}
-          >
-            Editar evento <ExternalLink size={11} />
-          </a>
+          <div className="flex items-center gap-2">
+            <a
+              href={`/dashboard/${eventoId}`}
+              className="flex items-center gap-1 text-[#555] text-xs hover:text-white transition-colors"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <BarChart2 size={11} /> Relatórios
+            </a>
+            <span className="text-[#222]">·</span>
+            <a
+              href={`/criar-evento/${eventoId}`}
+              className="flex items-center gap-1 text-[#555] text-xs hover:text-white transition-colors"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            >
+              Editar <ExternalLink size={11} />
+            </a>
+          </div>
         </div>
 
         {/* Abas */}
