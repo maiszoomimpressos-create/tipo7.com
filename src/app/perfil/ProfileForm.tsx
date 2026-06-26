@@ -84,6 +84,7 @@ interface Props {
     full_name:    string
     phone:        string
     cpf:          string
+    rg:           string
     birth_date:   string
     avatar_url:   string
     // Endereço
@@ -107,6 +108,7 @@ export function ProfileForm({ userId, initial }: Props) {
   const [name,      setName]      = useState(initial.full_name)
   const [phone,     setPhone]     = useState(formatPhone(initial.phone))
   const [cpf,       setCpf]       = useState(formatCPF(initial.cpf))
+  const [rg,        setRg]        = useState(initial.rg)
   const [birthDate, setBirthDate] = useState(isoToDisplay(initial.birth_date ?? ''))
 
   // ── Estado: avatar ──
@@ -307,6 +309,7 @@ export function ProfileForm({ userId, initial }: Props) {
           full_name:    name.trim(),
           phone:        phone.replace(/\D/g,'')   || null,
           cpf:          cpf.replace(/\D/g,'')     || null,
+          rg:           rg.trim()                 || null,
           birth_date:   displayToISO(birthDate)    || null,
           avatar_url:   novaAvatarUrl             || null,
           // Endereço
@@ -461,6 +464,19 @@ export function ProfileForm({ userId, initial }: Props) {
               value={cpf}
               onChange={e => setCpf(formatCPF(e.target.value))}
               placeholder="000.000.000-00"
+              autoComplete="off"
+              className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-[#E8B84B]/40 focus:bg-[#131313] placeholder:text-[#383838]"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            />
+          </Field>
+
+          {/* RG */}
+          <Field label="RG" optional>
+            <input
+              type="text"
+              value={rg}
+              onChange={e => setRg(e.target.value.slice(0, 20))}
+              placeholder="Ex: 12.345.678-9"
               autoComplete="off"
               className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-[#E8B84B]/40 focus:bg-[#131313] placeholder:text-[#383838]"
               style={{ fontFamily: 'var(--font-dm-sans)' }}

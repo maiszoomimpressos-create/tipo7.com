@@ -14,6 +14,7 @@ interface EventoItem {
   status:     'rascunho' | 'publicado'
   date_start: string | null
   created_at: string
+  banner_url: string | null
 }
 
 interface Props {
@@ -28,7 +29,7 @@ const labelTipo = { pf: 'Pessoa física', pj: 'Pessoa jurídica' }
 
 const MESES_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
 const formatData = (iso: string) => {
-  const d = new Date(iso + 'T12:00:00')
+  const d = new Date(iso.slice(0, 10) + 'T12:00:00')
   return `${d.getDate()} de ${MESES_PT[d.getMonth()]} de ${d.getFullYear()}`
 }
 
@@ -148,30 +149,38 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, pr
         {lista.length > 0 && (
           <div className="grid grid-cols-2 gap-4">
             {lista.map(ev => (
-              <div key={ev.id}
-                className="group relative bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden hover:border-[#2a2a2a] transition-colors">
+              <a key={ev.id} href={`/evento/${ev.id}`}
+                className="group relative bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden hover:border-[#E8B84B]/30 transition-colors block">
 
-                <div className="relative w-full h-[250px] bg-[#0a0a0a] flex items-center justify-center overflow-hidden">
-                  <ImageIcon size={32} className="text-[#1e1e1e]" />
+                <div className="relative w-full h-[200px] bg-[#0a0a0a] flex items-center justify-center overflow-hidden">
+                  {ev.banner_url
+                    ? <img src={ev.banner_url} alt={ev.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    : <ImageIcon size={32} className="text-[#1e1e1e]" />
+                  }
 
+                  {/* Overlay de ações — para navegação interna sem sair da lista */}
                   <div className="absolute inset-0 bg-black/75 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-2 p-4">
                     <a href={`/criar-evento/${ev.id}`}
+                      onClick={e => e.stopPropagation()}
                       className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors"
                       style={{ fontFamily: 'var(--font-dm-sans)' }}>
                       <Settings size={11} /> Informações
                     </a>
                     <a href={`/criar-evento/${ev.id}/ingressos`}
+                      onClick={e => e.stopPropagation()}
                       className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors"
                       style={{ fontFamily: 'var(--font-dm-sans)' }}>
                       <Ticket size={11} /> Ingressos
                     </a>
                     <a href={`/criar-evento/${ev.id}/imagens`}
+                      onClick={e => e.stopPropagation()}
                       className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors"
                       style={{ fontFamily: 'var(--font-dm-sans)' }}>
                       <ImageIcon size={11} /> Imagens
                     </a>
                     {ev.status === 'publicado' && (
                       <a href={`/evento/${ev.id}`}
+                        onClick={e => e.stopPropagation()}
                         className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#E8B84B]/20 hover:bg-[#E8B84B]/30 text-[#E8B84B] text-xs font-medium transition-colors"
                         style={{ fontFamily: 'var(--font-dm-sans)' }}>
                         <ExternalLink size={11} /> Ver página
@@ -179,7 +188,7 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, pr
                     )}
                   </div>
 
-                  {/* Botão excluir — abre modal de confirmação */}
+                  {/* Botão excluir */}
                   <button type="button" onClick={e => abrirConfirmar(ev.id, e)}
                     disabled={excluindo === ev.id}
                     className="absolute top-2.5 right-2.5 w-7 h-7 rounded-lg bg-black/60 flex items-center justify-center text-[#444] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
@@ -202,7 +211,7 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, pr
                   </p>
                 </div>
 
-              </div>
+              </a>
             ))}
           </div>
         )}

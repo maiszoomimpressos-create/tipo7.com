@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { LayoutDashboard, Users, Calendar, DollarSign, Shield } from 'lucide-react'
+import { LayoutDashboard, Users, Calendar, DollarSign, Shield, FileText } from 'lucide-react'
 import type { AdminRole } from '@/lib/adminAuth'
 
 const ACCENT = '#E8B84B'
@@ -13,6 +13,7 @@ const NAV = [
   { href: '/admin/eventos',    label: 'Eventos',    icon: Calendar,        perm: 'gerenciar_eventos'    },
   { href: '/admin/financeiro', label: 'Financeiro', icon: DollarSign,      perm: 'gerenciar_financeiro' },
   { href: '/admin/equipe',     label: 'Equipe',     icon: Shield,          perm: 'gerenciar_equipe'     },
+  { href: '/admin/conteudo',   label: 'Conteúdo',   icon: FileText,        perm: 'super_admin_only'     },
 ]
 
 interface Props {
@@ -26,6 +27,7 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
 
   function canSee(perm: string | null) {
     if (!perm) return true
+    if (perm === 'super_admin_only') return role === 'super_admin'
     if (role === 'super_admin' || role === 'admin') return true
     return permissions.includes(perm)
   }
@@ -37,7 +39,9 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
 
       {/* Logo */}
       <div className="px-5 py-5 border-b border-[#141414]">
-        <p className="text-lg font-black" style={{ fontFamily: 'var(--font-syne)', color: ACCENT }}>tipo7</p>
+        <Link href="/" className="hover:opacity-80 transition-opacity">
+          <p className="text-lg font-black" style={{ fontFamily: 'var(--font-syne)', color: ACCENT }}>tipo7</p>
+        </Link>
         <p className="text-[#444] text-[10px] tracking-widest uppercase mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
           Painel Admin
         </p>

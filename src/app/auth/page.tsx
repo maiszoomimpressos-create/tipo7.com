@@ -110,6 +110,7 @@ export default function AuthPage() {
   const [regLoading,    setRegLoading]    = useState(false)
   const [regError,      setRegError]      = useState<string | null>(null)
   const [regSuccess,    setRegSuccess]    = useState(false)
+  const [termosAceitos, setTermosAceitos] = useState(false)
 
   // ── Validações em tempo real no cadastro ────────────────────
   const [fields, setFields] = useState<Record<string, FieldState>>({
@@ -161,14 +162,24 @@ export default function AuthPage() {
     if (!regBirthDate)                                        { setRegError('Data de nascimento é obrigatória.'); return }
     if (!isStrongPassword(regPassword))                       { setRegError('A senha não atende todos os requisitos de segurança.'); return }
     if (regPassword !== regConfirm)                           { setRegError('As senhas não coincidem.'); return }
+    if (!termosAceitos)                                       { setRegError('Você precisa aceitar os Termos de Uso para continuar.'); return }
     setRegLoading(true)
     setRegError(null)
     try {
       // Verifica CPF duplicado antes de tentar criar conta
       const cpfNumeros = regCPF.replace(/\D/g, '')
-      const cpfCheck = await fetch(`/api/check-cpf?cpf=${cpfNumeros}`).then(r => r.json())
+      const cpfCheck = await fetch(`/api/check-cpf?cpf=${cpfNumeros}`).then(r => r.json()) as { exists: boolean }
       if (cpfCheck.exists) {
         setRegError('Este CPF já está cadastrado. Se você já tem conta, faça login com o e-mail que usou no cadastro.')
+        setRegLoading(false)
+        return
+      }
+
+      // Verifica telefone duplicado
+      const phoneNumeros = regPhone.replace(/\D/g, '')
+      const phoneCheck = await fetch(`/api/check-phone?phone=${phoneNumeros}`).then(r => r.json()) as { exists: boolean }
+      if (phoneCheck.exists) {
+        setRegError('Este telefone já está cadastrado. Se você já tem conta, faça login com o e-mail que usou no cadastro.')
         setRegLoading(false)
         return
       }
@@ -262,8 +273,8 @@ export default function AuthPage() {
                   <div className="absolute inset-0 bg-[#E8B84B]/20 blur-md scale-150 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 </div>
                 <span className="text-[17px] tracking-tight" style={{ fontFamily: 'var(--font-syne)', fontWeight: 800 }}>
-                  <span className="text-[#E8B84B]">MZ</span>
-                  <span className="text-white">eventos</span>
+                  <span className="text-white">tipo</span>
+                  <span className="text-[#E8B84B]">7</span>
                 </span>
               </a>
             </div>
@@ -615,6 +626,57 @@ export default function AuthPage() {
                   )}
                 </div>
 
+                {/* Aceite dos Termos de Uso */}
+                <label className="flex items-start gap-3 cursor-pointer group">
+                  {/* Checkbox customizado */}
+                  <div className="relative mt-0.5 shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={termosAceitos}
+                      onChange={e => { setTermosAceitos(e.target.checked); if (regError) setRegError(null) }}
+                      className="sr-only"
+                    />
+                    <div
+                      className="w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-200"
+                      style={{
+                        background:   termosAceitos ? '#E8B84B' : 'transparent',
+                        borderColor:  termosAceitos ? '#E8B84B' : '#333',
+                      }}
+                    >
+                      {termosAceitos && (
+                        <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
+                          <path d="M1 4L4 7.5L10 1" stroke="#070707" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                  <span
+                    className="text-xs leading-relaxed"
+                    style={{ color: '#666', fontFamily: 'var(--font-dm-sans)' }}>
+                    Li e concordo com os{' '}
+                    <a
+                      href="/termos"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      className="transition-colors hover:underline"
+                      style={{ color: '#E8B84B' }}>
+                      Termos de Uso
+                    </a>
+                    {' '}e a{' '}
+                    <a
+                      href="/privacidade"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      className="transition-colors hover:underline"
+                      style={{ color: '#E8B84B' }}>
+                      Política de Privacidade
+                    </a>
+                    {' '}da plataforma.
+                  </span>
+                </label>
+
                 {/* Erro geral */}
                 {regError && (
                   <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/8 border border-red-400/15 rounded-xl px-4 py-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -626,8 +688,8 @@ export default function AuthPage() {
                 {/* Botão criar conta */}
                 <button
                   type="submit"
-                  disabled={regLoading}
-                  className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] transition-all duration-200 hover:brightness-110 disabled:opacity-60 flex items-center justify-center gap-2 mt-1"
+                  disabled={regLoading || !termosAceitos}
+                  className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] transition-all duration-200 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-1"
                   style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}
                 >
                   {regLoading

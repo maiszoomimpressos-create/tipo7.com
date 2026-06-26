@@ -132,7 +132,7 @@ export function ImagensClient({ eventoId, bannerUrlInicial, galleryUrlsIniciais 
   const supabase = createClient()
 
   // cacheBust força o browser a ignorar o cache quando o banner é re-enviado
-  const [cacheBust,   setCacheBust]   = useState(() => Date.now())
+  const [cacheBust,   setCacheBust]   = useState(0)
   const [bannerUrl,   setBannerUrl]   = useState<string | null>(bannerUrlInicial)
   const [galleryUrls, setGalleryUrls] = useState<string[]>(galleryUrlsIniciais)
 

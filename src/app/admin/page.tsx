@@ -17,7 +17,7 @@ export default async function AdminHomePage() {
     { data: orders },
   ] = await Promise.all([
     admin.from('events').select('*', { count: 'exact', head: true }),
-    admin.from('events').select('*', { count: 'exact', head: true }).eq('status', 'published'),
+    admin.from('events').select('*', { count: 'exact', head: true }).eq('status', 'publicado'),
     admin.from('promotor_profiles').select('*', { count: 'exact', head: true }),
     admin.from('promotor_mp_accounts').select('*', { count: 'exact', head: true }),
     admin.from('orders').select('total').eq('status', 'approved'),

@@ -34,6 +34,14 @@ export default async function PublicarPage({ params }: Props) {
     : evento.organizations as { owner_id: string } | null
   if (!org || (org as { owner_id: string }).owner_id !== user.id) notFound()
 
+  // Verifica se o promotor tem Mercado Pago conectado
+  const { data: mpAccount } = await supabase
+    .from('promotor_mp_accounts')
+    .select('id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  const mpConectado = !!mpAccount
+
   // Busca dias e ingressos para o resumo
   const { data: dias } = await supabase
     .from('event_days')
@@ -102,6 +110,7 @@ export default async function PublicarPage({ params }: Props) {
         <PublicarClient
           eventoId={id}
           statusAtual={evento.status as 'rascunho' | 'publicado' | 'cancelado'}
+          mpConectado={mpConectado}
           resumo={{
             titulo:      evento.title       ?? '',
             descricao:   evento.description ?? '',

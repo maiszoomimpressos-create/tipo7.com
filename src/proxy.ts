@@ -5,12 +5,27 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 // Rotas que exigem usuário logado
 const ROTAS_PRIVADAS = [
-  '/promotor',        // painel do promotor
-  '/comprador',       // painel do comprador
-  '/estabelecimento', // painel do estabelecimento
-  '/admin',           // painel administrativo
-  '/perfil',          // perfil do usuário
+  '/promotor',
+  '/comprador',
+  '/estabelecimento',
+  '/admin',
+  '/perfil',
+  '/criar-evento',
+  '/meus-ingressos',
+  '/scanner',
+  '/checkout',
+  '/dashboard',
 ]
+
+// Domínios internos permitidos no parâmetro ?next= (evita open redirect)
+const DOMINIOS_PERMITIDOS = ['tipo7.com', 'www.tipo7.com', 'localhost']
+
+function isSafeRedirect(url: string): boolean {
+  try {
+    const parsed = new URL(url, 'https://tipo7.com')
+    return DOMINIOS_PERMITIDOS.includes(parsed.hostname)
+  } catch { return false }
+}
 
 export async function proxy(request: NextRequest) {
   const response = NextResponse.next({ request })
@@ -40,7 +55,8 @@ export async function proxy(request: NextRequest) {
   const ehRotaPrivada = ROTAS_PRIVADAS.some(rota => pathname.startsWith(rota))
   if (ehRotaPrivada && !user) {
     const loginUrl = new URL('/auth', request.url)
-    loginUrl.searchParams.set('next', pathname)
+    // Só define ?next= se o destino for interno (evita open redirect)
+    if (isSafeRedirect(pathname)) loginUrl.searchParams.set('next', pathname)
     return NextResponse.redirect(loginUrl)
   }
 

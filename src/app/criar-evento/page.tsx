@@ -51,7 +51,7 @@ export default async function CriarEventoPage() {
   const { data: eventos } = org
     ? await supabase
         .from('events')
-        .select('id, title, status, date_start, created_at')
+        .select('id, title, status, date_start, created_at, banner_url')
         .eq('organization_id', org.id)
         .in('status', ['rascunho', 'publicado'])
         .order('created_at', { ascending: false })
@@ -133,6 +133,7 @@ export default async function CriarEventoPage() {
               status:     e.status as 'rascunho' | 'publicado',
               date_start: e.date_start ?? null,
               created_at: e.created_at,
+              banner_url: (e as unknown as { banner_url: string | null }).banner_url ?? null,
             }))}
           />
         )}

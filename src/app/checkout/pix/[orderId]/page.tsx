@@ -103,8 +103,8 @@ export default function PixPage() {
       <div className="flex items-center gap-2 mb-10">
         <Ticket size={20} style={{ color: '#E8B84B' }} />
         <span className="text-xl" style={{ fontFamily: 'var(--font-syne)', fontWeight: 700 }}>
-          <span style={{ color: '#E8B84B' }}>MZ</span>
-          <span className="text-white">eventos</span>
+          <span className="text-white">tipo</span>
+          <span style={{ color: '#E8B84B' }}>7</span>
         </span>
       </div>
 

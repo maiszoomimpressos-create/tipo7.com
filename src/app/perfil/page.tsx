@@ -4,6 +4,7 @@ import { createClient }  from '@/lib/supabase/server'
 import { redirect }      from 'next/navigation'
 import { Header }        from '@/components/layout/Header'
 import { ProfileForm }   from './ProfileForm'
+import { CodigoOrg }     from './CodigoOrg'
 import { AlertCircle }   from 'lucide-react'
 
 export default async function PerfilPage() {
@@ -17,7 +18,7 @@ export default async function PerfilPage() {
   const { data: profile } = await supabase
     .from('profiles')
     .select(`
-      full_name, phone, cpf, birth_date, avatar_url,
+      full_name, phone, cpf, rg, birth_date, avatar_url,
       zip_code, street, street_number, neighborhood,
       city, state, address_type, complement, created_at
     `)
@@ -47,6 +48,14 @@ export default async function PerfilPage() {
     !profile?.neighborhood  && 'Bairro',
     !profile?.address_type  && 'Tipo de residência',
   ].filter(Boolean) as string[]
+
+  // Busca organização do usuário (se for promotor ou estabelecimento)
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('codigo, type, name')
+    .eq('owner_id', user.id)
+    .not('codigo', 'is', null)
+    .maybeSingle()
 
   // Pega a inicial do nome ou email para o avatar placeholder
   const inicialAvatar = (profile?.full_name ?? user.email ?? '?').charAt(0).toUpperCase()
@@ -127,6 +136,15 @@ export default async function PerfilPage() {
           </div>
         </div>
 
+        {/* Badge de identificação — exibe código T7-PRO ou T7-EST se o usuário for promotor/estabelecimento */}
+        {org?.codigo && (org.type === 'promotora' || org.type === 'estabelecimento') && (
+          <CodigoOrg
+            codigo={org.codigo}
+            tipo={org.type}
+            nome={org.name ?? ''}
+          />
+        )}
+
         {/* Formulário editável — client component com foto, dados e endereço */}
         <ProfileForm
           userId={user.id}
@@ -135,6 +153,7 @@ export default async function PerfilPage() {
             full_name:    profile?.full_name    ?? '',
             phone:        profile?.phone        ?? '',
             cpf:          profile?.cpf          ?? '',
+            rg:           (profile as { rg?: string | null })?.rg ?? '',
             birth_date:   profile?.birth_date   ?? '',
             avatar_url:   profile?.avatar_url   ?? '',
             // Endereço

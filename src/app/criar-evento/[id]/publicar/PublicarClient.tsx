@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   ArrowLeft, CheckCircle2, XCircle, Loader2, Rocket,
   CalendarDays, MapPin, Ticket, Tag, Users, Package, Layers,
-  ExternalLink,
+  ExternalLink, CreditCard,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -44,6 +44,7 @@ interface IngressoResumo {
 interface Props {
   eventoId:    string
   statusAtual: 'rascunho' | 'publicado' | 'cancelado'
+  mpConectado: boolean
   resumo:      Resumo
   dias:        DiaResumo[]
   ingressos:   IngressoResumo[]
@@ -99,12 +100,13 @@ function CheckItem({ ok, label, sub, href, eventoId }: {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function PublicarClient({ eventoId, statusAtual, resumo, dias, ingressos }: Props) {
+export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dias, ingressos }: Props) {
   const router   = useRouter()
   const supabase = createClient()
 
-  const [publishing, setPublishing] = useState(false)
-  const [erro,       setErro]       = useState<string | null>(null)
+  const [publishing,           setPublishing]           = useState(false)
+  const [erro,                 setErro]                 = useState<string | null>(null)
+  const [responsabilidadeAceita, setResponsabilidadeAceita] = useState(false)
   const jaPublicado = statusAtual === 'publicado'
 
   // ── Checklist de requisitos ──
@@ -113,13 +115,14 @@ export function PublicarClient({ eventoId, statusAtual, resumo, dias, ingressos 
     data:      !!resumo.dateStart,
     local:     !!(resumo.cidade || resumo.nomeLocal),
     ingressos: ingressos.length > 0 && ingressos.every(t => t.name && t.quantity > 0),
+    mp:        mpConectado,
   }
   const podePubilcar  = Object.values(checks).every(Boolean)
   const semBanner     = !resumo.bannerUrl
 
   // ── Publica o evento ──
   const handlePublicar = async () => {
-    if (!podePubilcar) return
+    if (!podePubilcar || !responsabilidadeAceita) return
     setPublishing(true); setErro(null)
     try {
       const { error } = await supabase
@@ -182,6 +185,7 @@ export function PublicarClient({ eventoId, statusAtual, resumo, dias, ingressos 
           <CheckItem ok={checks.data}      eventoId={eventoId} label="Data de início"    sub={resumo.dateStart ? formatData(resumo.dateStart) : undefined} href={`/criar-evento/${eventoId}`} />
           <CheckItem ok={checks.local}     eventoId={eventoId} label="Local do evento"   sub={resumo.nomeLocal || resumo.cidade || undefined} href={`/criar-evento/${eventoId}`} />
           <CheckItem ok={checks.ingressos} eventoId={eventoId} label="Ingressos configurados" sub={ingressos.length > 0 ? `${ingressos.length} tipo${ingressos.length > 1 ? 's' : ''}` : undefined} href={`/criar-evento/${eventoId}/ingressos`} />
+          <CheckItem ok={checks.mp}        eventoId={eventoId} label="Conta Mercado Pago conectada" sub={mpConectado ? 'Pagamentos habilitados' : undefined} href={`/api/mp/connect?return_to=/criar-evento/${eventoId}/publicar`} />
 
           {/* Aviso de banner — não bloqueia publicação, só alerta */}
           {semBanner && (
@@ -206,6 +210,31 @@ export function PublicarClient({ eventoId, statusAtual, resumo, dias, ingressos 
           )}
         </div>
       </div>
+
+      {/* ── Banner MP não conectado ── */}
+      {!mpConectado && (
+        <div className="rounded-2xl p-5 flex flex-col gap-4" style={{ background: '#0d0d0d', border: '1px solid #E8B84B30' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                 style={{ background: '#E8B84B15', border: '1px solid #E8B84B30' }}>
+              <CreditCard size={16} className="text-[#E8B84B]" />
+            </div>
+            <div>
+              <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Conecte sua conta Mercado Pago
+              </p>
+              <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Necessário para receber os pagamentos dos ingressos vendidos.
+              </p>
+            </div>
+          </div>
+          <a href={`/api/mp/connect?return_to=/criar-evento/${eventoId}/publicar`}
+             className="w-full py-3 rounded-xl text-sm font-semibold text-center transition-all hover:brightness-110"
+             style={{ background: '#E8B84B', color: '#070707', fontFamily: 'var(--font-dm-sans)' }}>
+            Conectar Mercado Pago
+          </a>
+        </div>
+      )}
 
       {/* ── Resumo do evento ── */}
       <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
@@ -340,10 +369,52 @@ export function PublicarClient({ eventoId, statusAtual, resumo, dias, ingressos 
         <p className="text-red-400 text-sm text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erro}</p>
       )}
 
+      {/* ── Aceite de responsabilidade ── */}
+      {!jaPublicado && (
+        <label
+          className="flex items-start gap-3 cursor-pointer p-4 rounded-2xl"
+          style={{ background: '#0d0d0d', border: `1px solid ${responsabilidadeAceita ? '#E8B84B40' : '#1a1a1a'}` }}
+        >
+          <input
+            type="checkbox"
+            className="sr-only"
+            checked={responsabilidadeAceita}
+            onChange={e => setResponsabilidadeAceita(e.target.checked)}
+          />
+          <div
+            className="w-5 h-5 rounded-md shrink-0 mt-0.5 flex items-center justify-center transition-colors"
+            style={{
+              background:  responsabilidadeAceita ? '#E8B84B' : 'transparent',
+              border:      `1.5px solid ${responsabilidadeAceita ? '#E8B84B' : '#333'}`,
+            }}
+          >
+            {responsabilidadeAceita && (
+              <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
+                <path d="M1 4L4 7.5L10 1" stroke="#070707" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </div>
+          <p className="text-xs leading-relaxed text-[#666]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Li e aceito os{' '}
+            <a href="/termos" target="_blank" rel="noopener noreferrer"
+               className="text-[#E8B84B] hover:underline" onClick={e => e.stopPropagation()}>
+              Termos de Uso
+            </a>{' '}
+            e a{' '}
+            <a href="/protecao-de-dados" target="_blank" rel="noopener noreferrer"
+               className="text-[#E8B84B] hover:underline" onClick={e => e.stopPropagation()}>
+              Política de Proteção de Dados
+            </a>
+            . Declaro ser o único responsável por todas as informações, realização e obrigações legais deste evento.{' '}
+            <span className="text-[#444]">A plataforma Tipo7 não se responsabiliza por qualquer dano, cancelamento ou descumprimento legal de minha parte.</span>
+          </p>
+        </label>
+      )}
+
       {/* ── Botão principal ── */}
       {!jaPublicado ? (
         <button type="button" onClick={handlePublicar}
-          disabled={!podePubilcar || publishing}
+          disabled={!podePubilcar || publishing || !responsabilidadeAceita}
           className="w-full py-4 rounded-xl text-sm font-semibold text-[#070707] hover:brightness-110 transition-all flex items-center justify-center gap-2 disabled:opacity-40 sticky bottom-4"
           style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
           {publishing

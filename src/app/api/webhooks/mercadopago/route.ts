@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createServiceClient } from '@/lib/supabase/server'
 import { sendTicketEmail } from '@/lib/email'
+import { createHmac } from 'crypto'
 
 const STATUS_MAP: Record<string, string> = {
   approved:   'approved',
@@ -11,14 +12,41 @@ const STATUS_MAP: Record<string, string> = {
   cancelled:  'cancelled',
 }
 
+// Verifica assinatura HMAC-SHA256 enviada pelo Mercado Pago
+// Sem isso, qualquer pessoa poderia forjar um webhook e marcar pedidos como pagos
+function verificarAssinatura(req: NextRequest, dataId: string): boolean {
+  const secret    = process.env.MP_WEBHOOK_SECRET
+  if (!secret) return false
+
+  const xSignature = req.headers.get('x-signature') ?? ''
+  const xRequestId = req.headers.get('x-request-id') ?? ''
+
+  const ts  = xSignature.match(/ts=([^,]+)/)?.[1] ?? ''
+  const v1  = xSignature.match(/v1=([^,]+)/)?.[1] ?? ''
+  if (!ts || !v1) return false
+
+  const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`
+  const expected = createHmac('sha256', secret).update(manifest).digest('hex')
+
+  return expected === v1
+}
+
 export async function POST(req: NextRequest) {
-  const body = await req.json() as { type?: string; data?: { id?: string | number } }
+  const rawBody = await req.text()
+  let body: { type?: string; data?: { id?: string | number } }
+  try { body = JSON.parse(rawBody) } catch { return NextResponse.json({ ok: true }) }
 
   // MP envia vários tipos de notificação — só processa pagamentos
   if (body.type !== 'payment') return NextResponse.json({ ok: true })
 
   const paymentId = body.data?.id
   if (!paymentId) return NextResponse.json({ ok: true })
+
+  // Rejeita webhooks sem assinatura válida — protege contra fraude
+  if (!verificarAssinatura(req, String(paymentId))) {
+    console.warn('[webhook] assinatura inválida — requisição rejeitada')
+    return NextResponse.json({ error: 'Assinatura inválida' }, { status: 401 })
+  }
 
   // Busca detalhes do pagamento na API do MP
   const mpClient = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN! })
@@ -50,6 +78,15 @@ export async function POST(req: NextRequest) {
       .eq('order_id', orderId)
 
     if (items && items.length > 0) {
+      // Verifica se tickets já foram gerados (webhook pode disparar 2x no MP)
+      const { data: ticketsExistentes } = await admin
+        .from('tickets')
+        .select('id')
+        .eq('order_id', orderId)
+        .limit(1)
+
+      const jaGerado = (ticketsExistentes?.length ?? 0) > 0
+
       // 2. Gera um ticket por slot (upsert evita duplicatas se webhook disparar 2x)
       const ticketRows = items.flatMap(item =>
         Array.from({ length: item.quantity }, (_, i) => ({
@@ -80,7 +117,7 @@ export async function POST(req: NextRequest) {
         .eq('id', orderId)
         .single()
 
-      if (order && generatedTickets && process.env.RESEND_API_KEY) {
+      if (!jaGerado && order && generatedTickets && process.env.RESEND_API_KEY) {
         // Busca o email do usuário via auth admin
         const { data: { user } } = await admin.auth.admin.getUserById(order.user_id)
 

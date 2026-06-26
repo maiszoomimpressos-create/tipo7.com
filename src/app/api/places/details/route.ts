@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 
 // GET /api/places/details?place_id=ChIJ...
 // Retorna endereço completo de um local do Google Places
 export async function GET(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
   const placeId = req.nextUrl.searchParams.get('place_id')?.trim()
   if (!placeId) return NextResponse.json({ error: 'place_id obrigatório' }, { status: 400 })
 

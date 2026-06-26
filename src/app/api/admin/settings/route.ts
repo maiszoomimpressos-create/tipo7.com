@@ -12,12 +12,24 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
-  const { default_fee_pct } = await req.json() as { default_fee_pct: number }
+  const body = await req.json() as { default_fee_pct?: number; min_fee_pct?: number }
+
+  for (const [key, val] of Object.entries(body)) {
+    if (val !== undefined && (typeof val !== 'number' || val < 0 || val > 100)) {
+      return NextResponse.json({ error: `${key} deve ser um número entre 0 e 100` }, { status: 400 })
+    }
+  }
 
   const admin = createServiceClient()
-  await admin
-    .from('platform_settings')
-    .upsert({ key: 'default_fee_pct', value: String(default_fee_pct), updated_at: new Date().toISOString() }, { onConflict: 'key' })
+
+  if (body.default_fee_pct !== undefined) {
+    await admin.from('platform_settings')
+      .upsert({ key: 'default_fee_pct', value: String(body.default_fee_pct), updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  }
+  if (body.min_fee_pct !== undefined) {
+    await admin.from('platform_settings')
+      .upsert({ key: 'min_fee_pct', value: String(body.min_fee_pct), updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  }
 
   return NextResponse.json({ ok: true })
 }

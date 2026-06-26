@@ -136,7 +136,7 @@ export async function EventGrid() {
             Encontre experiências perto de você
           </p>
         </div>
-        <a href="#"
+        <a href="/eventos"
           className="text-[#555] text-xs hover:text-[#E8B84B] transition-colors"
           style={{ fontFamily: 'var(--font-dm-sans)' }}>
           Ver todos →

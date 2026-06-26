@@ -15,6 +15,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ us
   const { userId } = await params
   const { fee_pct } = await req.json() as { fee_pct: number }
 
+  if (typeof fee_pct !== 'number' || fee_pct < 0 || fee_pct > 100) {
+    return NextResponse.json({ error: 'fee_pct deve ser um número entre 0 e 100' }, { status: 400 })
+  }
+
   const admin = createServiceClient()
   await admin
     .from('promotor_mp_accounts')

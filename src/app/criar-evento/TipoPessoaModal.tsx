@@ -188,6 +188,14 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, prof
 
     setSaving(true); setErro(null)
     try {
+      // Verifica CNPJ duplicado
+      const cnpjCheck = await fetch(`/api/check-cnpj?cnpj=${cnpjDigitos}`).then(r => r.json()) as { exists: boolean }
+      if (cnpjCheck.exists) {
+        setErro('Este CNPJ já está cadastrado na plataforma.')
+        setSaving(false)
+        return
+      }
+
       const res    = await fetch(`/api/codigo?tipo=${orgTipo}`)
       const { codigo } = await res.json() as { codigo: string }
 

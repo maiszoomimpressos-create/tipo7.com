@@ -74,8 +74,8 @@ export async function POST(
     return NextResponse.json({ error: 'Email e cargo são obrigatórios' }, { status: 400 })
   }
 
-  // Busca o usuário pelo email
-  const { data: { users } } = await admin.auth.admin.listUsers()
+  // Busca o usuário pelo email (perPage 1000 — listUsers sem limite retorna só 50)
+  const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
   const targetUser = users.find(u => u.email?.toLowerCase() === body.email.toLowerCase())
 
   if (!targetUser) {

@@ -20,6 +20,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { calcularTaxaPlataforma } from '@/lib/feeRules'
 
 export async function POST(req: NextRequest) {
   try {
@@ -53,8 +54,30 @@ export async function POST(req: NextRequest) {
       return { ticket, quantity: item.quantity }
     })
 
+    // Valida disponibilidade: quantidade total menos o que já foi vendido (pedidos não cancelados)
+    const { data: vendidos } = await admin
+      .from('order_items')
+      .select('ticket_id, quantity, orders!inner(status)')
+      .in('ticket_id', ticketIds)
+      .not('orders.status', 'in', '("rejected","cancelled")')
+
+    const vendidosPorTicket: Record<string, number> = {}
+    for (const v of vendidos ?? []) {
+      vendidosPorTicket[v.ticket_id] = (vendidosPorTicket[v.ticket_id] ?? 0) + v.quantity
+    }
+    for (const { ticket, quantity } of lineItems) {
+      const disponivel = ticket.quantity - (vendidosPorTicket[ticket.id] ?? 0)
+      if (quantity > disponivel) {
+        return NextResponse.json(
+          { error: `Quantidade indisponível para "${ticket.name}". Restam ${disponivel}.` },
+          { status: 409 }
+        )
+      }
+    }
+
     const total = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0)
     if (total <= 0) return NextResponse.json({ error: 'PIX não disponível para ingressos gratuitos' }, { status: 400 })
+
 
     // CPF é obrigatório para criar pagamento PIX no MP
     // Se o comprador não tiver CPF cadastrado no perfil, pedimos para preencher antes
@@ -85,6 +108,11 @@ export async function POST(req: NextRequest) {
       }))
     )
 
+    // Busca taxa mínima da plataforma
+    const { data: minFeeSetting } = await admin
+      .from('platform_settings').select('value').eq('key', 'min_fee_pct').maybeSingle()
+    const minFeePct = Number(minFeeSetting?.value ?? 0)
+
     // Busca conta MP do promotor do evento (split de pagamento)
     const { data: eventOwnerInfo } = await admin
       .from('events')
@@ -108,7 +136,15 @@ export async function POST(req: NextRequest) {
 
       if (mpAccount2) {
         mpToken2       = mpAccount2.mp_access_token
-        applicationFee = Math.round(total * Number(mpAccount2.fee_pct)) / 100
+        applicationFee = await calcularTaxaPlataforma({
+          eventoId,
+          ownerId:     ownerId2,
+          total,
+          ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
+          feePct:      Number(mpAccount2.fee_pct),
+          minFeePct,
+          admin,
+        })
       }
     }
 

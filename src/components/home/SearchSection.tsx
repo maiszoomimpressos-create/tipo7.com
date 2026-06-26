@@ -154,7 +154,7 @@ function CardSkeleton({ i }: { i: number }) {
 
 // ── Componente principal ─────────────────────────────────────────────────────
 
-export function SearchSection() {
+export function SearchSection({ limit = 12 }: { limit?: number }) {
   const { city } = useLocation()
   const [q,         setQ]         = useState('')
   const [categoria, setCategoria] = useState('')
@@ -164,7 +164,7 @@ export function SearchSection() {
 
   const fetchEventos = useCallback((search: string, cat: string, cidadeAtual: string | null) => {
     setLoading(true)
-    const params = new URLSearchParams({ limit: '12' })
+    const params = new URLSearchParams({ limit: String(limit) })
     if (search)       params.set('q', search)
     if (cat)          params.set('categoria', cat)
     if (cidadeAtual)  params.set('cidade', cidadeAtual)

@@ -2,7 +2,7 @@ import { Ticket } from 'lucide-react'
 
 const LINKS = {
   Plataforma: [
-    { label: 'Explorar eventos',  href: '/'              },
+    { label: 'Explorar eventos',  href: '/eventos'       },
     { label: 'Criar evento',      href: '/criar-evento'  },
     { label: 'Minha conta',       href: '/perfil'        },
     { label: 'Meus ingressos',    href: '/meus-ingressos'},
@@ -13,9 +13,9 @@ const LINKS = {
     { label: 'Para promotores',   href: '#' },
   ],
   Legal: [
-    { label: 'Termos de uso',     href: '#' },
-    { label: 'Privacidade',       href: '#' },
-    { label: 'Cookies',           href: '#' },
+    { label: 'Termos de uso',       href: '/termos'            },
+    { label: 'Privacidade',         href: '/privacidade'       },
+    { label: 'Proteção de dados',   href: '/protecao-de-dados' },
   ],
 }
 
