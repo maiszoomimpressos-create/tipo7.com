@@ -9,8 +9,9 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
   const rawReturn = new URL(req.url).searchParams.get('return_to') ?? ''
-  // Aceita apenas caminhos internos (evita open redirect via return_to=https://malicioso.com)
-  const returnTo  = rawReturn.startsWith('/') && !rawReturn.startsWith('//') ? rawReturn : ''
+  // Aceita apenas caminhos internos (evita open redirect via //evil.com ou /\evil.com)
+  const isInternal = rawReturn.startsWith('/') && !rawReturn.startsWith('//') && !rawReturn.startsWith('/\\')
+  const returnTo   = isInternal ? rawReturn : ''
   const state     = returnTo ? `${user.id}::${returnTo}` : user.id
   const clientId    = process.env.MP_CLIENT_ID!
   const redirectUri = encodeURIComponent(`${APP_URL}/api/mp/callback`)

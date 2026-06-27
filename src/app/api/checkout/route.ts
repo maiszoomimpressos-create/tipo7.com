@@ -37,51 +37,37 @@ export async function POST(req: NextRequest) {
       return { ticket, quantity: item.quantity }
     })
 
-    // Valida disponibilidade: quantidade total menos o que já foi vendido (pedidos não cancelados)
-    const { data: vendidos } = await admin
-      .from('order_items')
-      .select('ticket_id, quantity, orders!inner(status)')
-      .in('ticket_id', ticketIds)
-      .not('orders.status', 'in', '("rejected","cancelled")')
-
-    const vendidosPorTicket: Record<string, number> = {}
-    for (const v of vendidos ?? []) {
-      vendidosPorTicket[v.ticket_id] = (vendidosPorTicket[v.ticket_id] ?? 0) + v.quantity
-    }
-    for (const { ticket, quantity } of lineItems) {
-      const disponivel = ticket.quantity - (vendidosPorTicket[ticket.id] ?? 0)
-      if (quantity > disponivel) {
-        return NextResponse.json(
-          { error: `Quantidade indisponível para "${ticket.name}". Restam ${disponivel}.` },
-          { status: 409 }
-        )
-      }
-    }
-
     const total = lineItems.reduce(
       (sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0
     )
 
-    // Cria pedido pendente
-    const { data: order, error: orderError } = await admin
-      .from('orders')
-      .insert({ user_id: user.id, event_id: eventoId, total, status: 'pending' })
-      .select('id')
-      .single()
-
-    if (orderError || !order) {
-      return NextResponse.json({ error: orderError?.message ?? 'Erro ao criar pedido' }, { status: 500 })
-    }
-
-    // Cria itens do pedido
-    await admin.from('order_items').insert(
-      lineItems.map(({ ticket, quantity }) => ({
-        order_id:   order.id,
+    // Cria pedido atomicamente: bloqueia ingressos (FOR UPDATE), verifica estoque,
+    // cria orders + order_items em uma única transação — previne overselling por race condition
+    const { data: resultado, error: rpcError } = await admin.rpc('criar_pedido_atomico', {
+      p_user_id:  user.id,
+      p_event_id: eventoId,
+      p_items:    lineItems.map(({ ticket, quantity }) => ({
         ticket_id:  ticket.id,
         quantity,
         unit_price: Number(ticket.price ?? 0),
-      }))
-    )
+      })),
+    })
+
+    if (rpcError) return NextResponse.json({ error: rpcError.message }, { status: 500 })
+
+    if (resultado?.error === 'sem_estoque') {
+      const ticketName = tickets.find(t => t.id === resultado.ticket_id)?.name ?? 'Ingresso'
+      return NextResponse.json(
+        { error: `Quantidade indisponível para "${ticketName}". Restam ${resultado.disponivel ?? 0}.` },
+        { status: 409 }
+      )
+    }
+
+    if (resultado?.error || !resultado?.order_id) {
+      return NextResponse.json({ error: 'Erro ao criar pedido' }, { status: 500 })
+    }
+
+    const orderId = resultado.order_id as string
 
     // Busca taxa mínima da plataforma
     const { data: minFeeSetting } = await admin
@@ -151,7 +137,7 @@ export async function POST(req: NextRequest) {
         },
         auto_return:        'approved',
         notification_url:   `${MP_BASE_URL}/api/webhooks/mercadopago`,
-        external_reference: order.id,
+        external_reference: orderId,
         marketplace_fee:    marketplaceFee,
       },
     })
@@ -160,7 +146,7 @@ export async function POST(req: NextRequest) {
     await admin
       .from('orders')
       .update({ mp_preference_id: result.id })
-      .eq('id', order.id)
+      .eq('id', orderId)
 
     return NextResponse.json({ checkoutUrl: result.init_point })
 

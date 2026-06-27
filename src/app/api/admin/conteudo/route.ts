@@ -12,12 +12,13 @@ async function requireSuperAdmin() {
 }
 
 // GET /api/admin/conteudo?key=termos
+// platform_content tem RLS pública para SELECT — usa anon client, não service role
 export async function GET(req: NextRequest) {
   const key = req.nextUrl.searchParams.get('key')
   if (!key) return NextResponse.json({ error: 'key required' }, { status: 400 })
 
-  const admin = createServiceClient()
-  const { data, error } = await admin
+  const supabase = await createClient()
+  const { data, error } = await supabase
     .from('platform_content')
     .select('content, updated_at')
     .eq('key', key)

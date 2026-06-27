@@ -16,12 +16,13 @@ interface SignUpData {
 }
 
 interface AuthContextValue {
-  user:      User | null
-  session:   Session | null
-  loading:   boolean
-  signIn:    (email: string, password: string) => Promise<{ error: string | null }>
-  signUp:    (data: SignUpData) => Promise<{ error: string | null }>
-  signOut:   () => Promise<void>
+  user:             User | null
+  session:          Session | null
+  loading:          boolean
+  signIn:           (email: string, password: string) => Promise<{ error: string | null }>
+  signUp:           (data: SignUpData) => Promise<{ error: string | null }>
+  signOut:          () => Promise<void>
+  signInWithSocial: (provider: 'google' | 'facebook') => Promise<{ error: string | null }>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -90,8 +91,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
   }
 
+  // Login social via Google ou Facebook — redireciona para o provedor e volta para /auth/callback
+  const signInWithSocial = async (provider: 'google' | 'facebook') => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${location.origin}/auth/callback`,
+          scopes: provider === 'facebook' ? 'email,public_profile' : undefined,
+        },
+      })
+      if (error) return { error: 'Não foi possível conectar. Tente novamente.' }
+      return { error: null }
+    } catch {
+      return { error: 'Erro ao conectar com provedor social.' }
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut, signInWithSocial }}>
       {children}
     </AuthContext.Provider>
   )

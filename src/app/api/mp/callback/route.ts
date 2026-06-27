@@ -3,9 +3,11 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://tipo7.com'
 
-// Rotas internas permitidas no returnTo (evita open redirect)
+// Rotas internas permitidas no returnTo (evita open redirect via //evil.com ou /\evil.com)
 function isSafeReturnTo(path: string): boolean {
-  return path.startsWith('/') && !path.startsWith('//')
+  if (!path.startsWith('/')) return false
+  if (path.startsWith('//') || path.startsWith('/\\')) return false
+  return true
 }
 
 export async function GET(req: NextRequest) {
@@ -60,8 +62,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(successUrl)
 
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Erro desconhecido'
-    console.error('[mp/callback]', msg)
-    return NextResponse.redirect(`${APP_URL}/criar-evento?mp_error=${encodeURIComponent(msg)}`)
+    console.error('[mp/callback]', err instanceof Error ? err.message : err)
+    return NextResponse.redirect(`${APP_URL}/criar-evento?mp_error=falha_autenticacao`)
   }
 }

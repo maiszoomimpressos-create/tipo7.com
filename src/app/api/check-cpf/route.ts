@@ -1,9 +1,9 @@
 // GET /api/check-cpf?cpf=12345678901
 // Verifica se um CPF já está cadastrado (usado no cadastro para evitar duplicatas)
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
-// Valida os dois dígitos verificadores do CPF
 function cpfValido(cpf: string): boolean {
   if (/^(\d)\1{10}$/.test(cpf)) return false
   let sum = 0
@@ -19,14 +19,13 @@ function cpfValido(cpf: string): boolean {
 }
 
 export async function GET(req: NextRequest) {
+  if (!rateLimit(getIp(req), 'check-cpf', 5, 60_000)) return tooManyRequests()
+
   const cpf = req.nextUrl.searchParams.get('cpf')?.replace(/\D/g, '')
   if (!cpf || cpf.length !== 11 || !cpfValido(cpf)) return NextResponse.json({ exists: false })
 
-  const admin = createServiceClient()
-  const { count } = await admin
-    .from('profiles')
-    .select('id', { count: 'exact', head: true })
-    .eq('cpf', cpf)
+  const supabase = await createClient()
+  const { data } = await supabase.rpc('check_cpf_exists', { cpf_digits: cpf })
 
-  return NextResponse.json({ exists: (count ?? 0) > 0 })
+  return NextResponse.json({ exists: data === true })
 }

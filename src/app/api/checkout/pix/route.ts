@@ -54,30 +54,8 @@ export async function POST(req: NextRequest) {
       return { ticket, quantity: item.quantity }
     })
 
-    // Valida disponibilidade: quantidade total menos o que já foi vendido (pedidos não cancelados)
-    const { data: vendidos } = await admin
-      .from('order_items')
-      .select('ticket_id, quantity, orders!inner(status)')
-      .in('ticket_id', ticketIds)
-      .not('orders.status', 'in', '("rejected","cancelled")')
-
-    const vendidosPorTicket: Record<string, number> = {}
-    for (const v of vendidos ?? []) {
-      vendidosPorTicket[v.ticket_id] = (vendidosPorTicket[v.ticket_id] ?? 0) + v.quantity
-    }
-    for (const { ticket, quantity } of lineItems) {
-      const disponivel = ticket.quantity - (vendidosPorTicket[ticket.id] ?? 0)
-      if (quantity > disponivel) {
-        return NextResponse.json(
-          { error: `Quantidade indisponível para "${ticket.name}". Restam ${disponivel}.` },
-          { status: 409 }
-        )
-      }
-    }
-
     const total = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0)
     if (total <= 0) return NextResponse.json({ error: 'PIX não disponível para ingressos gratuitos' }, { status: 400 })
-
 
     // CPF é obrigatório para criar pagamento PIX no MP
     // Se o comprador não tiver CPF cadastrado no perfil, pedimos para preencher antes
@@ -87,26 +65,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Cadastre seu CPF no perfil antes de pagar com PIX.' }, { status: 422 })
     }
 
-    // Cria pedido com status pending — atualizado para approved pelo webhook do MP
-    const { data: order, error: orderError } = await admin
-      .from('orders')
-      .insert({ user_id: user.id, event_id: eventoId, total, status: 'pending' })
-      .select('id')
-      .single()
-
-    if (orderError || !order) {
-      return NextResponse.json({ error: orderError?.message ?? 'Erro ao criar pedido' }, { status: 500 })
-    }
-
-    // Registra quais ingressos e quantidades fazem parte deste pedido
-    await admin.from('order_items').insert(
-      lineItems.map(({ ticket, quantity }) => ({
-        order_id:   order.id,
+    // Cria pedido atomicamente: bloqueia ingressos (FOR UPDATE), verifica estoque,
+    // cria orders + order_items em uma única transação — previne overselling por race condition
+    const { data: resultado, error: rpcError } = await admin.rpc('criar_pedido_atomico', {
+      p_user_id:  user.id,
+      p_event_id: eventoId,
+      p_items:    lineItems.map(({ ticket, quantity }) => ({
         ticket_id:  ticket.id,
         quantity,
         unit_price: Number(ticket.price ?? 0),
-      }))
-    )
+      })),
+    })
+
+    if (rpcError) return NextResponse.json({ error: rpcError.message }, { status: 500 })
+
+    if (resultado?.error === 'sem_estoque') {
+      const ticketName = tickets.find(t => t.id === resultado.ticket_id)?.name ?? 'Ingresso'
+      return NextResponse.json(
+        { error: `Quantidade indisponível para "${ticketName}". Restam ${resultado.disponivel ?? 0}.` },
+        { status: 409 }
+      )
+    }
+
+    if (resultado?.error || !resultado?.order_id) {
+      return NextResponse.json({ error: 'Erro ao criar pedido' }, { status: 500 })
+    }
+
+    const orderId = resultado.order_id as string
 
     // Busca taxa mínima da plataforma
     const { data: minFeeSetting } = await admin
@@ -174,7 +159,7 @@ export async function POST(req: NextRequest) {
         // notification_url: o MP chama este endpoint quando o status muda
         // O webhook atualiza orders.status para approved/rejected/etc.
         notification_url:   'https://www.tipo7.com/api/webhooks/mercadopago',
-        external_reference: order.id,
+        external_reference: orderId,
         application_fee:    applicationFee,
       },
     })
@@ -191,21 +176,14 @@ export async function POST(req: NextRequest) {
       pix_qr_code:        qrCode,
       pix_qr_code_base64: qrCodeBase64,
       pix_expires_at:     expiresAt,
-    }).eq('id', order.id)
+    }).eq('id', orderId)
 
-    return NextResponse.json({ orderId: order.id, qrCode, qrCodeBase64, expiresAt, total })
+    return NextResponse.json({ orderId, qrCode, qrCodeBase64, expiresAt, total })
 
   } catch (err) {
     // O SDK do MP lança o corpo JSON bruto da API quando recebe erro HTTP
     // Isso significa que o erro pode não ser instância de Error — tratar os dois casos
     console.error('[checkout/pix]', JSON.stringify(err))
-    let msg = 'Erro interno'
-    if (err instanceof Error) {
-      msg = err.message
-    } else if (err && typeof err === 'object') {
-      const e = err as Record<string, unknown>
-      msg = String(e.message ?? e.error ?? e.cause ?? JSON.stringify(err))
-    }
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return NextResponse.json({ error: 'Falha ao processar pagamento. Tente novamente.' }, { status: 500 })
   }
 }

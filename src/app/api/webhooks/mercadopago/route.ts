@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createServiceClient } from '@/lib/supabase/server'
 import { sendTicketEmail } from '@/lib/email'
+import { gerarQrToken } from '@/lib/qrToken'
 import { createHmac } from 'crypto'
 
 const STATUS_MAP: Record<string, string> = {
@@ -24,6 +25,10 @@ function verificarAssinatura(req: NextRequest, dataId: string): boolean {
   const ts  = xSignature.match(/ts=([^,]+)/)?.[1] ?? ''
   const v1  = xSignature.match(/v1=([^,]+)/)?.[1] ?? ''
   if (!ts || !v1) return false
+
+  // Rejeita webhooks com timestamp fora de 5 minutos (proteção contra replay attacks)
+  const age = Math.abs(Date.now() - parseInt(ts) * 1000)
+  if (age > 5 * 60 * 1000) return false
 
   const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`
   const expected = createHmac('sha256', secret).update(manifest).digest('hex')
@@ -60,6 +65,18 @@ export async function POST(req: NextRequest) {
 
   const admin = createServiceClient()
 
+  // Idempotência: registra o webhook antes de processar.
+  // Se o payment_id já existe, o insert falha com conflito e ignoramos silenciosamente.
+  const { error: idempotencyError } = await admin
+    .from('processed_webhooks')
+    .insert({ payment_id: String(paymentId), order_id: orderId })
+
+  if (idempotencyError) {
+    // Webhook já processado — retorna 200 para o MP não reenviar
+    console.log(`[webhook] payment ${paymentId} já processado, ignorando`)
+    return NextResponse.json({ ok: true })
+  }
+
   await admin
     .from('orders')
     .update({
@@ -78,21 +95,13 @@ export async function POST(req: NextRequest) {
       .eq('order_id', orderId)
 
     if (items && items.length > 0) {
-      // Verifica se tickets já foram gerados (webhook pode disparar 2x no MP)
-      const { data: ticketsExistentes } = await admin
-        .from('tickets')
-        .select('id')
-        .eq('order_id', orderId)
-        .limit(1)
-
-      const jaGerado = (ticketsExistentes?.length ?? 0) > 0
-
-      // 2. Gera um ticket por slot (upsert evita duplicatas se webhook disparar 2x)
+      // 2. Gera um ticket por slot com QR token HMAC-SHA256
       const ticketRows = items.flatMap(item =>
         Array.from({ length: item.quantity }, (_, i) => ({
           order_id:      orderId,
           order_item_id: item.id,
           slot_number:   i + 1,
+          qr_token:      gerarQrToken(),
         }))
       )
 
@@ -117,7 +126,7 @@ export async function POST(req: NextRequest) {
         .eq('id', orderId)
         .single()
 
-      if (!jaGerado && order && generatedTickets && process.env.RESEND_API_KEY) {
+      if (order && generatedTickets && process.env.RESEND_API_KEY) {
         // Busca o email do usuário via auth admin
         const { data: { user } } = await admin.auth.admin.getUserById(order.user_id)
 

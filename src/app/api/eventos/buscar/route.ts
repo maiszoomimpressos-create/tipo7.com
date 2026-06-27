@@ -1,6 +1,7 @@
 // GET /api/eventos/buscar?q=texto&categoria=Festa&cidade=SP&limit=12
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,6 +9,8 @@ const supabase = createClient(
 )
 
 export async function GET(request: NextRequest) {
+  if (!rateLimit(getIp(request), 'eventos-buscar', 20, 60_000)) return tooManyRequests()
+
   const q         = request.nextUrl.searchParams.get('q')?.trim() ?? ''
   const categoria = request.nextUrl.searchParams.get('categoria') ?? ''
   const cidade    = request.nextUrl.searchParams.get('cidade') ?? ''
@@ -27,7 +30,10 @@ export async function GET(request: NextRequest) {
 
   const { data: eventos, error } = await query
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[eventos/buscar]', error.message)
+    return NextResponse.json({ error: 'Erro ao buscar eventos.' }, { status: 500 })
+  }
 
   // Preço mínimo por evento
   const ids = (eventos ?? []).map(e => e.id)

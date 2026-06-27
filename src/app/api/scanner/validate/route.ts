@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
+import { logAudit } from '@/lib/audit'
 
 // Verifica se o usuário tem permissão para escanear neste evento.
 // Organizador do evento sempre tem acesso; staff precisa ter validar_ingresso.
@@ -41,6 +43,8 @@ async function checkPermission(userId: string, eventoId: string): Promise<boolea
 // POST /api/scanner/validate
 // body: { qr_token: string, eventoId: string }
 export async function POST(req: NextRequest) {
+  if (!rateLimit(getIp(req), 'scanner-validate', 30, 60_000)) return tooManyRequests()
+
   const supabase = await createClient()
   const admin    = createServiceClient()
 
@@ -166,6 +170,15 @@ export async function POST(req: NextRequest) {
     scanned_by: user.id,
     result:     'valid',
     raw_token:  qr_token,
+  })
+
+  await logAudit({
+    userId:       user.id,
+    action:       'validar_ingresso',
+    resourceType: 'ticket',
+    resourceId:   ticket.id,
+    details:      { eventoId, result: 'valid', holderName, ticketName },
+    ip:           getIp(req),
   })
 
   return NextResponse.json({
