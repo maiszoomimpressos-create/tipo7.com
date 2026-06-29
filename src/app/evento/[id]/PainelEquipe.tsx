@@ -7,6 +7,7 @@ const ACCENT = '#E8B84B'
 
 const PERMISSOES = [
   { value: 'validar_ingresso',     label: 'Validar ingresso',     desc: 'Escanear QR na entrada' },
+  { value: 'vender_ingresso',      label: 'Bilheteria',           desc: 'Vender ingressos presencial' },
   { value: 'ver_lista_convidados', label: 'Ver lista',            desc: 'Lista de compradores' },
   { value: 'ver_relatorios',       label: 'Ver relatórios',       desc: 'Vendas e presença' },
   { value: 'gerenciar_checkin',    label: 'Gerenciar check-in',   desc: 'Controlar entrada/saída' },
@@ -107,11 +108,11 @@ export function PainelEquipe({ eventoId }: Props) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {/* Link do scanner */}
+          {/* Link da bilheteria */}
           <button
             type="button"
             onClick={() => {
-              navigator.clipboard.writeText(`${window.location.origin}/scanner/${eventoId}`)
+              navigator.clipboard.writeText(`${window.location.origin}/bilheteria/${eventoId}`)
               setLinkCopiado(true)
               setTimeout(() => setLinkCopiado(false), 2000)
             }}
@@ -122,10 +123,29 @@ export function PainelEquipe({ eventoId }: Props) {
               color:       linkCopiado ? '#4ade80' : '#666',
               fontFamily:  'var(--font-dm-sans)',
             }}
-            title="Copiar link do scanner para compartilhar com a equipe"
+            title="Copiar link da bilheteria para o vendedor"
           >
             {linkCopiado ? <Check size={12} /> : <Link2 size={12} />}
-            {linkCopiado ? 'Copiado!' : 'Link scanner'}
+            {linkCopiado ? 'Copiado!' : 'Link bilheteria'}
+          </button>
+
+          {/* Link do scanner */}
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(`${window.location.origin}/scanner/${eventoId}`)
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            style={{
+              background: '#111',
+              border:     '1px solid #222',
+              color:      '#666',
+              fontFamily: 'var(--font-dm-sans)',
+            }}
+            title="Copiar link do scanner para compartilhar com a equipe"
+          >
+            <Link2 size={12} />
+            Link scanner
           </button>
 
           {!adicionando && (
