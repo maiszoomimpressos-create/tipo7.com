@@ -15,11 +15,16 @@ export async function GET() {
 
   if (!data) return NextResponse.json({ connected: false })
 
+  const SETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000
+  const expiresIn   = data.expires_at ? new Date(data.expires_at).getTime() - Date.now() : null
+  const tokenExpirando = expiresIn !== null && expiresIn < SETE_DIAS_MS
+
   return NextResponse.json({
-    connected:  true,
-    mpUserId:   data.mp_user_id,
-    feePct:     data.fee_pct,
-    expiresAt:  data.expires_at,
-    updatedAt:  data.updated_at,
+    connected:       true,
+    mpUserId:        data.mp_user_id,
+    feePct:          data.fee_pct,
+    expiresAt:       data.expires_at,
+    updatedAt:       data.updated_at,
+    tokenExpirando,
   })
 }

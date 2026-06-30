@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { calcularTaxaPlataforma } from '@/lib/feeRules'
+import { getMpToken } from '@/lib/mpToken'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 export async function POST(req: NextRequest) {
@@ -122,14 +123,16 @@ export async function POST(req: NextRequest) {
     let applicationFee: number | undefined = undefined
 
     if (ownerId2) {
+      const tokenPromotor2 = await getMpToken(ownerId2, admin)
+
       const { data: mpAccount2 } = await admin
         .from('promotor_mp_accounts')
-        .select('mp_access_token, fee_pct')
+        .select('fee_pct')
         .eq('user_id', ownerId2)
         .single()
 
-      if (mpAccount2) {
-        mpToken2       = mpAccount2.mp_access_token
+      if (mpAccount2 && tokenPromotor2) {
+        mpToken2       = tokenPromotor2
         applicationFee = await calcularTaxaPlataforma({
           eventoId,
           ownerId:     ownerId2,
