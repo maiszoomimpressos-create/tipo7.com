@@ -15,6 +15,8 @@ const ROTAS_PRIVADAS = [
   '/scanner',
   '/checkout',
   '/dashboard',
+  '/bilheteria',
+  '/minha-area',
 ]
 
 // Domínios internos permitidos no parâmetro ?next= (evita open redirect)

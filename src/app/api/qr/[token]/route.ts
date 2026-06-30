@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import QRCode from 'qrcode'
+import { rateLimit, getIp } from '@/lib/rateLimit'
 
 // Retorna uma imagem PNG do QR code para o token informado.
 // Usada nos emails — clientes de email não suportam data: URIs,
 // mas suportam img src com URL absoluta.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
+  if (!rateLimit(getIp(req), 'qr-image', 60, 60_000)) {
+    return new NextResponse('Too many requests', { status: 429 })
+  }
+
   const { token } = await params
 
   if (!token) {

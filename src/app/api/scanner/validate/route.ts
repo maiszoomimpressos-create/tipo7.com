@@ -157,11 +157,26 @@ export async function POST(req: NextRequest) {
   const ticketName  = itemData?.event_tickets?.name ?? 'Ingresso'
   const holderName  = itemData?.ticket_holders?.find(h => h.slot_number === ticket.slot_number)?.full_name ?? null
 
-  // Marca como usado
-  await admin
+  // UPDATE atômico: só marca como usado se ainda estiver 'valid'.
+  // Previne race condition quando dois scanners leem o mesmo QR simultaneamente —
+  // o segundo UPDATE não afeta nenhuma linha porque status já mudou para 'used'.
+  const { data: marcado } = await admin
     .from('tickets')
     .update({ status: 'used', validated_at: new Date().toISOString(), validated_by: user.id })
     .eq('id', ticket.id)
+    .eq('status', 'valid')
+    .select('id')
+
+  if (!marcado || marcado.length === 0) {
+    await admin.from('ticket_validations').insert({
+      ticket_id:  ticket.id,
+      event_id:   eventoId,
+      scanned_by: user.id,
+      result:     'already_used',
+      raw_token:  qr_token,
+    })
+    return NextResponse.json({ result: 'already_used', message: 'Este ingresso já foi utilizado.' })
+  }
 
   // Registra no log de auditoria
   await admin.from('ticket_validations').insert({

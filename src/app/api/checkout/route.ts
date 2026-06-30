@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { calcularTaxaPlataforma } from '@/lib/feeRules'
+import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 export async function POST(req: NextRequest) {
+  if (!rateLimit(getIp(req), 'checkout', 10, 60_000)) return tooManyRequests()
+
   try {
     const { eventoId, items } = await req.json() as {
       eventoId: string
@@ -16,6 +19,12 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
     if (!items?.length) return NextResponse.json({ error: 'Nenhum ingresso selecionado' }, { status: 400 })
+
+    for (const item of items) {
+      if (!Number.isInteger(item.quantity) || item.quantity <= 0 || item.quantity > 100) {
+        return NextResponse.json({ error: 'Quantidade inválida' }, { status: 400 })
+      }
+    }
 
     const admin = createServiceClient()
 

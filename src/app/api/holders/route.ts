@@ -15,6 +15,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Campos obrigatórios ausentes' }, { status: 400 })
   }
 
+  if (typeof email !== 'string' || !email.includes('@') || email.length > 254) {
+    return NextResponse.json({ error: 'Email inválido' }, { status: 400 })
+  }
+
   // Verifica que o order_item pertence ao usuário logado
   const { data: item } = await supabase
     .from('order_items')
