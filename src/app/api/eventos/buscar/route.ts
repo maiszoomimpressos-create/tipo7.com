@@ -1,7 +1,7 @@
 // GET /api/eventos/buscar?q=texto&categoria=Festa&cidade=SP&limit=12
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
+import { rateLimitLocal, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,7 +9,7 @@ const supabase = createClient(
 )
 
 export async function GET(request: NextRequest) {
-  if (!rateLimit(getIp(request), 'eventos-buscar', 20, 60_000)) return tooManyRequests()
+  if (!rateLimitLocal(getIp(request), 'eventos-buscar', 20, 60_000)) return tooManyRequests()
 
   const q         = request.nextUrl.searchParams.get('q')?.trim() ?? ''
   const categoria = request.nextUrl.searchParams.get('categoria') ?? ''

@@ -42,7 +42,7 @@ async function checkPermissaoBilheteria(userId: string, eventoId: string): Promi
 // POST /api/bilheteria/vender
 // body: { eventoId, ticketId, quantidade, comprador: { nome, cpf, telefone, dataNascimento } }
 export async function POST(req: NextRequest) {
-  if (!rateLimit(getIp(req), 'bilheteria-vender', 60, 60_000)) return tooManyRequests()
+  if (!(await rateLimit(getIp(req), 'bilheteria-vender', 60, 60_000))) return tooManyRequests()
 
   const supabase = await createClient()
   const admin    = createServiceClient()

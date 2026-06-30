@@ -6,7 +6,7 @@ import { getMpToken } from '@/lib/mpToken'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 export async function POST(req: NextRequest) {
-  if (!rateLimit(getIp(req), 'checkout', 10, 60_000)) return tooManyRequests()
+  if (!(await rateLimit(getIp(req), 'checkout', 10, 60_000))) return tooManyRequests()
 
   try {
     const { eventoId, items } = await req.json() as {

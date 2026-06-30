@@ -2,7 +2,7 @@
 // Verifica se um CPF já está cadastrado (usado no cadastro para evitar duplicatas)
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
+import { rateLimitLocal, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 function cpfValido(cpf: string): boolean {
   if (/^(\d)\1{10}$/.test(cpf)) return false
@@ -19,7 +19,7 @@ function cpfValido(cpf: string): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  if (!rateLimit(getIp(req), 'check-cpf', 5, 60_000)) return tooManyRequests()
+  if (!rateLimitLocal(getIp(req), 'check-cpf', 5, 60_000)) return tooManyRequests()
 
   const cpf = req.nextUrl.searchParams.get('cpf')?.replace(/\D/g, '')
   if (!cpf || cpf.length !== 11 || !cpfValido(cpf)) return NextResponse.json({ exists: false })

@@ -2,10 +2,10 @@
 // Verifica se um telefone já está cadastrado (compara apenas dígitos)
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
+import { rateLimitLocal, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 export async function GET(req: NextRequest) {
-  if (!rateLimit(getIp(req), 'check-phone', 5, 60_000)) return tooManyRequests()
+  if (!rateLimitLocal(getIp(req), 'check-phone', 5, 60_000)) return tooManyRequests()
 
   const raw = req.nextUrl.searchParams.get('phone')?.replace(/\D/g, '')
   if (!raw || raw.length < 10) return NextResponse.json({ exists: false })

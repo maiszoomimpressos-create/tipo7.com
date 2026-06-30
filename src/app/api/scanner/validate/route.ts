@@ -43,7 +43,7 @@ async function checkPermission(userId: string, eventoId: string): Promise<boolea
 // POST /api/scanner/validate
 // body: { qr_token: string, eventoId: string }
 export async function POST(req: NextRequest) {
-  if (!rateLimit(getIp(req), 'scanner-validate', 30, 60_000)) return tooManyRequests()
+  if (!(await rateLimit(getIp(req), 'scanner-validate', 30, 60_000))) return tooManyRequests()
 
   const supabase = await createClient()
   const admin    = createServiceClient()

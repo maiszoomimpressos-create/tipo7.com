@@ -1,20 +1,47 @@
-// Rate limiter em memória com janela deslizante.
-// Em ambientes serverless (Vercel), cada instância tem sua própria memória —
-// o limite é por instância, não global. Ainda assim reduz significativamente
-// força bruta e enumeração.
+// Rate limiter centralizado via Supabase.
+// Funciona em ambientes serverless multi-instância (Vercel) porque persiste
+// os contadores no banco, não em memória.
+// Os endpoints menos críticos podem usar rateLimitLocal (em memória) para zero latência.
 
+import { createServiceClient } from '@/lib/supabase/server'
+
+// Rate limit centralizado via banco — funciona entre todas as instâncias Vercel.
+// Usa a função SQL check_rate_limit (migration 20260630000002).
+export async function rateLimit(
+  ip:       string,
+  key:      string,
+  max:      number,
+  windowMs: number,
+): Promise<boolean> {
+  const windowSeconds = Math.ceil(windowMs / 1000)
+  try {
+    const admin = createServiceClient()
+    const { data } = await admin.rpc('check_rate_limit', {
+      p_ip:             ip,
+      p_key:            key,
+      p_max:            max,
+      p_window_seconds: windowSeconds,
+    })
+    return data === true
+  } catch {
+    // Em caso de falha do banco, permite a requisição (fail open)
+    // para não derrubar o serviço por problema de rate limit
+    return true
+  }
+}
+
+// Rate limit em memória — zero latência, mas não funciona entre instâncias.
+// Use apenas para endpoints de baixo risco onde a eventual perda de limite é aceitável.
 const windows = new Map<string, number[]>()
-
-// Retorna true se a requisição for permitida, false se exceder o limite.
-export function rateLimit(
-  ip: string,
-  key: string,
-  max: number,
+export function rateLimitLocal(
+  ip:       string,
+  key:      string,
+  max:      number,
   windowMs: number,
 ): boolean {
-  const k   = `${key}:${ip}`
-  const now = Date.now()
-  const prev = windows.get(k) ?? []
+  const k     = `${key}:${ip}`
+  const now   = Date.now()
+  const prev  = windows.get(k) ?? []
   const valid = prev.filter(t => now - t < windowMs)
   valid.push(now)
   windows.set(k, valid)
