@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       admin.from('event_tickets').select('id, name, price, quantity').in('id', ticketIds).eq('event_id', eventoId),
       admin.from('events').select('title, fee_mode').eq('id', eventoId).single(),
     ])
-    const feeMode = (evento?.fee_mode ?? 'promotor') as 'promotor' | 'comprador'
+    const feeMode = (evento?.fee_mode ?? 'promotor') as 'promotor' | 'comprador' | 'mista'
 
     if (!tickets?.length) return NextResponse.json({ error: 'Ingressos não encontrados' }, { status: 400 })
 
@@ -144,12 +144,17 @@ export async function POST(req: NextRequest) {
         const feePct = Number(mpAccount2.fee_pct)
 
         if (feeMode === 'comprador') {
-          // Comprador paga a taxa (modelo Sympla): transaction_amount = faceValue + taxa da plataforma
+          // Comprador paga 100% da taxa — promotor recebe exatamente o valor de face
           transactionAmount = Math.round(faceValue * (1 + feePct / 100) * 100) / 100
-          // Plataforma absorve taxa MP: promotor recebe exatamente 100% do valor de face
-          // application_fee = transactionAmount * (1 - mpFeePct) - faceValue
           applicationFee = Math.max(0, Math.round(
             (transactionAmount * (1 - mpPixPct / 100) - faceValue) * 100
+          ) / 100)
+        } else if (feeMode === 'mista') {
+          // Taxa dividida — comprador paga metade, promotor desconta metade do repasse
+          transactionAmount = Math.round(faceValue * (1 + feePct / 2 / 100) * 100) / 100
+          const promoterTarget = Math.round(faceValue * (1 - feePct / 2 / 100) * 100) / 100
+          applicationFee = Math.max(0, Math.round(
+            (transactionAmount * (1 - mpPixPct / 100) - promoterTarget) * 100
           ) / 100)
         } else {
           // Promotor absorve a taxa (Modelo B): buyer paga faceValue, plataforma ajusta application_fee

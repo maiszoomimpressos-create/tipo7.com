@@ -30,7 +30,7 @@ interface Evento {
   ticketMode:         'individual' | 'pacote' | 'ambos' | null
   packageDiscountPct: number
   bannerUrl:          string | null
-  feeMode:            'promotor' | 'comprador'
+  feeMode:            'promotor' | 'comprador' | 'mista'
   feePct:             number
 }
 
@@ -222,11 +222,12 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   const setQty = (id: string, qty: number, max: number) =>
     setSelection(prev => ({ ...prev, [id]: Math.max(0, Math.min(qty, max)) }))
 
-  // displayPrice = preço que o comprador vê (e paga) — inclui taxa quando fee_mode = 'comprador'
-  const effectivePrice = (facePrice: number) =>
-    evento.feeMode === 'comprador'
-      ? Math.round(facePrice * (1 + evento.feePct / 100) * 100) / 100
-      : facePrice
+  // displayPrice = preço que o comprador vê e paga conforme o modo de taxa do evento
+  const effectivePrice = (facePrice: number) => {
+    if (evento.feeMode === 'comprador') return Math.round(facePrice * (1 + evento.feePct / 100) * 100) / 100
+    if (evento.feeMode === 'mista')     return Math.round(facePrice * (1 + evento.feePct / 2 / 100) * 100) / 100
+    return facePrice
+  }
 
   const total = useMemo(
     () => ingressos.reduce((sum, t) => sum + (selection[t.id] ?? 0) * effectivePrice(t.price), 0),

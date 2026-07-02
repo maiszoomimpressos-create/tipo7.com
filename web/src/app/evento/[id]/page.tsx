@@ -57,7 +57,7 @@ export default async function EventoPage({ params }: Props) {
     .order('order_index')
 
   // Busca a taxa da plataforma para exibir preços corretos quando fee_mode = 'comprador'
-  const feeMode = (evento.fee_mode ?? 'promotor') as 'promotor' | 'comprador'
+  const feeMode = (evento.fee_mode ?? 'promotor') as 'promotor' | 'comprador' | 'mista'
   let feePct = 10 // fallback
 
   if (feeMode === 'comprador') {

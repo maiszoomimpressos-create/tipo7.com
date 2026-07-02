@@ -23,7 +23,7 @@ interface Inicial {
   cep: string; rua: string; numero: string
   bairro: string; cidade: string; estado: string; complemento: string
   capacidade: string
-  feeMode: 'promotor' | 'comprador'
+  feeMode: 'promotor' | 'comprador' | 'mista'
 }
 
 interface Props {
@@ -93,7 +93,7 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
   const [estado,      setEstado]      = useState(inicial.estado)
   const [complemento, setComplemento] = useState(inicial.complemento)
   const [capacidade,  setCapacidade]  = useState(inicial.capacidade)
-  const [feeMode,     setFeeMode]     = useState<'promotor' | 'comprador'>(inicial.feeMode)
+  const [feeMode,     setFeeMode]     = useState<'promotor' | 'comprador' | 'mista'>(inicial.feeMode)
   const [cepLoading,  setCepLoading]  = useState(false)
   const [cepError,    setCepError]    = useState<string | null>(null)
 
@@ -578,6 +578,11 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
               value: 'comprador',
               titulo: 'Comprador paga a taxa',
               desc:   'A taxa é adicionada ao preço do ingresso para o comprador. Você recebe o valor cheio.',
+            },
+            {
+              value: 'mista',
+              titulo: 'Dividir a taxa',
+              desc:   'Cada lado paga metade. O comprador paga um pouco a mais e você desconta a outra metade do seu repasse.',
             },
           ] as const).map(op => (
             <button

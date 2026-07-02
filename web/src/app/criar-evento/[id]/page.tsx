@@ -125,7 +125,7 @@ export default async function EditarEventoPage({ params }: Props) {
             estado:        evento.state          ?? '',
             complemento:   evento.complement     ?? '',
             capacidade:    (evento as unknown as { capacity: number | null }).capacity?.toString() ?? '',
-            feeMode:       ((evento as unknown as { fee_mode: string | null }).fee_mode ?? 'promotor') as 'promotor' | 'comprador',
+            feeMode:       ((evento as unknown as { fee_mode: string | null }).fee_mode ?? 'promotor') as 'promotor' | 'comprador' | 'mista',
           }}
         />
 

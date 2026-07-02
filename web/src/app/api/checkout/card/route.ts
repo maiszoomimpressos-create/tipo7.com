@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
       admin.from('event_tickets').select('id, name, price, quantity').in('id', ticketIds).eq('event_id', eventoId),
       admin.from('events').select('title, fee_mode').eq('id', eventoId).single(),
     ])
-    const feeMode = (evento?.fee_mode ?? 'promotor') as 'promotor' | 'comprador'
+    const feeMode = (evento?.fee_mode ?? 'promotor') as 'promotor' | 'comprador' | 'mista'
 
     if (!tickets?.length) return NextResponse.json({ error: 'Ingressos não encontrados' }, { status: 400 })
 
@@ -167,10 +167,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Busca o valor total com juros na API do MP (nunca confia no cliente)
-    // Para 'comprador paga taxa': a base da consulta de parcelamento é faceValue + taxa plataforma
-    const baseParcelamento = feeMode === 'comprador' && mpAccountFee !== undefined
-      ? Math.round(faceValue * (1 + mpAccountFee / 100) * 100) / 100
-      : faceValue
+    // Base para consulta de parcelamento: inclui a parte do comprador na taxa
+    const baseParcelamento =
+      feeMode === 'comprador' && mpAccountFee !== undefined
+        ? Math.round(faceValue * (1 + mpAccountFee / 100) * 100) / 100
+        : feeMode === 'mista' && mpAccountFee !== undefined
+          ? Math.round(faceValue * (1 + mpAccountFee / 2 / 100) * 100) / 100
+          : faceValue
 
     let transactionAmount = baseParcelamento
     try {
@@ -196,10 +199,15 @@ export async function POST(req: NextRequest) {
     let applicationFee: number | undefined = undefined
     if (ownerId && mpAccountFee !== undefined) {
       if (feeMode === 'comprador') {
-        // Comprador paga a taxa (modelo Sympla): promotor recebe exatamente 100% do valor de face
-        // application_fee = transactionAmount * (1 - mpFeePct) - faceValue
+        // Comprador paga 100% da taxa — promotor recebe exatamente o valor de face
         applicationFee = Math.max(0, Math.round(
           (transactionAmount * (1 - mpCardPct / 100) - faceValue) * 100
+        ) / 100)
+      } else if (feeMode === 'mista') {
+        // Taxa dividida — promotor recebe exatamente (faceValue - metade da taxa)
+        const promoterTarget = Math.round(faceValue * (1 - mpAccountFee / 2 / 100) * 100) / 100
+        applicationFee = Math.max(0, Math.round(
+          (transactionAmount * (1 - mpCardPct / 100) - promoterTarget) * 100
         ) / 100)
       } else {
         // Promotor absorve (Modelo B): ajusta application_fee para promotor receber (100 - feePct)% do face
