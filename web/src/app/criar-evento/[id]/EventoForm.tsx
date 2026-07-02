@@ -23,6 +23,7 @@ interface Inicial {
   cep: string; rua: string; numero: string
   bairro: string; cidade: string; estado: string; complemento: string
   capacidade: string
+  feeMode: 'promotor' | 'comprador'
 }
 
 interface Props {
@@ -92,6 +93,7 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
   const [estado,      setEstado]      = useState(inicial.estado)
   const [complemento, setComplemento] = useState(inicial.complemento)
   const [capacidade,  setCapacidade]  = useState(inicial.capacidade)
+  const [feeMode,     setFeeMode]     = useState<'promotor' | 'comprador'>(inicial.feeMode)
   const [cepLoading,  setCepLoading]  = useState(false)
   const [cepError,    setCepError]    = useState<string | null>(null)
 
@@ -253,6 +255,7 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
         state:         estado                || null,
         complement:    complemento           || null,
         capacity:      capacidade ? parseInt(capacidade, 10) : null,
+        fee_mode:      feeMode,
       }).eq('id', eventoId)
 
       if (continuar) {
@@ -553,6 +556,58 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
               A soma de todos os ingressos não pode ultrapassar este limite.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* ── SEÇÃO: Cobrança da taxa ── */}
+      <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#141414]">
+          <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Cobrança da taxa de serviço</p>
+          <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Quem vai arcar com a taxa da plataforma?
+          </p>
+        </div>
+        <div className="p-6 flex flex-col gap-3">
+          {([
+            {
+              value: 'promotor',
+              titulo: 'Eu absorvo a taxa',
+              desc:   'O comprador paga o preço que você definiu. A taxa é descontada do seu repasse.',
+            },
+            {
+              value: 'comprador',
+              titulo: 'Comprador paga a taxa',
+              desc:   'A taxa é adicionada ao preço do ingresso para o comprador. Você recebe o valor cheio.',
+            },
+          ] as const).map(op => (
+            <button
+              key={op.value}
+              type="button"
+              onClick={() => setFeeMode(op.value)}
+              className="flex items-start gap-4 p-4 rounded-xl border text-left transition-all"
+              style={{
+                background: feeMode === op.value ? '#E8B84B10' : '#111',
+                border:     `1px solid ${feeMode === op.value ? '#E8B84B40' : '#222'}`,
+              }}
+            >
+              <div
+                className="w-4 h-4 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center"
+                style={{ borderColor: feeMode === op.value ? '#E8B84B' : '#333' }}
+              >
+                {feeMode === op.value && (
+                  <div className="w-2 h-2 rounded-full" style={{ background: '#E8B84B' }} />
+                )}
+              </div>
+              <div>
+                <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  {op.titulo}
+                </p>
+                <p className="text-[#555] text-xs mt-0.5 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  {op.desc}
+                </p>
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 

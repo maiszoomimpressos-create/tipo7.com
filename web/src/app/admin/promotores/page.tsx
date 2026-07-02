@@ -4,37 +4,58 @@ import { PromotoresClient } from './PromotoresClient'
 export default async function PromotoresPage() {
   const admin = createServiceClient()
 
-  const { data: promotores } = await admin
-    .from('promotor_profiles')
-    .select(`
-      user_id,
-      tipo_pessoa,
-      profiles ( full_name ),
-      promotor_mp_accounts ( mp_user_id, fee_pct, updated_at )
-    `)
-    .order('user_id')
+  // Fonte real de promotores: organizações do tipo 'promotora'
+  const { data: orgs } = await admin
+    .from('organizations')
+    .select('owner_id, name, profiles!owner_id ( full_name )')
+    .eq('type', 'promotora')
+    .order('created_at')
 
-  const { data: vendas } = await admin
-    .from('orders')
-    .select('user_id, total')
-    .eq('status', 'approved')
+  const ownerIds = (orgs ?? [])
+    .map(o => o.owner_id)
+    .filter((id): id is string => !!id)
+
+  // Busca paralela: perfis de promotor (opcional) + contas MP + vendas
+  const [perfisRes, mpRes, vendasRes] = await Promise.all([
+    ownerIds.length
+      ? admin.from('promotor_profiles').select('user_id, tipo_pessoa').in('user_id', ownerIds)
+      : Promise.resolve({ data: [] }),
+    ownerIds.length
+      ? admin.from('promotor_mp_accounts').select('user_id, mp_user_id, fee_pct').in('user_id', ownerIds)
+      : Promise.resolve({ data: [] }),
+    admin.from('orders').select('user_id, total').eq('status', 'approved'),
+  ])
+
+  // Mapas de lookup por user_id
+  const perfilMap: Record<string, string> = {}
+  for (const p of perfisRes.data ?? []) perfilMap[p.user_id] = p.tipo_pessoa
+
+  const mpMap: Record<string, { mp_user_id: number; fee_pct: number }> = {}
+  for (const m of mpRes.data ?? []) mpMap[m.user_id] = m
 
   const vendasPorUser: Record<string, number> = {}
-  for (const v of vendas ?? []) {
+  for (const v of vendasRes.data ?? []) {
     vendasPorUser[v.user_id] = (vendasPorUser[v.user_id] ?? 0) + Number(v.total)
   }
 
-  const rows = (promotores ?? []).map(p => {
-    const profile = (Array.isArray(p.profiles) ? p.profiles[0] : p.profiles) as { full_name: string | null } | null
-    const mp      = (Array.isArray(p.promotor_mp_accounts) ? p.promotor_mp_accounts[0] : p.promotor_mp_accounts) as { mp_user_id: number; fee_pct: number; updated_at: string } | null
-    return {
-      userId:     p.user_id,
-      nome:       profile?.full_name ?? 'Sem nome',
-      tipoPessoa: p.tipo_pessoa as string,
-      mpConected: !!mp,
-      feePct:     mp?.fee_pct ?? 10,
-      totalVendas: vendasPorUser[p.user_id] ?? 0,
-    }
+  // Deduplica por owner_id (mesmo usuário pode ter mais de uma org promotora)
+  const seen = new Set<string>()
+  const rows = (orgs ?? []).flatMap(org => {
+    const uid = org.owner_id
+    if (!uid || seen.has(uid)) return []
+    seen.add(uid)
+
+    const profile = Array.isArray(org.profiles) ? org.profiles[0] : org.profiles
+    const mp = mpMap[uid] ?? null
+
+    return [{
+      userId:      uid,
+      nome:        (profile as { full_name: string | null } | null)?.full_name ?? 'Sem nome',
+      tipoPessoa:  perfilMap[uid] ?? null,
+      mpConected:  !!mp,
+      feePct:      mp?.fee_pct ?? 10,
+      totalVendas: vendasPorUser[uid] ?? 0,
+    }]
   })
 
   return (

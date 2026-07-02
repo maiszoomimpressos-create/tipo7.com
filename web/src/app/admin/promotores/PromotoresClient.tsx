@@ -8,7 +8,7 @@ const ACCENT = '#E8B84B'
 type Row = {
   userId:      string
   nome:        string
-  tipoPessoa:  string
+  tipoPessoa:  string | null
   mpConected:  boolean
   feePct:      number
   totalVendas: number

@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { CheckCircle, AlertCircle, Loader2, LogOut } from 'lucide-react'
+import { CheckCircle, AlertCircle, Loader2, LogOut, Info } from 'lucide-react'
 import { desconectarContaMP } from './actions'
+
+const ACCENT = '#E8B84B'
 
 type ContaMP = {
   mp_user_id: number
@@ -12,12 +14,27 @@ type ContaMP = {
   updated_at: string
 } | null
 
-export function ContasClient({ contaAtual }: { contaAtual: ContaMP }) {
+type Tarifas = {
+  platformFeePct: string
+  descPlataforma: string
+  pctPix:         string
+  pctDebito:      string
+  pctCredito1x:   string
+  pctCredito6x:   string
+  pctCredito12x:  string
+  notaExtra:      string
+}
+
+interface Props {
+  contaAtual: ContaMP
+  tarifas:    Tarifas
+}
+
+export function ContasClient({ contaAtual, tarifas }: Props) {
   const searchParams = useSearchParams()
   const [aviso, setAviso] = useState<{ tipo: 'ok' | 'erro'; msg: string } | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  // Lê o resultado do OAuth ao voltar do Mercado Pago
   useEffect(() => {
     if (searchParams.get('mp_ok')) {
       setAviso({ tipo: 'ok', msg: 'Mercado Pago conectado com sucesso!' })
@@ -43,9 +60,17 @@ export function ContasClient({ contaAtual }: { contaAtual: ContaMP }) {
 
   const conectado = !!contaAtual
 
+  const metodos = [
+    { label: 'Pix',               valor: tarifas.pctPix        },
+    { label: 'Débito',            valor: tarifas.pctDebito     },
+    { label: 'Crédito 1×',        valor: tarifas.pctCredito1x  },
+    { label: 'Crédito 2–6×',      valor: tarifas.pctCredito6x  },
+    { label: 'Crédito 7–12×',     valor: tarifas.pctCredito12x },
+  ]
+
   return (
     <>
-      {/* Aviso de retorno OAuth */}
+      {/* Aviso OAuth */}
       {aviso && (
         <div className={`flex items-start gap-2.5 px-4 py-3 rounded-xl mb-4 text-sm ${
           aviso.tipo === 'ok'
@@ -134,6 +159,71 @@ export function ContasClient({ contaAtual }: { contaAtual: ContaMP }) {
             </>
           )}
         </div>
+      </div>
+
+      {/* ── Tarifas ──────────────────────────────────────────────── */}
+      <div className="mt-4 bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
+
+        {/* Cabeçalho */}
+        <div className="px-6 py-4 border-b border-[#141414]">
+          <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Tarifas cobradas
+          </p>
+          {tarifas.descPlataforma ? (
+            <p className="text-[#444] text-xs mt-1 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {tarifas.descPlataforma}
+            </p>
+          ) : (
+            <p className="text-[#444] text-xs mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Valores descontados automaticamente a cada venda processada.
+            </p>
+          )}
+        </div>
+
+        {/* Taxa Tipo7 */}
+        <div className="px-6 pt-4 pb-2">
+          <div className="flex items-center justify-between py-2.5 border-b border-[#111]">
+            <div>
+              <p className="text-white text-xs font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Taxa tipo7
+              </p>
+              <p className="text-[#383838] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Cobrada pela plataforma sobre cada venda
+              </p>
+            </div>
+            <span className="text-sm font-bold" style={{ color: ACCENT, fontFamily: 'var(--font-syne)' }}>
+              {tarifas.platformFeePct}%
+            </span>
+          </div>
+        </div>
+
+        {/* Taxas MP */}
+        <div className="px-6 pb-2">
+          <p className="text-[#2e2e2e] text-[10px] uppercase tracking-wider pt-3 pb-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Mercado Pago · por método de pagamento
+          </p>
+          <div className="flex flex-col gap-0.5">
+            {metodos.map(({ label, valor }) => (
+              <div key={label} className="flex items-center justify-between py-2">
+                <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{label}</p>
+                <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{valor}%</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Nota extra (se existir) */}
+        {tarifas.notaExtra && (
+          <div className="mx-6 mb-5 mt-2 flex items-start gap-2 px-3 py-2.5 rounded-xl"
+               style={{ background: '#111', border: '1px solid #1a1a1a' }}>
+            <Info size={11} className="shrink-0 mt-0.5" style={{ color: '#333' }} />
+            <p className="text-[#383838] text-[11px] leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {tarifas.notaExtra}
+            </p>
+          </div>
+        )}
+
+        {!tarifas.notaExtra && <div className="pb-4" />}
       </div>
 
       {/* ── Em breve ─────────────────────────────────────────────── */}

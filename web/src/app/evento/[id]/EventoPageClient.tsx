@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { PainelOrganizador } from './PainelOrganizador'
 import type { IngressoEditavel } from './PainelIngressos'
+import { CheckoutCardPanel } from './CheckoutCardPanel'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -29,6 +30,8 @@ interface Evento {
   ticketMode:         'individual' | 'pacote' | 'ambos' | null
   packageDiscountPct: number
   bannerUrl:          string | null
+  feeMode:            'promotor' | 'comprador'
+  feePct:             number
 }
 
 interface Attraction {
@@ -93,13 +96,14 @@ function formatPrice(price: number) {
 // ─── Linha de ingresso com seletor +/- ───────────────────────────────────────
 
 function TicketRow({
-  ingresso, qty, onQty,
+  ingresso, qty, onQty, displayPrice,
 }: {
-  ingresso: Ingresso
-  qty:      number
-  onQty:    (q: number) => void
+  ingresso:     Ingresso
+  qty:          number
+  onQty:        (q: number) => void
+  displayPrice: number
 }) {
-  const gratuito = ingresso.price === 0
+  const gratuito = displayPrice === 0
   return (
     <div className="flex items-center gap-3 py-3 border-b border-[#111] last:border-0">
       <div className="flex-1 min-w-0">
@@ -108,7 +112,7 @@ function TicketRow({
         </p>
         <p className="text-sm font-semibold mt-0.5"
            style={{ color: gratuito ? '#4ade80' : ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-          {formatPrice(ingresso.price)}
+          {formatPrice(displayPrice)}
         </p>
       </div>
       <div className="flex items-center gap-2 shrink-0">
@@ -138,9 +142,9 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   // Accordion e checkout
   const [openDay,       setOpenDay]       = useState(0)
   const [selection,     setSelection]     = useState<Record<string, number>>({})
-  const [loading,       setLoading]       = useState(false)
   const [loadingPix,    setLoadingPix]    = useState(false)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
+  const [showCardForm,  setShowCardForm]  = useState(false)
 
   // Inline edit state (owner only)
   const [editField,       setEditField]       = useState<string | null>(null)
@@ -218,9 +222,16 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   const setQty = (id: string, qty: number, max: number) =>
     setSelection(prev => ({ ...prev, [id]: Math.max(0, Math.min(qty, max)) }))
 
+  // displayPrice = preço que o comprador vê (e paga) — inclui taxa quando fee_mode = 'comprador'
+  const effectivePrice = (facePrice: number) =>
+    evento.feeMode === 'comprador'
+      ? Math.round(facePrice * (1 + evento.feePct / 100) * 100) / 100
+      : facePrice
+
   const total = useMemo(
-    () => ingressos.reduce((sum, t) => sum + (selection[t.id] ?? 0) * t.price, 0),
-    [selection, ingressos],
+    () => ingressos.reduce((sum, t) => sum + (selection[t.id] ?? 0) * effectivePrice(t.price), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selection, ingressos, evento.feeMode, evento.feePct],
   )
 
   const totalItems = useMemo(
@@ -238,24 +249,6 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
     return Object.entries(selection)
       .filter(([, qty]) => qty > 0)
       .map(([ticketId, quantity]) => ({ ticketId, quantity }))
-  }
-
-  async function handleCheckout() {
-    const items = getItems()
-    if (!items.length) return
-    setLoading(true); setCheckoutError(null)
-    try {
-      const res = await fetch('/api/checkout', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ eventoId: evento.id, items }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setCheckoutError(data.error ?? 'Erro ao processar checkout'); return }
-      window.location.href = data.checkoutUrl
-    } catch {
-      setCheckoutError('Erro de conexão. Tente novamente.')
-    } finally { setLoading(false) }
   }
 
   async function handlePixCheckout() {
@@ -856,7 +849,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                           {tickets.map(t => (
                             <TicketRow key={t.id} ingresso={t}
                               qty={selection[t.id] ?? 0}
-                              onQty={q => setQty(t.id, q, t.quantity)} />
+                              onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
                           ))}
                         </div>
                       )
@@ -864,7 +857,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                     {ingressosPacote.map(t => (
                       <TicketRow key={t.id} ingresso={t}
                         qty={selection[t.id] ?? 0}
-                        onQty={q => setQty(t.id, q, t.quantity)} />
+                        onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
                     ))}
                   </>
                 )}
@@ -875,7 +868,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                     {ingressosPacote.map(t => (
                       <TicketRow key={t.id} ingresso={t}
                         qty={selection[t.id] ?? 0}
-                        onQty={q => setQty(t.id, q, t.quantity)} />
+                        onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
                     ))}
                   </div>
                 )}
@@ -900,7 +893,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                         {ingressosPacote.map(t => (
                           <TicketRow key={t.id} ingresso={t}
                             qty={selection[t.id] ?? 0}
-                            onQty={q => setQty(t.id, q, t.quantity)} />
+                            onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
                         ))}
                       </div>
                     )}
@@ -925,7 +918,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                               {tickets.map(t => (
                                 <TicketRow key={t.id} ingresso={t}
                                   qty={selection[t.id] ?? 0}
-                                  onQty={q => setQty(t.id, q, t.quantity)} />
+                                  onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
                               ))}
                             </div>
                           )
@@ -963,46 +956,57 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                       </p>
                     )}
 
-                    {/* Botão PIX */}
-                    <button
-                      onClick={handlePixCheckout}
-                      disabled={loadingPix || loading || totalItems === 0}
-                      className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-105"
-                      style={{
-                        background:  totalItems > 0 ? '#32D583' : '#0d1a12',
-                        color:       totalItems > 0 ? '#071209' : '#1a3322',
-                        border:      totalItems > 0 ? 'none' : '1px solid #0d1a12',
-                        fontFamily:  'var(--font-dm-sans)',
-                      }}>
-                      {loadingPix
-                        ? <><Loader2 size={14} className="animate-spin" /> Gerando PIX...</>
-                        : 'Pagar com PIX'
-                      }
-                    </button>
+                    {/* Formulário de cartão inline */}
+                    {showCardForm && (
+                      <CheckoutCardPanel
+                        eventoId={evento.id}
+                        items={getItems()}
+                        total={total}
+                        onClose={() => setShowCardForm(false)}
+                      />
+                    )}
 
-                    {/* Separador */}
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-px bg-[#111]" />
-                      <span className="text-[#2a2a2a] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>ou</span>
-                      <div className="flex-1 h-px bg-[#111]" />
-                    </div>
+                    {!showCardForm && (
+                      <>
+                        {/* Botão PIX */}
+                        <button
+                          onClick={handlePixCheckout}
+                          disabled={loadingPix || totalItems === 0}
+                          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-105"
+                          style={{
+                            background:  totalItems > 0 ? '#32D583' : '#0d1a12',
+                            color:       totalItems > 0 ? '#071209' : '#1a3322',
+                            border:      totalItems > 0 ? 'none' : '1px solid #0d1a12',
+                            fontFamily:  'var(--font-dm-sans)',
+                          }}>
+                          {loadingPix
+                            ? <><Loader2 size={14} className="animate-spin" /> Gerando PIX...</>
+                            : 'Pagar com PIX'
+                          }
+                        </button>
 
-                    {/* Botão Cartão/Boleto */}
-                    <button
-                      onClick={handleCheckout}
-                      disabled={loading || loadingPix || totalItems === 0}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110"
-                      style={{
-                        background:  'transparent',
-                        color:       totalItems > 0 ? ACCENT : '#333',
-                        border:      `1px solid ${totalItems > 0 ? ACCENT + '40' : '#1a1a1a'}`,
-                        fontFamily:  'var(--font-dm-sans)',
-                      }}>
-                      {loading
-                        ? <><Loader2 size={14} className="animate-spin" /> Processando...</>
-                        : 'Cartão ou Boleto'
-                      }
-                    </button>
+                        {/* Separador */}
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-px bg-[#111]" />
+                          <span className="text-[#2a2a2a] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>ou</span>
+                          <div className="flex-1 h-px bg-[#111]" />
+                        </div>
+
+                        {/* Botão Cartão de Crédito */}
+                        <button
+                          onClick={() => { setCheckoutError(null); setShowCardForm(true) }}
+                          disabled={loadingPix || totalItems === 0}
+                          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110"
+                          style={{
+                            background:  'transparent',
+                            color:       totalItems > 0 ? ACCENT : '#333',
+                            border:      `1px solid ${totalItems > 0 ? ACCENT + '40' : '#1a1a1a'}`,
+                            fontFamily:  'var(--font-dm-sans)',
+                          }}>
+                          Cartão de crédito
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

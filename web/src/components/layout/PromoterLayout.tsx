@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, CalendarRange, Settings2, Landmark, ChevronDown } from 'lucide-react'
+import { LayoutDashboard, CalendarRange, Settings2, Landmark, ReceiptText, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const NAV_MAIN = [
@@ -11,7 +11,8 @@ const NAV_MAIN = [
 ]
 
 const CONFIG_SUB = [
-  { label: 'Contas', href: '/configuracoes/contas', icon: Landmark },
+  { label: 'Contas',   href: '/configuracoes/contas',  icon: Landmark     },
+  { label: 'Tarifas',  href: '/minha-area/tarifas',    icon: ReceiptText  },
 ]
 
 export function PromoterLayout({ children }: { children: React.ReactNode }) {
@@ -121,9 +122,9 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
               </a>
             )
           })}
-          {/* Configurar no mobile — sempre visível como tab */}
+          {/* Configurar no mobile — aponta para Contas (primeiro sub-item) */}
           <a
-            href={CONFIG_SUB[0].href}
+            href="/configuracoes/contas"
             className={cn(
               'flex-1 flex items-center justify-center gap-2 py-3 text-sm border-b-2 transition-all',
               inConfig

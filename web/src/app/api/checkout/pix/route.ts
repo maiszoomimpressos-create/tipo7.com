@@ -48,12 +48,13 @@ export async function POST(req: NextRequest) {
 
     const admin = createServiceClient()
 
-    // Busca ingressos e título do evento em paralelo para validar preços
+    // Busca ingressos e dados do evento em paralelo para validar preços
     const ticketIds = items.map(i => i.ticketId)
     const [{ data: tickets }, { data: evento }] = await Promise.all([
       admin.from('event_tickets').select('id, name, price, quantity').in('id', ticketIds).eq('event_id', eventoId),
-      admin.from('events').select('title').eq('id', eventoId).single(),
+      admin.from('events').select('title, fee_mode').eq('id', eventoId).single(),
     ])
+    const feeMode = (evento?.fee_mode ?? 'promotor') as 'promotor' | 'comprador'
 
     if (!tickets?.length) return NextResponse.json({ error: 'Ingressos não encontrados' }, { status: 400 })
 
@@ -64,8 +65,9 @@ export async function POST(req: NextRequest) {
       return { ticket, quantity: item.quantity }
     })
 
-    const total = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0)
-    if (total <= 0) return NextResponse.json({ error: 'PIX não disponível para ingressos gratuitos' }, { status: 400 })
+    // faceValue = valor de face dos ingressos (base para repasse ao promotor e order_items)
+    const faceValue = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0)
+    if (faceValue <= 0) return NextResponse.json({ error: 'PIX não disponível para ingressos gratuitos' }, { status: 400 })
 
     // CPF é obrigatório para criar pagamento PIX no MP
     // Se o comprador não tiver CPF cadastrado no perfil, pedimos para preencher antes
@@ -103,10 +105,15 @@ export async function POST(req: NextRequest) {
 
     const orderId = resultado.order_id as string
 
-    // Busca taxa mínima da plataforma
-    const { data: minFeeSetting } = await admin
-      .from('platform_settings').select('value').eq('key', 'min_fee_pct').maybeSingle()
-    const minFeePct = Number(minFeeSetting?.value ?? 0)
+    // Busca taxa mínima e taxa MP PIX (Modelo B: 12% tudo incluso)
+    const { data: feeSettings } = await admin
+      .from('platform_settings')
+      .select('key, value')
+      .in('key', ['min_fee_pct', 'fee_pct_pix'])
+    const feeMap: Record<string, string> = {}
+    for (const row of feeSettings ?? []) feeMap[row.key] = row.value
+    const minFeePct = Number(feeMap['min_fee_pct'] ?? 0)
+    const mpPixPct  = parseFloat((feeMap['fee_pct_pix'] ?? '0.99').replace(',', '.'))
 
     // Busca conta MP do promotor do evento (split de pagamento)
     const { data: eventOwnerInfo } = await admin
@@ -119,8 +126,9 @@ export async function POST(req: NextRequest) {
     const orgData2 = (Array.isArray(orgRaw2) ? orgRaw2[0] : orgRaw2) as { owner_id: string } | null
     const ownerId2 = orgData2?.owner_id
 
-    let mpToken2:      string           = process.env.MP_ACCESS_TOKEN!
+    let mpToken2:       string            = process.env.MP_ACCESS_TOKEN!
     let applicationFee: number | undefined = undefined
+    let transactionAmount                  = faceValue
 
     if (ownerId2) {
       const tokenPromotor2 = await getMpToken(ownerId2, admin)
@@ -132,16 +140,29 @@ export async function POST(req: NextRequest) {
         .single()
 
       if (mpAccount2 && tokenPromotor2) {
-        mpToken2       = tokenPromotor2
-        applicationFee = await calcularTaxaPlataforma({
-          eventoId,
-          ownerId:     ownerId2,
-          total,
-          ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
-          feePct:      Number(mpAccount2.fee_pct),
-          minFeePct,
-          admin,
-        })
+        mpToken2 = tokenPromotor2
+        const feePct = Number(mpAccount2.fee_pct)
+
+        if (feeMode === 'comprador') {
+          // Comprador paga a taxa: transaction_amount = faceValue + taxa da plataforma
+          transactionAmount = Math.round(faceValue * (1 + feePct / 100) * 100) / 100
+          // application_fee = exatamente feePct% do valor de face (plataforma absorve taxa MP)
+          applicationFee    = Math.round(faceValue * feePct / 100 * 100) / 100
+        } else {
+          // Promotor absorve a taxa (Modelo B): buyer paga faceValue, plataforma ajusta application_fee
+          // para que promotor receba exatamente (100 - feePct)% do valor de face
+          applicationFee = await calcularTaxaPlataforma({
+            eventoId,
+            ownerId:           ownerId2,
+            total:             faceValue,
+            ticketCount:       lineItems.reduce((s, i) => s + i.quantity, 0),
+            feePct,
+            minFeePct,
+            admin,
+            mpFeePct:          mpPixPct,
+            transactionAmount: faceValue,
+          })
+        }
       }
     }
 
@@ -157,7 +178,7 @@ export async function POST(req: NextRequest) {
 
     const result = await payment.create({
       body: {
-        transaction_amount: total,
+        transaction_amount: transactionAmount,
         // description limitado a 255 chars pois o MP rejeita textos mais longos
         description:        `Ingressos - ${evento?.title ?? 'Evento'}`.slice(0, 255),
         payment_method_id:  'pix',
@@ -190,7 +211,7 @@ export async function POST(req: NextRequest) {
       pix_expires_at:     expiresAt,
     }).eq('id', orderId)
 
-    return NextResponse.json({ orderId, qrCode, qrCodeBase64, expiresAt, total })
+    return NextResponse.json({ orderId, qrCode, qrCodeBase64, expiresAt, total: transactionAmount })
 
   } catch (err) {
     // O SDK do MP lança o corpo JSON bruto da API quando recebe erro HTTP
