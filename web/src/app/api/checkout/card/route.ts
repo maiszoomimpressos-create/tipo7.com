@@ -196,8 +196,11 @@ export async function POST(req: NextRequest) {
     let applicationFee: number | undefined = undefined
     if (ownerId && mpAccountFee !== undefined) {
       if (feeMode === 'comprador') {
-        // Comprador paga a taxa: application_fee = feePct% do valor de face (flat, sem Modelo B)
-        applicationFee = Math.round(faceValue * mpAccountFee / 100 * 100) / 100
+        // Comprador paga a taxa (modelo Sympla): promotor recebe exatamente 100% do valor de face
+        // application_fee = transactionAmount * (1 - mpFeePct) - faceValue
+        applicationFee = Math.max(0, Math.round(
+          (transactionAmount * (1 - mpCardPct / 100) - faceValue) * 100
+        ) / 100)
       } else {
         // Promotor absorve (Modelo B): ajusta application_fee para promotor receber (100 - feePct)% do face
         applicationFee = await calcularTaxaPlataforma({

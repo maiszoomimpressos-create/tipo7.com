@@ -146,10 +146,7 @@ export default async function AdminHomePage() {
 
           {/* Bloco: Em andamento */}
           <TodoBloco titulo="Em andamento" cor="#E8B84B" itens={[
-            { label: 'Checkout Transparente com cartão de crédito (Tipo7)', status: 'andamento' },
-            { label: 'Sistema de regras de taxa (isenção por evento/promotor)', status: 'andamento' },
-            { label: 'Painel admin → Financeiro com submenu Tarifas + Bancos', status: 'andamento' },
-            { label: 'Página de tarifas para o promotor (/minha-area/tarifas)', status: 'andamento' },
+            { label: 'Nenhum item em andamento no momento', status: 'pendente' },
           ]} />
 
           {/* Bloco: Pós-lançamento imediato */}
@@ -189,6 +186,11 @@ export default async function AdminHomePage() {
 
           {/* Bloco: Já feito */}
           <TodoBloco titulo="Concluído" cor="#555" itens={[
+            { label: 'Checkout Transparente com cartão de crédito (Tipo7)', status: 'feito' },
+            { label: 'Sistema de regras de taxa (isenção por evento/promotor)', status: 'feito' },
+            { label: 'Painel admin → Financeiro com submenu Tarifas + Bancos', status: 'feito' },
+            { label: 'Página de tarifas para o promotor (/minha-area/tarifas)', status: 'feito' },
+            { label: 'Promotor escolhe quem paga a taxa: ele ou o comprador (estilo Sympla)', status: 'feito' },
             { label: 'Criação de evento em 4 etapas (info → ingressos → imagens → publicar)', status: 'feito' },
             { label: 'Checkout PIX transparente (MP Payments API)', status: 'feito' },
             { label: 'Split automático via MP Marketplace OAuth', status: 'feito' },

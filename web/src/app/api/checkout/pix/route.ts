@@ -144,10 +144,13 @@ export async function POST(req: NextRequest) {
         const feePct = Number(mpAccount2.fee_pct)
 
         if (feeMode === 'comprador') {
-          // Comprador paga a taxa: transaction_amount = faceValue + taxa da plataforma
+          // Comprador paga a taxa (modelo Sympla): transaction_amount = faceValue + taxa da plataforma
           transactionAmount = Math.round(faceValue * (1 + feePct / 100) * 100) / 100
-          // application_fee = exatamente feePct% do valor de face (plataforma absorve taxa MP)
-          applicationFee    = Math.round(faceValue * feePct / 100 * 100) / 100
+          // Plataforma absorve taxa MP: promotor recebe exatamente 100% do valor de face
+          // application_fee = transactionAmount * (1 - mpFeePct) - faceValue
+          applicationFee = Math.max(0, Math.round(
+            (transactionAmount * (1 - mpPixPct / 100) - faceValue) * 100
+          ) / 100)
         } else {
           // Promotor absorve a taxa (Modelo B): buyer paga faceValue, plataforma ajusta application_fee
           // para que promotor receba exatamente (100 - feePct)% do valor de face
