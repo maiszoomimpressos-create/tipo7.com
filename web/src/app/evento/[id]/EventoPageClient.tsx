@@ -6,7 +6,7 @@ import { QRCodeCanvas } from 'qrcode.react'
 import {
   MapPin, Calendar, Clock, Tag, ChevronDown, ChevronUp,
   Ticket, AlertCircle, ExternalLink, Music, Loader2,
-  Pencil, X, Check, Camera, Copy, Download, QrCode,
+  Pencil, X, Check, Camera, Copy, Download, QrCode, Lock,
   Shield, Car, UtensilsCrossed, Beer, Accessibility, Wifi,
   Baby, HeartPulse, Cigarette,
 } from 'lucide-react'
@@ -567,81 +567,108 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
         <div className="border-b border-[#111] bg-[#080808]">
           <div className="max-w-6xl mx-auto px-6 py-5 flex flex-wrap items-center gap-6">
 
-            {/* QR code */}
-            <div className="relative shrink-0">
-              <div className="p-2 rounded-xl bg-white">
-                <QRCodeCanvas
-                  id="qr-evento-canvas"
-                  value={eventUrl}
-                  size={100}
-                  bgColor="#ffffff"
-                  fgColor="#070707"
-                  level="M"
-                />
-              </div>
-              <div
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
-                style={{ background: ACCENT }}>
-                <QrCode size={10} style={{ color: '#070707' }} />
-              </div>
-            </div>
+            {evento.status === 'publicado' ? (
+              <>
+                {/* QR code */}
+                <div className="relative shrink-0">
+                  <div className="p-2 rounded-xl bg-white">
+                    <QRCodeCanvas
+                      id="qr-evento-canvas"
+                      value={eventUrl}
+                      size={100}
+                      bgColor="#ffffff"
+                      fgColor="#070707"
+                      level="M"
+                    />
+                  </div>
+                  <div
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
+                    style={{ background: ACCENT }}>
+                    <QrCode size={10} style={{ color: '#070707' }} />
+                  </div>
+                </div>
 
-            {/* URL + ações */}
-            <div className="flex-1 min-w-0 flex flex-col gap-3">
-              <div>
-                <p className="text-[#444] text-[10px] uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Link do evento
-                </p>
-                <p className="text-[#666] text-sm truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  {eventUrl}
-                </p>
+                {/* URL + ações */}
+                <div className="flex-1 min-w-0 flex flex-col gap-3">
+                  <div>
+                    <p className="text-[#444] text-[10px] uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Link do evento
+                    </p>
+                    <p className="text-[#666] text-sm truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {eventUrl}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={copiarLink}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                      style={{
+                        background: linkCopiado ? 'rgba(34,197,94,0.10)' : 'rgba(232,184,75,0.08)',
+                        border:     `1px solid ${linkCopiado ? 'rgba(34,197,94,0.30)' : 'rgba(232,184,75,0.25)'}`,
+                        color:      linkCopiado ? '#22c55e' : ACCENT,
+                        fontFamily: 'var(--font-dm-sans)',
+                      }}>
+                      {linkCopiado
+                        ? <><Check size={12} /> Link copiado!</>
+                        : <><Copy size={12} /> Copiar link</>
+                      }
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={baixarQR}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                      style={{
+                        background: 'rgba(255,255,255,0.04)',
+                        border:     '1px solid #1e1e1e',
+                        color:      '#555',
+                        fontFamily: 'var(--font-dm-sans)',
+                      }}>
+                      <Download size={12} /> Baixar QR
+                    </button>
+
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(`Garanta seu ingresso para ${evento.title}! 🎟️ ${eventUrl}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                      style={{
+                        background: 'rgba(37,211,102,0.08)',
+                        border:     '1px solid rgba(37,211,102,0.20)',
+                        color:      '#25D366',
+                        fontFamily: 'var(--font-dm-sans)',
+                      }}>
+                      <ExternalLink size={12} /> Compartilhar no WhatsApp
+                    </a>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Bloqueado — evento ainda é rascunho */
+              <div className="flex items-center gap-4 w-full">
+                <div
+                  className="w-[116px] h-[116px] rounded-xl shrink-0 flex items-center justify-center"
+                  style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+                  <Lock size={28} className="text-[#2a2a2a]" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <p className="text-[#444] text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Divulgação bloqueada
+                  </p>
+                  <p className="text-[#2e2e2e] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    O QR code, o link e o compartilhamento via WhatsApp ficam disponíveis assim que você publicar o evento.
+                  </p>
+                  <a
+                    href={`/criar-evento/${evento.id}/publicar`}
+                    className="mt-2 text-xs font-medium w-fit flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all hover:brightness-110"
+                    style={{ background: 'rgba(232,184,75,0.10)', border: '1px solid rgba(232,184,75,0.20)', color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                    Publicar evento →
+                  </a>
+                </div>
               </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={copiarLink}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
-                  style={{
-                    background: linkCopiado ? 'rgba(34,197,94,0.10)' : 'rgba(232,184,75,0.08)',
-                    border:     `1px solid ${linkCopiado ? 'rgba(34,197,94,0.30)' : 'rgba(232,184,75,0.25)'}`,
-                    color:      linkCopiado ? '#22c55e' : ACCENT,
-                    fontFamily: 'var(--font-dm-sans)',
-                  }}>
-                  {linkCopiado
-                    ? <><Check size={12} /> Link copiado!</>
-                    : <><Copy size={12} /> Copiar link</>
-                  }
-                </button>
-
-                <button
-                  type="button"
-                  onClick={baixarQR}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
-                  style={{
-                    background: 'rgba(255,255,255,0.04)',
-                    border:     '1px solid #1e1e1e',
-                    color:      '#555',
-                    fontFamily: 'var(--font-dm-sans)',
-                  }}>
-                  <Download size={12} /> Baixar QR
-                </button>
-
-                <a
-                  href={`https://wa.me/?text=${encodeURIComponent(`Garanta seu ingresso para ${evento.title}! 🎟️ ${eventUrl}`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
-                  style={{
-                    background: 'rgba(37,211,102,0.08)',
-                    border:     '1px solid rgba(37,211,102,0.20)',
-                    color:      '#25D366',
-                    fontFamily: 'var(--font-dm-sans)',
-                  }}>
-                  <ExternalLink size={12} /> Compartilhar no WhatsApp
-                </a>
-              </div>
-            </div>
+            )}
 
           </div>
         </div>
