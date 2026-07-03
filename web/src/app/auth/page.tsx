@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import { createClient } from '@/lib/supabase/client'
 
 declare global {
   interface Window {
@@ -99,7 +100,8 @@ const pwdRules = {
 const isStrongPassword = (v: string) => Object.values(pwdRules).every(fn => fn(v))
 
 export default function AuthPage() {
-  const { signIn, signUp, signInWithSocial, signInWithGoogleToken } = useAuth()
+  const { signIn, signUp, signInWithSocial } = useAuth()
+  const supabase = createClient()
   const router   = useRouter()
   const gsiReady = useRef(false)
   const [tab, setTab] = useState<Tab>('entrar')
@@ -186,7 +188,7 @@ export default function AuthPage() {
         client_id: '140800251762-77n3v5pogj8ipsktbdo06cfhd6aok84h.apps.googleusercontent.com',
         nonce:     hashedNonce,
         callback:  async ({ credential }: { credential: string }) => {
-          const { error } = await signInWithGoogleToken(credential, rawNonce)
+          const { error } = await supabase.auth.signInWithIdToken({ provider: 'google', token: credential, nonce: rawNonce }).then(r => ({ error: r.error?.message ?? null }))
           if (error) {
             setLoginError('Não foi possível autenticar com Google. Tente novamente.')
             setSocialLoading(null)

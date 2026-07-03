@@ -16,14 +16,13 @@ interface SignUpData {
 }
 
 interface AuthContextValue {
-  user:                 User | null
-  session:              Session | null
-  loading:              boolean
-  signIn:               (email: string, password: string) => Promise<{ error: string | null }>
-  signUp:               (data: SignUpData) => Promise<{ error: string | null }>
-  signOut:              () => Promise<void>
-  signInWithSocial:     (provider: 'google' | 'facebook') => Promise<{ error: string | null }>
-  signInWithGoogleToken:(idToken: string, nonce: string) => Promise<{ error: string | null }>
+  user:             User | null
+  session:          Session | null
+  loading:          boolean
+  signIn:           (email: string, password: string) => Promise<{ error: string | null }>
+  signUp:           (data: SignUpData) => Promise<{ error: string | null }>
+  signOut:          () => Promise<void>
+  signInWithSocial: (provider: 'google' | 'facebook') => Promise<{ error: string | null }>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -92,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
   }
 
-  // Login social via Facebook (Google usa signInWithGoogleToken)
+  // Login social via Facebook
   const signInWithSocial = async (provider: 'google' | 'facebook') => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -109,24 +108,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Login com Google via ID token do Google Identity Services
-  // O token vem do GSI no browser — o Google mostra tipo7.com como origem, não supabase.co
-  const signInWithGoogleToken = async (idToken: string, nonce: string) => {
-    try {
-      const { error } = await supabase.auth.signInWithIdToken({
-        provider: 'google',
-        token:    idToken,
-        nonce,
-      })
-      if (error) return { error: error.message }
-      return { error: null }
-    } catch {
-      return { error: 'Erro ao autenticar com Google.' }
-    }
-  }
-
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut, signInWithSocial, signInWithGoogleToken }}>
+    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut, signInWithSocial }}>
       {children}
     </AuthContext.Provider>
   )
