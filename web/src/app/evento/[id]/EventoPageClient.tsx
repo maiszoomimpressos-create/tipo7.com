@@ -7,7 +7,10 @@ import {
   MapPin, Calendar, Clock, Tag, ChevronDown, ChevronUp,
   Ticket, AlertCircle, ExternalLink, Music, Loader2,
   Pencil, X, Check, Camera, Copy, Download, QrCode,
+  Shield, Car, UtensilsCrossed, Beer, Accessibility, Wifi,
+  Baby, HeartPulse, Cigarette,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { PainelOrganizador } from './PainelOrganizador'
 import type { IngressoEditavel } from './PainelIngressos'
 import { CheckoutCardPanel } from './CheckoutCardPanel'
@@ -57,17 +60,24 @@ interface Ingresso {
 }
 
 interface Props {
-  evento:         Evento
-  dias:           Dia[]
-  ingressos:      Ingresso[]
-  isOwner:        boolean
-  capacity:       number | null
-  soldByTicket:   Record<string, number>
+  evento:          Evento
+  dias:            Dia[]
+  ingressos:       Ingresso[]
+  isOwner:         boolean
+  capacity:        number | null
+  soldByTicket:    Record<string, number>
+  atributosAtivos: { id: string; name: string; icon: string }[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const ACCENT = '#E8B84B'
+
+// Mapeamento de nome de ícone (string do banco) → componente Lucide
+const ICON_MAP: Record<string, LucideIcon> = {
+  Shield, Car, UtensilsCrossed, Beer, Accessibility, Wifi,
+  Baby, HeartPulse, Cigarette, Camera, Tag,
+}
 
 const CATEGORIAS = [
   'Show', 'Festa', 'Festival', 'Teatro', 'Esporte',
@@ -138,7 +148,7 @@ function TicketRow({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, soldByTicket }: Props) {
+export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, soldByTicket, atributosAtivos }: Props) {
   // Accordion e checkout
   const [openDay,       setOpenDay]       = useState(0)
   const [selection,     setSelection]     = useState<Record<string, number>>({})
@@ -797,6 +807,34 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                   <Pencil size={13} /> Adicionar local
                 </a>
               )}
+            </section>
+          )}
+          {/* ── Estrutura do evento (atributos públicos) ── */}
+          {atributosAtivos.length > 0 && (
+            <section>
+              <h2 className="text-white text-lg font-medium mb-4" style={{ fontFamily: 'var(--font-outfit)' }}>
+                Estrutura do evento
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {atributosAtivos.map(attr => {
+                  const Icon = ICON_MAP[attr.icon] ?? Tag
+                  return (
+                    <div
+                      key={attr.id}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl border"
+                      style={{
+                        background: `${ACCENT}0d`,
+                        border: `1px solid ${ACCENT}30`,
+                      }}
+                    >
+                      <Icon size={13} style={{ color: ACCENT }} />
+                      <span className="text-[#ccc] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        {attr.name}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
             </section>
           )}
         </div>

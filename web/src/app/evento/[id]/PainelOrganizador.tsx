@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { Ticket, Users, Settings, ExternalLink, BarChart2 } from 'lucide-react'
+import { Ticket, Users, Settings, ExternalLink, BarChart2, Layers } from 'lucide-react'
 import { PainelIngressos, type IngressoEditavel } from './PainelIngressos'
 import { PainelEquipe } from './PainelEquipe'
+import { PainelAtributos } from './PainelAtributos'
 
 const ACCENT = '#E8B84B'
 
-type Tab = 'ingressos' | 'equipe'
+type Tab = 'ingressos' | 'atributos' | 'equipe'
 
 interface Props {
   eventoId:  string
@@ -57,8 +58,9 @@ export function PainelOrganizador({ eventoId, ingressos, capacity }: Props) {
         {/* Abas */}
         <div className="flex border-b border-[#1a1a1a]">
           {([
-            { key: 'ingressos', label: 'Ingressos', icon: Ticket },
-            { key: 'equipe',    label: 'Equipe',    icon: Users  },
+            { key: 'ingressos',  label: 'Ingressos', icon: Ticket },
+            { key: 'atributos', label: 'Estrutura',  icon: Layers },
+            { key: 'equipe',    label: 'Equipe',     icon: Users  },
           ] as { key: Tab; label: string; icon: typeof Ticket }[]).map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -92,6 +94,10 @@ export function PainelOrganizador({ eventoId, ingressos, capacity }: Props) {
             capacity={capacity}
             onUpdate={handleUpdate}
           />
+        )}
+        {/* Aba de estrutura: atributos disponíveis no evento */}
+        {tab === 'atributos' && (
+          <PainelAtributos eventoId={eventoId} />
         )}
         {tab === 'equipe' && (
           <PainelEquipe eventoId={eventoId} />

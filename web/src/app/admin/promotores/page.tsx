@@ -7,7 +7,7 @@ export default async function PromotoresPage() {
   // Fonte real de promotores: organizações do tipo 'promotora'
   const { data: orgs } = await admin
     .from('organizations')
-    .select('owner_id, name, profiles!owner_id ( full_name )')
+    .select('owner_id, name, codigo, profiles!owner_id ( full_name )')
     .eq('type', 'promotora')
     .order('created_at')
 
@@ -51,6 +51,7 @@ export default async function PromotoresPage() {
     return [{
       userId:      uid,
       nome:        (profile as { full_name: string | null } | null)?.full_name ?? 'Sem nome',
+      codigo:      org.codigo ?? null,
       tipoPessoa:  perfilMap[uid] ?? null,
       mpConected:  !!mp,
       feePct:      mp?.fee_pct ?? 10,

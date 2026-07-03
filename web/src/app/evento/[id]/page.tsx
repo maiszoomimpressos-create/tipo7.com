@@ -89,6 +89,20 @@ export default async function EventoPage({ params }: Props) {
     }
   }
 
+  // Busca atributos ativos do evento (para exibição pública na página)
+  const { data: atributosRaw } = await supabase
+    .from('event_attribute_values')
+    .select('event_attributes(id, name, icon)')
+    .eq('event_id', id)
+
+  // Normaliza os dados — o join retorna o objeto aninhado como Record ou array
+  type AttrJoin = { id: string; name: string; icon: string }
+  const atributosAtivos: AttrJoin[] = (atributosRaw ?? []).flatMap(row => {
+    const a = row.event_attributes as unknown
+    if (!a) return []
+    return Array.isArray(a) ? (a as AttrJoin[]) : [a as AttrJoin]
+  })
+
   // Para o organizador: busca quantidades vendidas por tipo (usa service client — RLS bloquearia)
   let soldByTicket: Record<string, number> = {}
   if (isOwner && ingressos && ingressos.length > 0) {
@@ -149,6 +163,7 @@ export default async function EventoPage({ params }: Props) {
         isOwner={isOwner}
         capacity={evento.capacity ?? null}
         soldByTicket={soldByTicket}
+        atributosAtivos={atributosAtivos}
       />
     </div>
   )
