@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
         } else {
           // Promotor absorve a taxa (Modelo B): buyer paga faceValue, plataforma ajusta application_fee
           // para que promotor receba exatamente (100 - feePct)% do valor de face
-          applicationFee = await calcularTaxaPlataforma({
+          const calcParamsPix = {
             eventoId,
             ownerId:           ownerId2,
             total:             faceValue,
@@ -169,7 +169,8 @@ export async function POST(req: NextRequest) {
             admin,
             mpFeePct:          mpPixPct,
             transactionAmount: faceValue,
-          })
+          }
+          applicationFee = await calcularTaxaPlataforma(calcParamsPix)
         }
       }
     }

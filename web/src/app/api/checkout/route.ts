@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
 
       if (mpAccount && tokenPromotor) {
         mpToken        = tokenPromotor
-        marketplaceFee = await calcularTaxaPlataforma({
+        const calcParamsPreference = {
           eventoId,
           ownerId,
           total,
@@ -117,7 +117,8 @@ export async function POST(req: NextRequest) {
           feePct:      Number(mpAccount.fee_pct),
           minFeePct,
           admin,
-        })
+        }
+        marketplaceFee = await calcularTaxaPlataforma(calcParamsPreference)
       }
     }
 
