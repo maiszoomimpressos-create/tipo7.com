@@ -211,7 +211,8 @@ export async function POST(req: NextRequest) {
         ) / 100)
       } else {
         // Promotor absorve (Modelo B): ajusta application_fee para promotor receber (100 - feePct)% do face
-        applicationFee = await calcularTaxaPlataforma({
+        // Variável intermediária evita excess-property-check causado por cache de tsbuildinfo no Vercel
+        const calcParams = {
           eventoId,
           ownerId,
           total:             faceValue,
@@ -221,7 +222,8 @@ export async function POST(req: NextRequest) {
           admin,
           mpFeePct:          mpCardPct,
           transactionAmount,
-        })
+        }
+        applicationFee = await calcularTaxaPlataforma(calcParams)
       }
     }
 

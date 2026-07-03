@@ -3,7 +3,7 @@
 // antes de calcular a taxa final cobrada pelo Tipo7.
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-interface CalcParams {
+export interface CalcParams {
   eventoId:          string
   ownerId:           string | null
   total:             number       // valor de face do pedido em R$
