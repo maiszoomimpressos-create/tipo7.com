@@ -8,17 +8,17 @@ import { CriarEventoClient } from './CriarEventoClient'
 import { CompletarCadastroForm } from './CompletarCadastroForm'
 
 const CAMPOS_OBRIGATORIOS = [
-  { campo: 'full_name',     label: 'Nome completo'      },
-  { campo: 'phone',         label: 'Telefone'           },
-  { campo: 'cpf',           label: 'CPF'                },
-  { campo: 'birth_date',    label: 'Data de nascimento' },
-  { campo: 'zip_code',      label: 'CEP'                },
-  { campo: 'street',        label: 'Rua'                },
-  { campo: 'street_number', label: 'Número'             },
-  { campo: 'neighborhood',  label: 'Bairro'             },
-  { campo: 'city',          label: 'Cidade'             },
-  { campo: 'state',         label: 'Estado'             },
-  { campo: 'address_type',  label: 'Tipo de residência' },
+  { campo: 'full_name'     as const, label: 'Nome completo'      },
+  { campo: 'phone'         as const, label: 'Telefone'           },
+  { campo: 'cpf'           as const, label: 'CPF'                },
+  { campo: 'birth_date'    as const, label: 'Data de nascimento' },
+  { campo: 'zip_code'      as const, label: 'CEP'                },
+  { campo: 'street'        as const, label: 'Rua'                },
+  { campo: 'street_number' as const, label: 'Número'             },
+  { campo: 'neighborhood'  as const, label: 'Bairro'             },
+  { campo: 'city'          as const, label: 'Cidade'             },
+  { campo: 'state'         as const, label: 'Estado'             },
+  { campo: 'address_type'  as const, label: 'Tipo de residência' },
 ]
 
 export default async function CriarEventoPage() {

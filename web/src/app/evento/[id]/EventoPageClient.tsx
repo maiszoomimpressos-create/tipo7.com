@@ -524,6 +524,44 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
         </div>
       </div>
 
+      {/* ── Estrutura do evento — faixa pública de destaque ─────────────── */}
+      {atributosAtivos.length > 0 && (
+        <div className="border-b border-[#111]" style={{ background: '#09090b' }}>
+          <div className="max-w-6xl mx-auto px-6 py-5">
+            <p
+              className="text-[#444] text-[10px] uppercase tracking-widest mb-3"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              O evento conta com
+            </p>
+            <div className="flex flex-wrap gap-2.5">
+              {atributosAtivos.map(attr => {
+                const Icon = ICON_MAP[attr.icon] ?? Tag
+                return (
+                  <div
+                    key={attr.id}
+                    className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl"
+                    style={{
+                      background: 'rgba(232,184,75,0.06)',
+                      border:     '1px solid rgba(232,184,75,0.18)',
+                    }}>
+                    <div
+                      className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: 'rgba(232,184,75,0.12)' }}>
+                      <Icon size={14} style={{ color: ACCENT }} />
+                    </div>
+                    <span
+                      className="text-[#bbb] text-sm font-medium"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {attr.name}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Painel de divulgação (somente dono) ─────────────────────────── */}
       {isOwner && (
         <div className="border-b border-[#111] bg-[#080808]">
@@ -807,34 +845,6 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                   <Pencil size={13} /> Adicionar local
                 </a>
               )}
-            </section>
-          )}
-          {/* ── Estrutura do evento (atributos públicos) ── */}
-          {atributosAtivos.length > 0 && (
-            <section>
-              <h2 className="text-white text-lg font-medium mb-4" style={{ fontFamily: 'var(--font-outfit)' }}>
-                Estrutura do evento
-              </h2>
-              <div className="flex flex-wrap gap-2">
-                {atributosAtivos.map(attr => {
-                  const Icon = ICON_MAP[attr.icon] ?? Tag
-                  return (
-                    <div
-                      key={attr.id}
-                      className="flex items-center gap-2 px-3 py-2 rounded-xl border"
-                      style={{
-                        background: `${ACCENT}0d`,
-                        border: `1px solid ${ACCENT}30`,
-                      }}
-                    >
-                      <Icon size={13} style={{ color: ACCENT }} />
-                      <span className="text-[#ccc] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        {attr.name}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
             </section>
           )}
         </div>
