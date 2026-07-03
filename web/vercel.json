@@ -1,0 +1,3 @@
+{
+  "buildCommand": "node -e \"require('fs').rmSync('.next/cache', {recursive:true,force:true})\" && next build"
+}
