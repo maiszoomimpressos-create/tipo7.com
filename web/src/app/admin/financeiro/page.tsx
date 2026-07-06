@@ -69,6 +69,10 @@ export default async function FinanceiroPage() {
       <FinanceiroClient
         defaultFeePct={Number(settingsMap['default_fee_pct'] ?? 10)}
         minFeePct={Number(settingsMap['min_fee_pct'] ?? 0)}
+        feePixPct={Number(settingsMap['fee_pct_pix'] ?? 0.99)}
+        feeCredito1xPct={Number(settingsMap['fee_pct_credito_1x'] ?? 4.98)}
+        feeCredito6xPct={Number(settingsMap['fee_pct_credito_6x'] ?? 5.98)}
+        feeCredito12xPct={Number(settingsMap['fee_pct_credito_12x'] ?? 6.98)}
         totalConectados={mpAccounts?.length ?? 0}
         mediaFee={mediaFee}
       />

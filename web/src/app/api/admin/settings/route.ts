@@ -12,24 +12,37 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
-  const body = await req.json() as { default_fee_pct?: number; min_fee_pct?: number }
+  const ALLOWED_KEYS = [
+    'default_fee_pct',
+    'min_fee_pct',
+    'fee_pct_pix',
+    'fee_pct_credito_1x',
+    'fee_pct_credito_6x',
+    'fee_pct_credito_12x',
+  ] as const
+
+  const body = await req.json() as Partial<Record<typeof ALLOWED_KEYS[number], number>>
 
   for (const [key, val] of Object.entries(body)) {
+    if (!ALLOWED_KEYS.includes(key as typeof ALLOWED_KEYS[number])) {
+      return NextResponse.json({ error: `Chave desconhecida: ${key}` }, { status: 400 })
+    }
     if (val !== undefined && (typeof val !== 'number' || val < 0 || val > 100)) {
       return NextResponse.json({ error: `${key} deve ser um número entre 0 e 100` }, { status: 400 })
     }
   }
 
   const admin = createServiceClient()
+  const now   = new Date().toISOString()
 
-  if (body.default_fee_pct !== undefined) {
-    await admin.from('platform_settings')
-      .upsert({ key: 'default_fee_pct', value: String(body.default_fee_pct), updated_at: new Date().toISOString() }, { onConflict: 'key' })
-  }
-  if (body.min_fee_pct !== undefined) {
-    await admin.from('platform_settings')
-      .upsert({ key: 'min_fee_pct', value: String(body.min_fee_pct), updated_at: new Date().toISOString() }, { onConflict: 'key' })
-  }
+  await Promise.all(
+    Object.entries(body)
+      .filter(([, v]) => v !== undefined)
+      .map(([key, val]) =>
+        admin.from('platform_settings')
+          .upsert({ key, value: String(val), updated_at: now }, { onConflict: 'key' })
+      )
+  )
 
   return NextResponse.json({ ok: true })
 }
