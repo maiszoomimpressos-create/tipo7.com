@@ -3,11 +3,14 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Ticket, Menu, X, ArrowRight, LogOut, User, ChevronDown,
-  CalendarPlus, Settings2, MapPin, Navigation, Loader2,
+  CalendarPlus, Settings2, MapPin, Navigation, Loader2, Briefcase,
+  Copy, Check,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProfileStatus } from '@/hooks/useProfileStatus'
+import { useTrabalhos } from '@/hooks/useTrabalhos'
+import { useCodigos } from '@/hooks/useCodigos'
 import { useLocation } from '@/contexts/LocationContext'
 
 const ADMIN_EMAIL = 'maiszoomimpressos@gmail.com'
@@ -134,10 +137,19 @@ function LocationMobile() {
 export function Header() {
   const { user, loading, signOut }     = useAuth()
   const { incompleto, camposFaltando } = useProfileStatus()
+  const { pendentes }                  = useTrabalhos()
+  const codigos                        = useCodigos()
 
   const [menuOpen,     setMenuOpen]     = useState(false)
   const [scrolled,     setScrolled]     = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [copiado,      setCopiado]      = useState<string | null>(null)
+
+  function copiarCodigo(codigo: string) {
+    navigator.clipboard.writeText(codigo)
+    setCopiado(codigo)
+    setTimeout(() => setCopiado(null), 2000)
+  }
 
   const userMenuRef = useRef<HTMLDivElement>(null)
 
@@ -279,6 +291,9 @@ export function Header() {
                       {incompleto && (
                         <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#070707]" />
                       )}
+                      {!incompleto && pendentes > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-[#070707]" />
+                      )}
                     </div>
                     <span
                       className="text-sm text-white/80 max-w-[100px] truncate"
@@ -302,6 +317,36 @@ export function Header() {
                         <p className="text-[#555] text-xs truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                           {user.email}
                         </p>
+
+                        {/* Códigos do usuário */}
+                        {codigos.length > 0 && (
+                          <div className="mt-2.5 flex flex-col gap-1.5">
+                            {codigos.map(c => (
+                              <button
+                                key={c.codigo}
+                                type="button"
+                                onClick={() => copiarCodigo(c.codigo)}
+                                className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-lg transition-colors"
+                                style={{
+                                  background: copiado === c.codigo ? 'rgba(34,197,94,0.08)' : 'rgba(232,184,75,0.06)',
+                                  border:     `1px solid ${copiado === c.codigo ? 'rgba(34,197,94,0.2)' : 'rgba(232,184,75,0.12)'}`,
+                                }}
+                                title="Copiar código"
+                              >
+                                <span
+                                  className="text-xs font-bold tracking-widest"
+                                  style={{ color: copiado === c.codigo ? '#4ade80' : '#E8B84B', fontFamily: 'var(--font-syne)' }}
+                                >
+                                  {c.codigo}
+                                </span>
+                                {copiado === c.codigo
+                                  ? <Check size={11} className="text-green-400 shrink-0" />
+                                  : <Copy  size={11} className="text-[#555] shrink-0" />
+                                }
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {incompleto && (
@@ -340,6 +385,22 @@ export function Header() {
                         >
                           <Ticket size={14} className="text-[#555]" />
                           Meus ingressos
+                        </a>
+                        <a
+                          href="/trabalhos"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center justify-between px-4 py-2.5 text-sm text-[#bbb] hover:text-white hover:bg-white/5 transition-colors"
+                          style={{ fontFamily: 'var(--font-dm-sans)' }}
+                        >
+                          <span className="flex items-center gap-3">
+                            <Briefcase size={14} className="text-[#555]" />
+                            Trabalhos
+                          </span>
+                          {pendentes > 0 && (
+                            <span className="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold text-[#070707]" style={{ background: '#4ade80' }}>
+                              {pendentes}
+                            </span>
+                          )}
                         </a>
                       </div>
 
@@ -452,6 +513,26 @@ export function Header() {
                 >
                   <Ticket size={15} />
                   Meus ingressos
+                </a>
+                <a
+                  href="/trabalhos"
+                  onClick={() => setMenuOpen(false)}
+                  className="w-full flex items-center justify-between px-6 py-3 rounded-xl border text-sm"
+                  style={{
+                    borderColor: pendentes > 0 ? 'rgba(74,222,128,0.3)' : '#222',
+                    color:       pendentes > 0 ? '#4ade80' : 'white',
+                    fontFamily:  'var(--font-dm-sans)',
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    <Briefcase size={15} />
+                    Trabalhos
+                  </span>
+                  {pendentes > 0 && (
+                    <span className="flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold text-[#070707]" style={{ background: '#4ade80' }}>
+                      {pendentes}
+                    </span>
+                  )}
                 </a>
                 <a
                   href="/criar-evento"

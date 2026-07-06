@@ -28,7 +28,7 @@ export function PainelOrganizador({ eventoId, ingressos, capacity }: Props) {
     <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #1a1a1a', background: '#0a0a0a' }}>
 
       {/* Cabeçalho do painel */}
-      <div className="px-4 pt-4 pb-0">
+      <div className="px-4 pt-4 pb-0 min-w-0">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Settings size={14} style={{ color: ACCENT }} />
@@ -66,7 +66,7 @@ export function PainelOrganizador({ eventoId, ingressos, capacity }: Props) {
               key={key}
               type="button"
               onClick={() => setTab(key)}
-              className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors relative"
+              className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors relative"
               style={{
                 color:      tab === key ? ACCENT : '#555',
                 fontFamily: 'var(--font-dm-sans)',

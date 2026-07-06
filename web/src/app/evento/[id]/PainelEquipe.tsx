@@ -34,7 +34,7 @@ export function PainelEquipe({ eventoId }: Props) {
   const [err,          setErr]          = useState<string | null>(null)
   const [sucesso,      setSucesso]      = useState(false)
 
-  const [email,        setEmail]        = useState('')
+  const [emailOuCodigo, setEmailOuCodigo] = useState('')
   const [cargo,        setCargo]        = useState('')
   const [permissoes,   setPermissoes]   = useState<string[]>(['validar_ingresso'])
 
@@ -58,8 +58,8 @@ export function PainelEquipe({ eventoId }: Props) {
   }
 
   async function handleAdicionar() {
-    if (!email.trim() || !cargo.trim()) {
-      setErr('Email e cargo são obrigatórios')
+    if (!emailOuCodigo.trim() || !cargo.trim()) {
+      setErr('Email/código e cargo são obrigatórios')
       return
     }
     setSalvando(true)
@@ -69,12 +69,12 @@ export function PainelEquipe({ eventoId }: Props) {
       const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email: email.trim(), positionName: cargo.trim(), permissions: permissoes }),
+        body:    JSON.stringify({ emailOuCodigo: emailOuCodigo.trim(), positionName: cargo.trim(), permissions: permissoes }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao adicionar')
       setSucesso(true)
-      setEmail('')
+      setEmailOuCodigo('')
       setCargo('')
       setPermissoes(['validar_ingresso'])
       setAdicionando(false)
@@ -108,7 +108,7 @@ export function PainelEquipe({ eventoId }: Props) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {/* Link da bilheteria */}
+          {/* Link da bilheteria (ícone apenas) */}
           <button
             type="button"
             onClick={() => {
@@ -116,36 +116,28 @@ export function PainelEquipe({ eventoId }: Props) {
               setLinkCopiado(true)
               setTimeout(() => setLinkCopiado(false), 2000)
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors"
             style={{
-              background:  linkCopiado ? '#4ade8015' : '#111',
-              border:      `1px solid ${linkCopiado ? '#4ade8040' : '#222'}`,
-              color:       linkCopiado ? '#4ade80' : '#666',
-              fontFamily:  'var(--font-dm-sans)',
+              background: linkCopiado ? '#4ade8015' : '#111',
+              border:     `1px solid ${linkCopiado ? '#4ade8040' : '#222'}`,
+              color:      linkCopiado ? '#4ade80' : '#666',
             }}
-            title="Copiar link da bilheteria para o vendedor"
+            title="Copiar link da bilheteria"
           >
             {linkCopiado ? <Check size={12} /> : <Link2 size={12} />}
-            {linkCopiado ? 'Copiado!' : 'Link bilheteria'}
           </button>
 
-          {/* Link do scanner */}
+          {/* Link do scanner (ícone apenas) */}
           <button
             type="button"
             onClick={() => {
               navigator.clipboard.writeText(`${window.location.origin}/scanner/${eventoId}`)
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-            style={{
-              background: '#111',
-              border:     '1px solid #222',
-              color:      '#666',
-              fontFamily: 'var(--font-dm-sans)',
-            }}
-            title="Copiar link do scanner para compartilhar com a equipe"
+            className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors"
+            style={{ background: '#111', border: '1px solid #222', color: '#666' }}
+            title="Copiar link do scanner"
           >
             <Link2 size={12} />
-            Link scanner
           </button>
 
           {!adicionando && (
@@ -170,10 +162,10 @@ export function PainelEquipe({ eventoId }: Props) {
           </p>
 
           <input
-            type="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            placeholder="Email do usuário"
+            type="text"
+            value={emailOuCodigo}
+            onChange={e => setEmailOuCodigo(e.target.value)}
+            placeholder="Email ou código T7-USR do usuário"
             className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
             style={{ fontFamily: 'var(--font-dm-sans)' }}
           />

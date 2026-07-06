@@ -20,7 +20,7 @@ export default async function PerfilPage() {
     .select(`
       full_name, phone, cpf, rg, birth_date, avatar_url,
       zip_code, street, street_number, neighborhood,
-      city, state, address_type, complement, created_at
+      city, state, address_type, complement, created_at, user_code
     `)
     .eq('id', user.id)
     .single()
@@ -136,6 +136,15 @@ export default async function PerfilPage() {
             </div>
           </div>
         </div>
+
+        {/* Código pessoal do usuário — presente para todos */}
+        {profile?.user_code && (
+          <CodigoOrg
+            codigo={profile.user_code}
+            tipo="usuario"
+            nome={profile?.full_name ?? user.email ?? ''}
+          />
+        )}
 
         {/* Badges de identificação — exibe um badge por organização (promotora e/ou estabelecimento) */}
         {orgs.map(o => (
