@@ -54,8 +54,6 @@ export async function POST(req: NextRequest) {
       admin.from('event_tickets').select('id, name, price, quantity').in('id', ticketIds).eq('event_id', eventoId),
       admin.from('events').select('title, fee_mode').eq('id', eventoId).single(),
     ])
-    const feeMode = (evento?.fee_mode ?? 'promotor') as 'promotor' | 'comprador' | 'mista'
-
     if (!tickets?.length) return NextResponse.json({ error: 'Ingressos não encontrados' }, { status: 400 })
 
     // Monta itens com preços do banco (nunca confiar no que vem do cliente)
@@ -105,15 +103,10 @@ export async function POST(req: NextRequest) {
 
     const orderId = resultado.order_id as string
 
-    // Busca taxa mínima e taxa MP PIX (Modelo B: 12% tudo incluso)
-    const { data: feeSettings } = await admin
-      .from('platform_settings')
-      .select('key, value')
-      .in('key', ['min_fee_pct', 'fee_pct_pix'])
-    const feeMap: Record<string, string> = {}
-    for (const row of feeSettings ?? []) feeMap[row.key] = row.value
-    const minFeePct = Number(feeMap['min_fee_pct'] ?? 0)
-    const mpPixPct  = parseFloat((feeMap['fee_pct_pix'] ?? '0.99').replace(',', '.'))
+    // Busca taxa mínima da plataforma
+    const { data: minFeeSetting } = await admin
+      .from('platform_settings').select('value').eq('key', 'min_fee_pct').maybeSingle()
+    const minFeePct = Number(minFeeSetting?.value ?? 0)
 
     // Busca conta MP do promotor do evento (split de pagamento)
     const { data: eventOwnerInfo } = await admin
@@ -128,7 +121,8 @@ export async function POST(req: NextRequest) {
 
     let mpToken2:       string            = process.env.MP_ACCESS_TOKEN!
     let applicationFee: number | undefined = undefined
-    let transactionAmount                  = faceValue
+    // PIX: comprador sempre paga o valor de face (sem juros de parcelamento)
+    const transactionAmount = faceValue
 
     if (ownerId2) {
       const tokenPromotor2 = await getMpToken(ownerId2, admin)
@@ -141,37 +135,16 @@ export async function POST(req: NextRequest) {
 
       if (mpAccount2 && tokenPromotor2) {
         mpToken2 = tokenPromotor2
-        const feePct = Number(mpAccount2.fee_pct)
-
-        if (feeMode === 'comprador') {
-          // Comprador paga 100% da taxa — promotor recebe exatamente o valor de face
-          transactionAmount = Math.round(faceValue * (1 + feePct / 100) * 100) / 100
-          applicationFee = Math.max(0, Math.round(
-            (transactionAmount * (1 - mpPixPct / 100) - faceValue) * 100
-          ) / 100)
-        } else if (feeMode === 'mista') {
-          // Taxa dividida — comprador paga metade, promotor desconta metade do repasse
-          transactionAmount = Math.round(faceValue * (1 + feePct / 2 / 100) * 100) / 100
-          const promoterTarget = Math.round(faceValue * (1 - feePct / 2 / 100) * 100) / 100
-          applicationFee = Math.max(0, Math.round(
-            (transactionAmount * (1 - mpPixPct / 100) - promoterTarget) * 100
-          ) / 100)
-        } else {
-          // Promotor absorve a taxa (Modelo B): buyer paga faceValue, plataforma ajusta application_fee
-          // para que promotor receba exatamente (100 - feePct)% do valor de face
-          const calcParamsPix = {
-            eventoId,
-            ownerId:           ownerId2,
-            total:             faceValue,
-            ticketCount:       lineItems.reduce((s, i) => s + i.quantity, 0),
-            feePct,
-            minFeePct,
-            admin,
-            mpFeePct:          mpPixPct,
-            transactionAmount: faceValue,
-          }
-          applicationFee = await calcularTaxaPlataforma(calcParamsPix)
-        }
+        // application_fee = faceValue × taxa_plataforma% (modelo Sympla)
+        applicationFee = await calcularTaxaPlataforma({
+          eventoId,
+          ownerId:    ownerId2,
+          total:      faceValue,
+          ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
+          feePct:     Number(mpAccount2.fee_pct),
+          minFeePct,
+          admin,
+        })
       }
     }
 

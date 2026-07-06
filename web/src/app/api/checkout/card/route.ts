@@ -77,8 +77,6 @@ export async function POST(req: NextRequest) {
       admin.from('event_tickets').select('id, name, price, quantity').in('id', ticketIds).eq('event_id', eventoId),
       admin.from('events').select('title, fee_mode').eq('id', eventoId).single(),
     ])
-    const feeMode = (evento?.fee_mode ?? 'promotor') as 'promotor' | 'comprador' | 'mista'
-
     if (!tickets?.length) return NextResponse.json({ error: 'Ingressos não encontrados' }, { status: 400 })
 
     const lineItems = items.map(item => {
@@ -134,21 +132,10 @@ export async function POST(req: NextRequest) {
     const orgData = (Array.isArray(orgRaw) ? orgRaw[0] : orgRaw) as { owner_id: string } | null
     const ownerId = orgData?.owner_id
 
-    // Busca taxa mínima e taxas MP por método
-    const { data: feeSettings } = await admin
-      .from('platform_settings')
-      .select('key, value')
-      .in('key', ['min_fee_pct', 'fee_pct_credito_1x', 'fee_pct_credito_6x', 'fee_pct_credito_12x'])
-    const feeMap: Record<string, string> = {}
-    for (const row of feeSettings ?? []) feeMap[row.key] = row.value
-    const minFeePct = Number(feeMap['min_fee_pct'] ?? 0)
-
-    const parsePct = (v: string | undefined, def: string) =>
-      parseFloat((v ?? def).replace(',', '.'))
-    const mpCardPct =
-      installments === 1  ? parsePct(feeMap['fee_pct_credito_1x'],  '4.98') :
-      installments <= 6   ? parsePct(feeMap['fee_pct_credito_6x'],  '5.98') :
-                            parsePct(feeMap['fee_pct_credito_12x'], '6.98')
+    // Busca taxa mínima da plataforma
+    const { data: minFeeSetting } = await admin
+      .from('platform_settings').select('value').eq('key', 'min_fee_pct').maybeSingle()
+    const minFeePct = Number(minFeeSetting?.value ?? 0)
 
     let mpToken      = process.env.MP_ACCESS_TOKEN!
     let mpAccountFee: number | undefined = undefined
@@ -166,20 +153,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Busca o valor total com juros na API do MP (nunca confia no cliente)
-    // Base para consulta de parcelamento: inclui a parte do comprador na taxa
-    const baseParcelamento =
-      feeMode === 'comprador' && mpAccountFee !== undefined
-        ? Math.round(faceValue * (1 + mpAccountFee / 100) * 100) / 100
-        : feeMode === 'mista' && mpAccountFee !== undefined
-          ? Math.round(faceValue * (1 + mpAccountFee / 2 / 100) * 100) / 100
-          : faceValue
-
-    let transactionAmount = baseParcelamento
+    // Busca valor total com juros no MP (comprador paga o spread do parcelamento)
+    // Base = faceValue — a taxa da plataforma é cobrada à parte como application_fee
+    let transactionAmount = faceValue
     try {
       const url = new URL('https://api.mercadopago.com/v1/payment_methods/installments')
       url.searchParams.set('payment_method_id', paymentMethodId)
-      url.searchParams.set('amount',            String(baseParcelamento))
+      url.searchParams.set('amount',            String(faceValue))
       if (issuerId) url.searchParams.set('issuer.id', issuerId)
       if (bin)      url.searchParams.set('bin',        bin.slice(0, 6))
 
@@ -192,39 +172,21 @@ export async function POST(req: NextRequest) {
         if (chosen?.total_amount) transactionAmount = chosen.total_amount
       }
     } catch {
-      // Fallback: usa baseParcelamento (equivale a 1× sem juros)
+      // Fallback: usa faceValue (equivale a 1× sem juros)
     }
 
-    // Calcula application_fee
+    // application_fee = faceValue × taxa_plataforma% (modelo Sympla — simples e previsível)
     let applicationFee: number | undefined = undefined
     if (ownerId && mpAccountFee !== undefined) {
-      if (feeMode === 'comprador') {
-        // Comprador paga 100% da taxa — promotor recebe exatamente o valor de face
-        applicationFee = Math.max(0, Math.round(
-          (transactionAmount * (1 - mpCardPct / 100) - faceValue) * 100
-        ) / 100)
-      } else if (feeMode === 'mista') {
-        // Taxa dividida — promotor recebe exatamente (faceValue - metade da taxa)
-        const promoterTarget = Math.round(faceValue * (1 - mpAccountFee / 2 / 100) * 100) / 100
-        applicationFee = Math.max(0, Math.round(
-          (transactionAmount * (1 - mpCardPct / 100) - promoterTarget) * 100
-        ) / 100)
-      } else {
-        // Promotor absorve (Modelo B): ajusta application_fee para promotor receber (100 - feePct)% do face
-        // Variável intermediária evita excess-property-check causado por cache de tsbuildinfo no Vercel
-        const calcParams = {
-          eventoId,
-          ownerId,
-          total:             faceValue,
-          ticketCount:       lineItems.reduce((s, i) => s + i.quantity, 0),
-          feePct:            mpAccountFee,
-          minFeePct,
-          admin,
-          mpFeePct:          mpCardPct,
-          transactionAmount,
-        }
-        applicationFee = await calcularTaxaPlataforma(calcParams)
-      }
+      applicationFee = await calcularTaxaPlataforma({
+        eventoId,
+        ownerId,
+        total:      faceValue,
+        ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
+        feePct:     mpAccountFee,
+        minFeePct,
+        admin,
+      })
     }
 
     // Cria pagamento no Mercado Pago

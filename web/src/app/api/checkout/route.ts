@@ -109,7 +109,8 @@ export async function POST(req: NextRequest) {
 
       if (mpAccount && tokenPromotor) {
         mpToken        = tokenPromotor
-        const calcParamsPreference = {
+        // marketplace_fee = total × taxa_plataforma% (modelo Sympla)
+        marketplaceFee = await calcularTaxaPlataforma({
           eventoId,
           ownerId,
           total,
@@ -117,8 +118,7 @@ export async function POST(req: NextRequest) {
           feePct:      Number(mpAccount.fee_pct),
           minFeePct,
           admin,
-        }
-        marketplaceFee = await calcularTaxaPlataforma(calcParamsPreference)
+        })
       }
     }
 
