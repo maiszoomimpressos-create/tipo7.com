@@ -169,9 +169,10 @@ export async function POST(req: NextRequest) {
   })
 
   return NextResponse.json({
-    ok:      true,
+    ok:         true,
     orderId,
-    tickets: tickets.map(t => ({ id: t.id, slot_number: t.slot_number, qr_token: t.qr_token })),
+    qrBatch:    orderItem.id,   // QR único para toda a compra (usado na bilheteria)
+    quantidade,
     ticketName: ticket.name,
   })
 }
