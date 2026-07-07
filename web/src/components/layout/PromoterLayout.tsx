@@ -6,7 +6,7 @@ import { LayoutDashboard, CalendarRange, Settings2, Landmark, ReceiptText, Chevr
 import { cn } from '@/lib/utils'
 
 const EVENTOS_SUB = [
-  { label: 'Meus eventos', href: '/minha-area/eventos',  icon: CalendarRange },
+  { label: 'Meus eventos', href: '/criar-evento',        icon: CalendarRange },
   { label: 'Marketing',    href: '/minha-area/marketing', icon: Megaphone    },
 ]
 
@@ -18,7 +18,7 @@ const CONFIG_SUB = [
 export function PromoterLayout({ children }: { children: React.ReactNode }) {
   const pathname  = usePathname()
   const inConfig  = CONFIG_SUB.some(s => pathname.startsWith(s.href))
-  const inEventos = EVENTOS_SUB.some(s => pathname === s.href || pathname.startsWith(s.href + '/'))
+  const inEventos = pathname.startsWith('/criar-evento') || pathname.startsWith('/minha-area/marketing')
 
   const [openEventos, setOpenEventos] = useState(inEventos)
   const [openConfig,  setOpenConfig]  = useState(inConfig)
