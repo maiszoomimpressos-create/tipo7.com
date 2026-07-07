@@ -19,10 +19,10 @@ interface Ingresso {
   disponivel: number
 }
 
-interface VendaBatch {
-  qrBatch:    string
-  quantidade: number
-  ticketName: string
+interface TicketGerado {
+  id:          string
+  slot_number: number
+  qr_token:    string
 }
 
 interface Props {
@@ -55,7 +55,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const [dadosAbertos,      setDadosAbertos]      = useState(false)
   const [salvando,          setSalvando]          = useState(false)
   const [err,               setErr]               = useState<string | null>(null)
-  const [resultado,         setResultado]         = useState<VendaBatch | null>(null)
+  const [resultado,         setResultado]         = useState<{ tickets: TicketGerado[]; ticketName: string } | null>(null)
   const printRef     = useRef<HTMLDivElement>(null)
   const dropdownRef  = useRef<HTMLDivElement>(null)
 
@@ -112,7 +112,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao vender ingresso')
-      setResultado({ qrBatch: data.qrBatch, quantidade, ticketName: data.ticketName })
+      setResultado({ tickets: data.tickets, ticketName: data.ticketName })
       setEtapa('impressao')
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao processar venda')
@@ -160,64 +160,63 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           </button>
         </div>
 
-        {/* Comprovante único — um QR para toda a compra */}
-        <div ref={printRef} className="p-6 max-w-md mx-auto">
-          <div
-            className="ingresso-print rounded-2xl p-6 flex flex-col gap-4"
-            style={{ border: `1px solid ${ACCENT}40`, background: '#0d0d0d' }}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <p className="text-[#E8B84B] text-xs font-bold uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Tipo7.com
-                </p>
-                <h2 className="text-white text-lg font-bold leading-tight" style={{ fontFamily: 'var(--font-syne)' }}>
-                  {eventoTitle}
-                </h2>
-                {dataFormatada && (
-                  <p className="text-[#888] text-xs mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>{dataFormatada}</p>
-                )}
-                {eventoLocal && (
-                  <p className="text-[#666] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>{eventoLocal}</p>
-                )}
-              </div>
-              <div className="bg-white p-2 rounded-xl shrink-0">
-                <QRCode value={resultado.qrBatch} size={110} />
-              </div>
-            </div>
-
-            <div style={{ borderTop: `1px dashed ${ACCENT}30` }} />
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Tipo</p>
-                <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>{resultado.ticketName}</p>
-              </div>
-              <div>
-                <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Quantidade</p>
-                <p className="text-sm font-bold" style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-                  {resultado.quantidade} {resultado.quantidade === 1 ? 'pessoa' : 'pessoas'}
-                </p>
-              </div>
-              {nome && (
+        {/* Um card por ingresso — cada um com seu próprio QR */}
+        <div ref={printRef} className="p-6 flex flex-col gap-6 max-w-md mx-auto">
+          {resultado.tickets.map(t => (
+            <div
+              key={t.id}
+              className="ingresso-print rounded-2xl p-6 flex flex-col gap-4"
+              style={{ border: `1px solid ${ACCENT}40`, background: '#0d0d0d' }}
+            >
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Comprador</p>
-                  <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>{nome}</p>
+                  <p className="text-[#E8B84B] text-xs font-bold uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Tipo7.com
+                  </p>
+                  <h2 className="text-white text-lg font-bold leading-tight" style={{ fontFamily: 'var(--font-syne)' }}>
+                    {eventoTitle}
+                  </h2>
+                  {dataFormatada && (
+                    <p className="text-[#888] text-xs mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>{dataFormatada}</p>
+                  )}
+                  {eventoLocal && (
+                    <p className="text-[#666] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>{eventoLocal}</p>
+                  )}
                 </div>
-              )}
-              {cpf && (
-                <div>
-                  <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>CPF</p>
-                  <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>{cpf}</p>
+                <div className="bg-white p-2 rounded-xl shrink-0">
+                  <QRCode value={t.qr_token} size={100} />
                 </div>
-              )}
-            </div>
+              </div>
 
-            <div style={{ borderTop: `1px dashed ${ACCENT}30` }} />
-            <p className="text-[#333] text-[9px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              Válido para {resultado.quantidade} {resultado.quantidade === 1 ? 'pessoa' : 'pessoas'} • apresente na entrada • tipo7.com
-            </p>
-          </div>
+              <div style={{ borderTop: `1px dashed ${ACCENT}30` }} />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Tipo</p>
+                  <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>{resultado.ticketName}</p>
+                </div>
+                <div>
+                  <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Ingresso</p>
+                  <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>#{t.slot_number} de {resultado.tickets.length}</p>
+                </div>
+                <div>
+                  <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Portador</p>
+                  <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>{nome || 'Consumidor'}</p>
+                </div>
+                {cpf && (
+                  <div>
+                    <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>CPF</p>
+                    <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>{cpf}</p>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ borderTop: `1px dashed ${ACCENT}30` }} />
+              <p className="text-[#333] text-[9px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Ingresso válido — apresente o QR code na entrada • tipo7.com
+              </p>
+            </div>
+          ))}
         </div>
 
         <style>{`
