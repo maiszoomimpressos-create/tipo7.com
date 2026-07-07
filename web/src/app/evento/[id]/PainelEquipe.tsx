@@ -100,8 +100,11 @@ export function PainelEquipe({ eventoId }: Props) {
   const [templates,   setTemplates]   = useState<Template[]>([])
   const [loadingMem,  setLoadingMem]  = useState(true)
   const [loadingFun,  setLoadingFun]  = useState(true)
-  const [removendo,   setRemovendo]   = useState<string | null>(null)
-  const [linkCopiado, setLinkCopiado] = useState(false)
+  const [removendo,      setRemovendo]      = useState<string | null>(null)
+  const [editandoMembro, setEditandoMembro] = useState<string | null>(null)
+  const [funcaoEditando, setFuncaoEditando] = useState('')
+  const [salvandoMembro, setSalvandoMembro] = useState(false)
+  const [linkCopiado,    setLinkCopiado]    = useState(false)
 
   // seção funções
   const [funcoesAberta,   setFuncoesAberta]   = useState(false)
@@ -231,6 +234,30 @@ export function PainelEquipe({ eventoId }: Props) {
       await fetch(`/api/eventos/${eventoId}/equipe?staffId=${staffId}`, { method: 'DELETE' })
       setMembros(prev => prev.filter(m => m.id !== staffId))
     } finally { setRemovendo(null) }
+  }
+
+  function abrirEdicaoMembro(m: Membro) {
+    setEditandoMembro(m.id)
+    setFuncaoEditando((m.event_positions as { id: string } | null)?.id ?? '')
+  }
+
+  async function salvarEdicaoMembro() {
+    if (!editandoMembro || !funcaoEditando) return
+    setSalvandoMembro(true)
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ staffId: editandoMembro, funcaoId: funcaoEditando }),
+      })
+      if (!res.ok) return
+      setMembros(prev => prev.map(m => {
+        if (m.id !== editandoMembro) return m
+        const novaFuncao = funcoes.find(f => f.id === funcaoEditando)
+        return { ...m, event_positions: novaFuncao ? { id: novaFuncao.id, name: novaFuncao.name } : m.event_positions }
+      }))
+      setEditandoMembro(null)
+    } finally { setSalvandoMembro(false) }
   }
 
   const permLabel: Record<string, string> = {
@@ -594,41 +621,121 @@ export function PainelEquipe({ eventoId }: Props) {
         <div className="flex flex-col gap-2">
           {membros.map(m => {
             const profile  = m.profiles  as { full_name: string | null } | null
-            const position = m.event_positions as { name: string } | null
+            const position = m.event_positions as { id: string; name: string } | null
+            const editando = editandoMembro === m.id
             return (
               <div
                 key={m.id}
-                className="flex items-center justify-between px-4 py-3 rounded-xl"
-                style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
+                className="rounded-xl overflow-hidden"
+                style={{ background: '#0d0d0d', border: `1px solid ${editando ? ACCENT + '30' : '#1a1a1a'}` }}
               >
-                <div>
-                  <p className="text-white text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    {profile?.full_name ?? 'Usuário'}
-                  </p>
-                  <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    {position?.name ?? 'Sem cargo'}
-                    <span
-                      className="ml-2 inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase"
-                      style={{
-                        background: m.status === 'active'  ? '#4ade8015' : '#E8B84B15',
-                        color:      m.status === 'active'  ? '#4ade80'   : ACCENT,
-                      }}
+                {/* Linha principal */}
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="text-white text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {profile?.full_name ?? 'Usuário'}
+                    </p>
+                    <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {position?.name ?? 'Sem cargo'}
+                      <span
+                        className="ml-2 inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase"
+                        style={{
+                          background: m.status === 'active' ? '#4ade8015' : '#E8B84B15',
+                          color:      m.status === 'active' ? '#4ade80'   : ACCENT,
+                        }}
+                      >
+                        {m.status === 'active' ? 'Ativo' : 'Pendente'}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => editando ? setEditandoMembro(null) : abrirEdicaoMembro(m)}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#1a1a1a] transition-colors"
                     >
-                      {m.status === 'active' ? 'Ativo' : 'Pendente'}
-                    </span>
-                  </p>
+                      {editando
+                        ? <X size={13} className="text-[#555]" />
+                        : <Pencil size={13} className="text-[#444] hover:text-white" />
+                      }
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemover(m.id)}
+                      disabled={removendo === m.id}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#1a1a1a] transition-colors disabled:opacity-40"
+                    >
+                      {removendo === m.id
+                        ? <Loader2 size={13} className="text-[#444] animate-spin" />
+                        : <Trash2  size={13} className="text-[#444] hover:text-red-400" />
+                      }
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleRemover(m.id)}
-                  disabled={removendo === m.id}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#1a1a1a] transition-colors disabled:opacity-40"
-                >
-                  {removendo === m.id
-                    ? <Loader2 size={13} className="text-[#444] animate-spin" />
-                    : <Trash2  size={13} className="text-[#444] hover:text-red-400" />
-                  }
-                </button>
+
+                {/* Painel de edição inline */}
+                {editando && (
+                  <div className="px-4 pb-4 pt-1 flex flex-col gap-3" style={{ borderTop: '1px solid #1a1a1a' }}>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                      Alterar função
+                    </p>
+                    <div className="flex flex-col gap-1.5">
+                      {funcoes.map(f => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setFuncaoEditando(f.id)}
+                          className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl text-left transition-colors"
+                          style={{
+                            background: funcaoEditando === f.id ? `${ACCENT}12` : '#111',
+                            border: `1px solid ${funcaoEditando === f.id ? ACCENT + '40' : '#1e1e1e'}`,
+                          }}
+                        >
+                          <div
+                            className="w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5"
+                            style={{
+                              background:  funcaoEditando === f.id ? ACCENT : 'transparent',
+                              borderColor: funcaoEditando === f.id ? ACCENT : '#333',
+                            }}
+                          >
+                            {funcaoEditando === f.id && <div className="w-1.5 h-1.5 rounded-full bg-[#070707]" />}
+                          </div>
+                          <div>
+                            <p className="text-white text-xs font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                              {f.name}
+                            </p>
+                            <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                              {f.event_position_permissions.length === 0
+                                ? 'Sem permissões'
+                                : f.event_position_permissions.map(p => permLabel[p.permission] ?? p.permission).join(', ')
+                              }
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditandoMembro(null)}
+                        className="flex-1 py-2 rounded-xl text-xs text-[#444] border border-[#1e1e1e] hover:text-white transition-colors"
+                        style={{ fontFamily: 'var(--font-dm-sans)' }}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={salvarEdicaoMembro}
+                        disabled={salvandoMembro || !funcaoEditando}
+                        className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-semibold text-[#070707] disabled:opacity-60"
+                        style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+                      >
+                        {salvandoMembro ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                        Salvar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}

@@ -139,6 +139,52 @@ export async function POST(
   return NextResponse.json({ ok: true })
 }
 
+// PATCH /api/eventos/[id]/equipe — troca a função de um membro
+// body: { staffId, funcaoId }
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const supabase = await createClient()
+  const admin    = createServiceClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
+  if (!(await assertOwner(user.id, id))) {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
+
+  const { staffId, funcaoId } = await req.json() as { staffId: string; funcaoId: string }
+
+  if (!staffId || !funcaoId) {
+    return NextResponse.json({ error: 'staffId e funcaoId são obrigatórios' }, { status: 400 })
+  }
+
+  // Garante que a função pertence a este evento
+  const { data: funcao } = await admin
+    .from('event_positions')
+    .select('id')
+    .eq('id', funcaoId)
+    .eq('event_id', id)
+    .single()
+
+  if (!funcao) {
+    return NextResponse.json({ error: 'Função não encontrada neste evento' }, { status: 404 })
+  }
+
+  const { error } = await admin
+    .from('event_staff')
+    .update({ event_position_id: funcaoId })
+    .eq('id', staffId)
+    .eq('event_id', id)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json({ ok: true })
+}
+
 // DELETE /api/eventos/[id]/equipe?staffId=xxx — remove membro
 export async function DELETE(
   req: NextRequest,
