@@ -406,6 +406,15 @@ export function Header() {
 
                       <div className="border-t border-[#1a1a1a] py-1">
                         <a
+                          href="/minha-area"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-[#bbb] hover:text-white hover:bg-white/5 transition-colors"
+                          style={{ fontFamily: 'var(--font-dm-sans)' }}
+                        >
+                          <CalendarPlus size={14} className="text-[#555]" />
+                          Meus eventos
+                        </a>
+                        <a
                           href="/criar-evento"
                           onClick={() => setUserMenuOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-[#E8B84B] hover:text-[#F0C96A] hover:bg-[#E8B84B]/5 transition-colors"
@@ -533,6 +542,15 @@ export function Header() {
                       {pendentes}
                     </span>
                   )}
+                </a>
+                <a
+                  href="/minha-area"
+                  onClick={() => setMenuOpen(false)}
+                  className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-[#222] text-white text-sm"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  <CalendarPlus size={15} />
+                  Meus eventos
                 </a>
                 <a
                   href="/criar-evento"
