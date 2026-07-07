@@ -66,18 +66,47 @@ export default async function TrabalhoPage({ params }: Props) {
   // Busca tipos de ingresso do evento
   const { data: tickets } = await admin
     .from('event_tickets')
-    .select('id, name, price, quantity, quantity_sold')
+    .select('id, name, price, quantity')
     .eq('event_id', eventoId)
     .order('price')
 
-  const ingressos = (tickets ?? []).map(t => ({
-    id:         t.id,
-    name:       t.name ?? 'Ingresso',
-    price:      Number(t.price ?? 0),
-    total:      t.quantity ?? 0,
-    vendidos:   t.quantity_sold ?? 0,
-    disponivel: Math.max(0, (t.quantity ?? 0) - (t.quantity_sold ?? 0)),
-  }))
+  // Calcula vendidos por ticket via order_items
+  const ticketIds = (tickets ?? []).map(t => t.id)
+  let vendidosPorTicket: Record<string, number> = {}
+
+  if (ticketIds.length > 0) {
+    const { data: ordensAtivas } = await admin
+      .from('orders')
+      .select('id')
+      .eq('event_id', eventoId)
+      .not('status', 'in', '(rejected,cancelled)')
+
+    const orderIds = (ordensAtivas ?? []).map(o => o.id)
+
+    if (orderIds.length > 0) {
+      const { data: itens } = await admin
+        .from('order_items')
+        .select('ticket_id, quantity')
+        .in('order_id', orderIds)
+        .in('ticket_id', ticketIds)
+
+      for (const item of itens ?? []) {
+        vendidosPorTicket[item.ticket_id] = (vendidosPorTicket[item.ticket_id] ?? 0) + (item.quantity ?? 0)
+      }
+    }
+  }
+
+  const ingressos = (tickets ?? []).map(t => {
+    const vendidos = vendidosPorTicket[t.id] ?? 0
+    return {
+      id:         t.id,
+      name:       t.name ?? 'Ingresso',
+      price:      Number(t.price ?? 0),
+      total:      t.quantity ?? 0,
+      vendidos,
+      disponivel: Math.max(0, (t.quantity ?? 0) - vendidos),
+    }
+  })
 
   return (
     <div className="min-h-dvh bg-[#070707]">

@@ -57,12 +57,38 @@ export default async function BilheteriaPage({ params }: Props) {
     return <SemPermissao mensagem="Você não tem permissão para acessar a bilheteria deste evento." />
   }
 
-  // Busca ingressos disponíveis com estoque
-  const { data: ingressos } = await admin
+  // Busca tipos de ingresso
+  const { data: tickets } = await admin
     .from('event_tickets')
-    .select('id, name, price, quantity, quantity_sold')
+    .select('id, name, price, quantity')
     .eq('event_id', eventoId)
     .order('price')
+
+  // Calcula vendidos por ticket via order_items (pedidos não cancelados/rejeitados)
+  const ticketIds = (tickets ?? []).map(t => t.id)
+  let vendidosPorTicket: Record<string, number> = {}
+
+  if (ticketIds.length > 0) {
+    const { data: ordensAtivas } = await admin
+      .from('orders')
+      .select('id')
+      .eq('event_id', eventoId)
+      .not('status', 'in', '(rejected,cancelled)')
+
+    const orderIds = (ordensAtivas ?? []).map(o => o.id)
+
+    if (orderIds.length > 0) {
+      const { data: itens } = await admin
+        .from('order_items')
+        .select('ticket_id, quantity')
+        .in('order_id', orderIds)
+        .in('ticket_id', ticketIds)
+
+      for (const item of itens ?? []) {
+        vendidosPorTicket[item.ticket_id] = (vendidosPorTicket[item.ticket_id] ?? 0) + (item.quantity ?? 0)
+      }
+    }
+  }
 
   const { data: profile } = await admin
     .from('profiles')
@@ -76,12 +102,15 @@ export default async function BilheteriaPage({ params }: Props) {
       eventoTitle={evento.title ?? 'Evento'}
       eventoDate={evento.date_start ?? null}
       eventoLocal={[evento.venue_name, evento.city, evento.state].filter(Boolean).join(' — ')}
-      ingressos={(ingressos ?? []).map(i => ({
-        id:           i.id,
-        name:         i.name ?? 'Ingresso',
-        price:        Number(i.price ?? 0),
-        disponivel:   Math.max(0, (i.quantity ?? 0) - (i.quantity_sold ?? 0)),
-      }))}
+      ingressos={(tickets ?? []).map(i => {
+        const vendidos = vendidosPorTicket[i.id] ?? 0
+        return {
+          id:         i.id,
+          name:       i.name ?? 'Ingresso',
+          price:      Number(i.price ?? 0),
+          disponivel: Math.max(0, (i.quantity ?? 0) - vendidos),
+        }
+      })}
       operadorName={profile?.full_name ?? 'Operador'}
     />
   )
