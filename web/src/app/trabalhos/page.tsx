@@ -41,7 +41,8 @@ export default async function TrabalhosPage() {
           </p>
         </div>
 
-        <TrabalhosClient registros={staff ?? []} />
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        <TrabalhosClient registros={(staff ?? []) as any} />
       </main>
     </div>
   )
