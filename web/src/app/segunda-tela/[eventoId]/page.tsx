@@ -17,14 +17,15 @@ export default async function SegundaTelaPage({ params }: Props) {
 
   const { data: evento } = await admin
     .from('events')
-    .select('id, title, date_start, venue_name, city, state')
+    .select('id, title, date_start, venue_name, city, state, organization_id')
     .eq('id', eventoId)
     .single()
 
-  // Próximos eventos públicos para o carrossel
+  // Próximos eventos da mesma organização (publicidade da casa/promotor)
   const { data: proximos } = await admin
     .from('events')
     .select('id, title, date_start, venue_name, city, cover_url')
+    .eq('organization_id', evento?.organization_id ?? '')
     .eq('is_published', true)
     .gte('date_start', new Date().toISOString())
     .order('date_start', { ascending: true })
