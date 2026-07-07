@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Briefcase, Calendar, MapPin, Shield, Check, X,
   Loader2, ChevronRight, CheckCircle2, Bell,
+  ScanQrCode, ShoppingCart, ClipboardList, BarChart2, ArrowRight,
 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
@@ -201,11 +202,182 @@ function ModalConvite({
   )
 }
 
+// ── Atalhos por permissão ─────────────────────────────────────────────────────
+
+const ATALHOS: {
+  perm: string
+  label: string
+  desc: string
+  icon: React.ElementType
+  href: (eventoId: string) => string
+  cor: string
+}[] = [
+  {
+    perm:  'vender_ingresso',
+    label: 'Abrir caixa',
+    desc:  'Vender ingressos presencialmente',
+    icon:  ShoppingCart,
+    href:  (id) => `/bilheteria/${id}`,
+    cor:   '#E8B84B',
+  },
+  {
+    perm:  'validar_ingresso',
+    label: 'Scanner',
+    desc:  'Escanear e validar ingressos na entrada',
+    icon:  ScanQrCode,
+    href:  (id) => `/scanner/${id}`,
+    cor:   '#4ade80',
+  },
+  {
+    perm:  'ver_lista_convidados',
+    label: 'Lista de compradores',
+    desc:  'Ver quem comprou ingresso',
+    icon:  ClipboardList,
+    href:  (id) => `/dashboard/${id}`,
+    cor:   '#60a5fa',
+  },
+  {
+    perm:  'ver_relatorios',
+    label: 'Relatórios',
+    desc:  'Ver vendas e presença',
+    icon:  BarChart2,
+    href:  (id) => `/dashboard/${id}`,
+    cor:   '#a78bfa',
+  },
+]
+
+// ── Modal de trabalho confirmado ──────────────────────────────────────────────
+
+function ModalTrabalho({
+  registro,
+  onFechar,
+}: {
+  registro: Registro
+  onFechar: () => void
+}) {
+  const evento = registro.events
+  const cargo  = registro.event_positions
+  const perms  = new Set((cargo?.event_position_permissions ?? []).map(p => p.permission))
+
+  const atalhos = ATALHOS.filter(a => perms.has(a.perm))
+    .filter((a, i, arr) => arr.findIndex(b => b.href(evento?.id ?? '') === a.href(evento?.id ?? '')) === i)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onFechar() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onFechar])
+
+  function formatarData(iso: string | null) {
+    if (!iso) return null
+    return new Date(iso).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
+      onClick={onFechar}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl overflow-hidden"
+        style={{ background: '#0d0d0d', border: '1px solid #1e1e1e' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, #4ade80, transparent)' }} />
+
+        <div className="p-5">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <CheckCircle2 size={14} className="text-green-400" />
+                <span className="text-green-400 text-[10px] uppercase tracking-widest font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Confirmado
+                </span>
+              </div>
+              <p className="text-white text-lg font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
+                {evento?.title ?? 'Evento'}
+              </p>
+            </div>
+            <button type="button" onClick={onFechar}>
+              <X size={16} className="text-[#444] hover:text-white" />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-1 mb-4">
+            {evento?.date_start && (
+              <span className="flex items-center gap-1.5 text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <Calendar size={11} />
+                {formatarData(evento.date_start)}
+              </span>
+            )}
+            {(evento?.venue_name || evento?.city) && (
+              <span className="flex items-center gap-1.5 text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <MapPin size={11} />
+                {[evento.venue_name, evento.city, evento.state].filter(Boolean).join(', ')}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl mb-5" style={{ background: '#111', border: '1px solid #1e1e1e' }}>
+            <Shield size={12} style={{ color: '#E8B84B' }} />
+            <span className="text-white text-xs font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {cargo?.name ?? 'Sem cargo'}
+            </span>
+          </div>
+
+          {atalhos.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-[#444] text-[10px] uppercase tracking-wider mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Seu acesso neste evento
+              </p>
+              {atalhos.map(a => {
+                const Icon = a.icon
+                return (
+                  <a
+                    key={a.perm}
+                    href={a.href(evento?.id ?? '')}
+                    className="flex items-center justify-between px-4 py-3.5 rounded-xl transition-all hover:brightness-110"
+                    style={{ background: `${a.cor}10`, border: `1px solid ${a.cor}25` }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ background: `${a.cor}15` }}
+                      >
+                        <Icon size={15} style={{ color: a.cor }} />
+                      </div>
+                      <div>
+                        <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                          {a.label}
+                        </p>
+                        <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                          {a.desc}
+                        </p>
+                      </div>
+                    </div>
+                    <ArrowRight size={14} style={{ color: a.cor }} />
+                  </a>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-[#444] text-sm text-center py-4" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Nenhum acesso específico configurado para sua função.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export function TrabalhosClient({ registros }: Props) {
   const router = useRouter()
   const [conviteSelecionado, setConviteSelecionado] = useState<Registro | null>(null)
+  const [trabalhoSelecionado, setTrabalhoSelecionado] = useState<Registro | null>(null)
   const [respondendo,        setRespondendo]        = useState(false)
 
   const pendentes = registros.filter(r => r.status === 'pending')
@@ -253,13 +425,21 @@ export function TrabalhosClient({ registros }: Props) {
 
   return (
     <>
-      {/* Modal de convite */}
+      {/* Modal de convite pendente */}
       {conviteSelecionado && (
         <ModalConvite
           registro={conviteSelecionado}
           onFechar={() => !respondendo && setConviteSelecionado(null)}
           onResponder={responder}
           respondendo={respondendo}
+        />
+      )}
+
+      {/* Modal de trabalho confirmado */}
+      {trabalhoSelecionado && (
+        <ModalTrabalho
+          registro={trabalhoSelecionado}
+          onFechar={() => setTrabalhoSelecionado(null)}
         />
       )}
 
@@ -351,10 +531,11 @@ export function TrabalhosClient({ registros }: Props) {
                 const cargo  = r.event_positions
 
                 return (
-                  <a
+                  <button
                     key={r.id}
-                    href={evento?.id ? `/evento/${evento.id}` : '#'}
-                    className="flex items-center justify-between px-5 py-4 rounded-2xl transition-colors hover:border-[#2a2a2a]"
+                    type="button"
+                    onClick={() => setTrabalhoSelecionado(r)}
+                    className="w-full flex items-center justify-between px-5 py-4 rounded-2xl text-left transition-colors hover:border-[#2a2a2a]"
                     style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
                   >
                     <div className="flex items-center gap-3 min-w-0">
@@ -376,7 +557,7 @@ export function TrabalhosClient({ registros }: Props) {
                       </div>
                     </div>
                     <ChevronRight size={14} className="text-[#333] shrink-0" />
-                  </a>
+                  </button>
                 )
               })}
             </div>

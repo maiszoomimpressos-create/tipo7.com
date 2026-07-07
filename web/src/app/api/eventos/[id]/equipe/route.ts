@@ -66,12 +66,11 @@ export async function POST(
 
   const body = await req.json() as {
     emailOuCodigo: string
-    positionName:  string
-    permissions:   string[]
+    funcaoId:      string   // ID de uma função já criada no evento
   }
 
-  if (!body.emailOuCodigo || !body.positionName) {
-    return NextResponse.json({ error: 'Email/código e cargo são obrigatórios' }, { status: 400 })
+  if (!body.emailOuCodigo || !body.funcaoId) {
+    return NextResponse.json({ error: 'Email/código e função são obrigatórios' }, { status: 400 })
   }
 
   const busca = body.emailOuCodigo.trim()
@@ -110,27 +109,16 @@ export async function POST(
     )
   }
 
-  // Cria o cargo (position) para esse membro
-  const { data: position, error: posErr } = await admin
+  // Valida que a função pertence a este evento
+  const { data: funcao } = await admin
     .from('event_positions')
-    .insert({ event_id: id, name: body.positionName.trim() })
     .select('id')
+    .eq('id', body.funcaoId)
+    .eq('event_id', id)
     .single()
 
-  if (posErr || !position) {
-    return NextResponse.json({ error: 'Erro ao criar cargo' }, { status: 500 })
-  }
-
-  // Salva as permissões do cargo
-  if (body.permissions.length > 0) {
-    await admin
-      .from('event_position_permissions')
-      .insert(
-        body.permissions.map(p => ({
-          event_position_id: position.id,
-          permission:        p,
-        }))
-      )
+  if (!funcao) {
+    return NextResponse.json({ error: 'Função não encontrada neste evento' }, { status: 404 })
   }
 
   // Cria o vínculo do membro com o evento — fica pendente até o convidado aceitar
@@ -139,7 +127,7 @@ export async function POST(
     .upsert({
       event_id:          id,
       user_id:           targetUser.id,
-      event_position_id: position.id,
+      event_position_id: funcao.id,
       status:            'pending',
       invited_by:        user.id,
     }, { onConflict: 'event_id,user_id' })

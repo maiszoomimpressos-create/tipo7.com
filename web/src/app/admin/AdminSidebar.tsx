@@ -20,6 +20,7 @@ const NAV = [
 const ENT_SUB = [
   { href: '/admin/eventos',   label: 'Eventos',   icon: Calendar, perm: 'gerenciar_eventos' },
   { href: '/admin/atributos', label: 'Atributos', icon: Layers,   perm: 'super_admin_only'  },
+  { href: '/admin/funcoes',   label: 'Funções',   icon: Shield,   perm: 'super_admin_only'  },
 ]
 
 const PLAYERS_SUB = [
