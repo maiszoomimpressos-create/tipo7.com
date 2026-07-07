@@ -84,9 +84,9 @@ export async function POST(req: NextRequest) {
   try {
     const { data: eventoInfo } = await admin.from('events').select('title').eq('id', eventoId).single()
 
-    // PIX expira em 3 minutos — mínimo seguro para autenticação + liquidação interbancária
-    // 2 min causava E1466 (Bradesco): cliente autentica ~60s + BACEN→MP ~30s = chega expirado
-    const dateOfExpiration = new Date(Date.now() + 3 * 60 * 1000).toISOString()
+    // PIX expira em 7 minutos — cobre app lento + autenticação + liquidação interbancária
+    // 3 min causava recusa do recebedor em cooperativas (app lento + biometria + settlement)
+    const dateOfExpiration = new Date(Date.now() + 7 * 60 * 1000).toISOString()
 
     const result = await payment.create({
       body: {
@@ -118,6 +118,15 @@ export async function POST(req: NextRequest) {
     const qrCode       = result.point_of_interaction?.transaction_data?.qr_code        ?? null
     const qrCodeBase64 = result.point_of_interaction?.transaction_data?.qr_code_base64 ?? null
     const expiresAt    = result.date_of_expiration ?? null
+
+    console.log('[bilheteria/pix] PAGAMENTO CRIADO ➜', {
+      payment_id:    result.id,
+      status:        result.status,
+      status_detail: result.status_detail,
+      qr_gerado:     !!qrCode,
+      expira_em:     expiresAt,
+      payer_email:   (result as Record<string,unknown> & { payer?: { email?: string } }).payer?.email,
+    })
 
     await admin.from('orders').update({
       mp_payment_id:      String(result.id),
