@@ -1,16 +1,18 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Ticket, User, Phone, CreditCard, Calendar, Printer, ChevronDown,
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
-  Smartphone, CreditCard as CardIcon, ChevronUp,
+  Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
+  Clock,
 } from 'lucide-react'
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
 
 type MetodoPagamento = 'dinheiro' | 'pix' | 'cartao'
+type Etapa = 'venda' | 'pix' | 'impressao'
 
 interface Ingresso {
   id:         string
@@ -23,6 +25,14 @@ interface TicketGerado {
   id:          string
   slot_number: number
   qr_token:    string
+}
+
+interface PixData {
+  orderId:      string
+  qrCode:       string | null
+  qrCodeBase64: string | null
+  total:        number
+  expiresAt:    string | null
 }
 
 interface Props {
@@ -43,7 +53,7 @@ const METODOS: { value: MetodoPagamento; label: string; Icon: React.ElementType 
 const QTDS_RAPIDAS = [1, 2, 3, 4, 5]
 
 export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLocal, ingressos, operadorName }: Props) {
-  const [etapa,             setEtapa]             = useState<'venda' | 'impressao'>('venda')
+  const [etapa,             setEtapa]             = useState<Etapa>('venda')
   const [ticketId,          setTicketId]          = useState(ingressos[0]?.id ?? '')
   const [dropdownAberto,    setDropdownAberto]    = useState(false)
   const [quantidade,        setQuantidade]        = useState(1)
@@ -54,13 +64,19 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const [nascimento,        setNascimento]        = useState('')
   const [dadosAbertos,      setDadosAbertos]      = useState(false)
   const [salvando,          setSalvando]          = useState(false)
+  const [confirmando,       setConfirmando]       = useState(false)
   const [err,               setErr]               = useState<string | null>(null)
   const [resultado,         setResultado]         = useState<{ tickets: TicketGerado[]; ticketName: string } | null>(null)
-  const printRef     = useRef<HTMLDivElement>(null)
-  const dropdownRef  = useRef<HTMLDivElement>(null)
+  const [pixData,           setPixData]           = useState<PixData | null>(null)
+  const [copiado,           setCopiado]           = useState(false)
+  const [tempoRestante,     setTempoRestante]     = useState<number | null>(null)
+  const printRef    = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const pollingRef  = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
 
+  // Fecha dropdown ao clicar fora
   useEffect(() => {
     function fecharFora(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -70,6 +86,64 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     document.addEventListener('mousedown', fecharFora)
     return () => document.removeEventListener('mousedown', fecharFora)
   }, [])
+
+  // Countdown do PIX
+  useEffect(() => {
+    if (etapa !== 'pix' || !pixData?.expiresAt) return
+    const calcular = () => {
+      const diff = Math.floor((new Date(pixData.expiresAt!).getTime() - Date.now()) / 1000)
+      setTempoRestante(diff > 0 ? diff : 0)
+    }
+    calcular()
+    const id = setInterval(calcular, 1000)
+    return () => clearInterval(id)
+  }, [etapa, pixData?.expiresAt])
+
+  // Confirmação manual do PIX (chamado pelo botão e pelo polling)
+  const confirmarPix = useCallback(async (orderId: string) => {
+    if (confirmando) return
+    setConfirmando(true)
+    setErr(null)
+    try {
+      const res = await fetch('/api/bilheteria/pix/confirmar', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          orderId,
+          comprador: nome || cpf ? { nome: nome || undefined, cpf: cpf.replace(/\D/g, '') || undefined } : undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Erro ao confirmar pagamento')
+      setResultado({ tickets: data.tickets, ticketName: data.ticketName })
+      setEtapa('impressao')
+      if (pollingRef.current) clearInterval(pollingRef.current)
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Erro ao confirmar pagamento')
+    } finally {
+      setConfirmando(false)
+    }
+  }, [confirmando, nome, cpf])
+
+  // Polling de status do PIX a cada 5s
+  useEffect(() => {
+    if (etapa !== 'pix' || !pixData) return
+    const { orderId } = pixData
+    pollingRef.current = setInterval(async () => {
+      try {
+        const res  = await fetch(`/api/bilheteria/pix/${orderId}`)
+        const data = await res.json()
+        if (data.status === 'approved') {
+          if (pollingRef.current) clearInterval(pollingRef.current)
+          await confirmarPix(orderId)
+        }
+      } catch {
+        // silencioso — tenta de novo no próximo ciclo
+      }
+    }, 5000)
+    return () => { if (pollingRef.current) clearInterval(pollingRef.current) }
+  }, [etapa, pixData, confirmarPix])
+
   const total = (ingressoSelecionado?.price ?? 0) * quantidade
 
   function formatarCPF(v: string) {
@@ -85,14 +159,50 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       .replace(/(\d{5})(\d)/, '$1-$2')
   }
 
+  function formatarTempo(s: number) {
+    const m = Math.floor(s / 60)
+    const seg = s % 60
+    return `${m}:${String(seg).padStart(2, '0')}`
+  }
+
   async function handleVender() {
     if (!ticketId) { setErr('Selecione um tipo de ingresso'); return }
     if (!ingressoSelecionado || ingressoSelecionado.disponivel < quantidade) {
       setErr('Quantidade indisponível'); return
     }
+    if (metodo === 'pix' && total <= 0) {
+      setErr('PIX não disponível para ingressos gratuitos.'); return
+    }
 
     setSalvando(true)
     setErr(null)
+
+    // Fluxo PIX — gera QR via Mercado Pago
+    if (metodo === 'pix') {
+      try {
+        const res = await fetch('/api/bilheteria/pix', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            eventoId,
+            ticketId,
+            quantidade,
+            comprador: nome || cpf ? { nome: nome || undefined, cpf: cpf.replace(/\D/g, '') || undefined } : undefined,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? 'Erro ao gerar QR PIX')
+        setPixData({ orderId: data.orderId, qrCode: data.qrCode, qrCodeBase64: data.qrCodeBase64, total: data.total, expiresAt: data.expiresAt })
+        setEtapa('pix')
+      } catch (e: unknown) {
+        setErr(e instanceof Error ? e.message : 'Erro ao gerar PIX')
+      } finally {
+        setSalvando(false)
+      }
+      return
+    }
+
+    // Fluxo dinheiro / cartão — registra direto
     try {
       const res = await fetch('/api/bilheteria/vender', {
         method:  'POST',
@@ -129,13 +239,161 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     setNascimento('')
     setQuantidade(1)
     setResultado(null)
+    setPixData(null)
     setErr(null)
     setDadosAbertos(false)
+    setCopiado(false)
+    setTempoRestante(null)
+    if (pollingRef.current) clearInterval(pollingRef.current)
+  }
+
+  async function copiarQr() {
+    if (!pixData?.qrCode) return
+    await navigator.clipboard.writeText(pixData.qrCode)
+    setCopiado(true)
+    setTimeout(() => setCopiado(false), 2500)
   }
 
   const dataFormatada = eventoDate
     ? new Date(eventoDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : null
+
+  // ── Tela de aguardo do PIX ─────────────────────────────────────────────────
+  if (etapa === 'pix' && pixData) {
+    const expirado = tempoRestante !== null && tempoRestante <= 0
+    return (
+      <div className="min-h-dvh bg-[#070707]">
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-[#111] flex items-center gap-3">
+          <button
+            onClick={handleNovaVenda}
+            className="flex items-center gap-2 text-sm text-[#666] hover:text-white transition-colors"
+            style={{ fontFamily: 'var(--font-dm-sans)' }}
+          >
+            <ArrowLeft size={14} />
+            Cancelar
+          </button>
+        </div>
+
+        <div className="max-w-md mx-auto px-5 py-8 flex flex-col items-center gap-6">
+          {/* Título */}
+          <div className="text-center">
+            <p className="text-[#555] text-xs uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Aguardando pagamento
+            </p>
+            <h2 className="text-white text-2xl font-bold" style={{ fontFamily: 'var(--font-syne)' }}>
+              R$ {pixData.total.toFixed(2).replace('.', ',')}
+            </h2>
+          </div>
+
+          {/* QR Code */}
+          {pixData.qrCodeBase64 ? (
+            <div className="bg-white p-4 rounded-2xl">
+              <img
+                src={`data:image/png;base64,${pixData.qrCodeBase64}`}
+                alt="QR Code PIX"
+                width={220}
+                height={220}
+              />
+            </div>
+          ) : pixData.qrCode ? (
+            <div className="bg-white p-4 rounded-2xl">
+              <QRCode value={pixData.qrCode} size={220} />
+            </div>
+          ) : (
+            <div
+              className="w-[252px] h-[252px] rounded-2xl flex items-center justify-center"
+              style={{ background: '#111', border: '1px solid #1e1e1e' }}
+            >
+              <Loader2 size={32} className="animate-spin text-[#333]" />
+            </div>
+          )}
+
+          {/* Temporizador */}
+          {tempoRestante !== null && (
+            <div className="flex items-center gap-2">
+              <Clock size={13} className={expirado ? 'text-red-400' : 'text-[#555]'} />
+              <span
+                className="text-sm font-mono"
+                style={{ color: expirado ? '#f87171' : '#888', fontFamily: 'var(--font-dm-sans)' }}
+              >
+                {expirado ? 'PIX expirado' : `Expira em ${formatarTempo(tempoRestante)}`}
+              </span>
+            </div>
+          )}
+
+          {/* Copia e cola */}
+          {pixData.qrCode && (
+            <div
+              className="w-full rounded-2xl p-4 flex flex-col gap-3"
+              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e' }}
+            >
+              <p className="text-[#555] text-[11px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                PIX copia e cola
+              </p>
+              <p
+                className="text-[#888] text-xs break-all leading-relaxed"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              >
+                {pixData.qrCode.slice(0, 80)}…
+              </p>
+              <button
+                type="button"
+                onClick={copiarQr}
+                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
+                style={{
+                  background: copiado ? '#1a2e1a' : '#111',
+                  border:     `1px solid ${copiado ? '#2d5a2d' : '#1e1e1e'}`,
+                  color:      copiado ? '#4ade80' : '#888',
+                  fontFamily: 'var(--font-dm-sans)',
+                }}
+              >
+                {copiado
+                  ? <><CheckCircle2 size={14} /> Copiado!</>
+                  : <><Copy size={14} /> Copiar código</>
+                }
+              </button>
+            </div>
+          )}
+
+          {/* Instrução e status */}
+          <p className="text-[#444] text-sm text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            {expirado
+              ? 'O QR code expirou. Cancele e inicie uma nova venda.'
+              : 'Mostre o QR code para o cliente ou copie o código PIX. O pagamento será confirmado automaticamente.'
+            }
+          </p>
+
+          {err && (
+            <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10 w-full">
+              <AlertTriangle size={14} className="shrink-0" />
+              {err}
+            </div>
+          )}
+
+          {/* Botão confirmar manualmente */}
+          {!expirado && (
+            <button
+              type="button"
+              onClick={() => confirmarPix(pixData.orderId)}
+              disabled={confirmando}
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] disabled:opacity-50 transition-all hover:brightness-110 active:scale-[0.98]"
+              style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+            >
+              {confirmando
+                ? <><Loader2 size={18} className="animate-spin" /> Confirmando...</>
+                : <><CheckCircle2 size={18} /> Confirmar pagamento recebido</>
+              }
+            </button>
+          )}
+
+          <p className="text-[#2a2a2a] text-[11px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Use este botão se o cliente já pagou mas a confirmação automática ainda não chegou.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   // ── Tela de impressão ─────────────────────────────────────────────────────
   if (etapa === 'impressao' && resultado) {
@@ -523,7 +781,9 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
         >
           {salvando
             ? <><Loader2 size={18} className="animate-spin" /> Processando...</>
-            : <><Check size={18} /> Confirmar venda</>
+            : metodo === 'pix'
+              ? <><Smartphone size={18} /> Gerar QR PIX</>
+              : <><Check size={18} /> Confirmar venda</>
           }
         </button>
 
