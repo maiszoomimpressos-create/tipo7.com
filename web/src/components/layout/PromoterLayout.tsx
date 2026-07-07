@@ -6,7 +6,7 @@ import { LayoutDashboard, CalendarRange, Settings2, Landmark, ReceiptText, Chevr
 import { cn } from '@/lib/utils'
 
 const EVENTOS_SUB = [
-  { label: 'Meus eventos', href: '/minha-area',          icon: CalendarRange },
+  { label: 'Meus eventos', href: '/minha-area/eventos',  icon: CalendarRange },
   { label: 'Marketing',    href: '/minha-area/marketing', icon: Megaphone    },
 ]
 
