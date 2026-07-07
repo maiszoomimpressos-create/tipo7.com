@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
       status_detail: result.status_detail,
       qr_gerado:     !!qrCode,
       expira_em:     expiresAt,
-      payer_email:   (result as Record<string,unknown> & { payer?: { email?: string } }).payer?.email,
+      payer_email:   (result as unknown as { payer?: { email?: string } }).payer?.email,
     })
 
     await admin.from('orders').update({
