@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   LayoutDashboard, UsersRound, Users, UserCheck, Building2, Calendar, DollarSign,
-  Shield, FileText, ChevronDown, Landmark, ReceiptText, Layers, Clapperboard,
+  Shield, FileText, ChevronDown, Landmark, ReceiptText, Layers, Clapperboard, Megaphone,
 } from 'lucide-react'
 import type { AdminRole } from '@/lib/adminAuth'
 
@@ -18,9 +18,13 @@ const NAV = [
 ]
 
 const ENT_SUB = [
-  { href: '/admin/eventos',   label: 'Eventos',   icon: Calendar, perm: 'gerenciar_eventos' },
-  { href: '/admin/atributos', label: 'Atributos', icon: Layers,   perm: 'super_admin_only'  },
-  { href: '/admin/funcoes',   label: 'Funções',   icon: Shield,   perm: 'super_admin_only'  },
+  { href: '/admin/atributos', label: 'Atributos', icon: Layers, perm: 'super_admin_only' },
+  { href: '/admin/funcoes',   label: 'Funções',   icon: Shield, perm: 'super_admin_only' },
+]
+
+const EVENTOS_SUB = [
+  { href: '/admin/eventos',            label: 'Ver eventos', icon: Calendar,   perm: 'gerenciar_eventos' },
+  { href: '/admin/eventos/marketing',  label: 'Marketing',   icon: Megaphone,  perm: 'gerenciar_eventos' },
 ]
 
 const PLAYERS_SUB = [
@@ -43,13 +47,15 @@ interface Props {
 export function AdminSidebar({ role, permissions, userName }: Props) {
   const pathname = usePathname()
 
-  const playersOpen = pathname.startsWith('/admin/usuarios') || pathname.startsWith('/admin/promotores') || pathname.startsWith('/admin/estabelecimentos')
-  const entOpen     = pathname.startsWith('/admin/eventos') || pathname.startsWith('/admin/atributos')
-  const finOpen     = pathname.startsWith('/admin/financeiro')
+  const playersOpen  = pathname.startsWith('/admin/usuarios') || pathname.startsWith('/admin/promotores') || pathname.startsWith('/admin/estabelecimentos')
+  const entOpen      = pathname.startsWith('/admin/eventos') || pathname.startsWith('/admin/atributos') || pathname.startsWith('/admin/funcoes')
+  const eventosOpen  = pathname.startsWith('/admin/eventos')
+  const finOpen      = pathname.startsWith('/admin/financeiro')
 
-  const [playersExpanded, setPlayersExpanded] = useState(playersOpen)
-  const [entExpanded,     setEntExpanded]     = useState(entOpen)
-  const [finExpanded,     setFinExpanded]     = useState(finOpen)
+  const [playersExpanded,  setPlayersExpanded]  = useState(playersOpen)
+  const [entExpanded,      setEntExpanded]      = useState(entOpen)
+  const [eventosExpanded,  setEventosExpanded]  = useState(eventosOpen)
+  const [finExpanded,      setFinExpanded]      = useState(finOpen)
 
   function canSee(perm: string | null) {
     if (!perm) return true
@@ -147,7 +153,7 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
         )}
 
         {/* Entretenimento com submenu */}
-        {ENT_SUB.some(item => canSee(item.perm)) && (
+        {(EVENTOS_SUB.some(item => canSee(item.perm)) || ENT_SUB.some(item => canSee(item.perm))) && (
           <div>
             <button
               type="button"
@@ -171,6 +177,57 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
 
             {entExpanded && (
               <div className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
+
+                {/* Eventos — com sub-submenu */}
+                {canSee('gerenciar_eventos') && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setEventosExpanded(v => !v)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all"
+                      style={{
+                        background: eventosOpen ? `${ACCENT}08` : 'transparent',
+                        color:      eventosOpen ? ACCENT : '#555',
+                        fontFamily: 'var(--font-dm-sans)',
+                        fontWeight: eventosOpen ? 600 : 400,
+                      }}
+                    >
+                      <Calendar size={12} />
+                      <span className="flex-1 text-left">Eventos</span>
+                      <ChevronDown
+                        size={11}
+                        className="transition-transform duration-200"
+                        style={{ transform: eventosExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                      />
+                    </button>
+
+                    {eventosExpanded && (
+                      <div className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
+                        {EVENTOS_SUB.filter(item => canSee(item.perm)).map(({ href, label, icon: Icon }) => {
+                          const active = pathname === href || (href !== '/admin/eventos' && pathname.startsWith(href))
+                          return (
+                            <Link
+                              key={href}
+                              href={href}
+                              className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs transition-all"
+                              style={{
+                                background: active ? `${ACCENT}12` : 'transparent',
+                                color:      active ? ACCENT : '#555',
+                                fontFamily: 'var(--font-dm-sans)',
+                                fontWeight: active ? 600 : 400,
+                              }}
+                            >
+                              <Icon size={11} />
+                              {label}
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Outros itens do Entretenimento */}
                 {ENT_SUB.filter(item => canSee(item.perm)).map(({ href, label, icon: Icon }) => {
                   const active = pathname.startsWith(href)
                   return (
