@@ -5,7 +5,7 @@ import {
   Ticket, User, Phone, CreditCard, Calendar, Printer, ChevronDown,
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
-  Clock,
+  Clock, Monitor,
 } from 'lucide-react'
 import QRCode from 'react-qr-code'
 
@@ -70,11 +70,30 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const [pixData,           setPixData]           = useState<PixData | null>(null)
   const [copiado,           setCopiado]           = useState(false)
   const [tempoRestante,     setTempoRestante]     = useState<number | null>(null)
-  const printRef    = useRef<HTMLDivElement>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const pollingRef  = useRef<ReturnType<typeof setInterval> | null>(null)
+  const printRef      = useRef<HTMLDivElement>(null)
+  const dropdownRef   = useRef<HTMLDivElement>(null)
+  const pollingRef    = useRef<ReturnType<typeof setInterval> | null>(null)
+  const canalRef      = useRef<BroadcastChannel | null>(null)
+  const segundaRef    = useRef<Window | null>(null)
 
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
+
+  // Abre segunda tela no mesmo browser
+  function abrirSegundaTela() {
+    if (segundaRef.current && !segundaRef.current.closed) {
+      segundaRef.current.focus()
+      return
+    }
+    segundaRef.current = window.open(`/segunda-tela/${eventoId}`, 'tipo7-segunda-tela')
+    if (!canalRef.current) {
+      canalRef.current = new BroadcastChannel(`tipo7-bilheteria-${eventoId}`)
+    }
+  }
+
+  // Fecha BroadcastChannel ao desmontar
+  useEffect(() => {
+    return () => { canalRef.current?.close() }
+  }, [])
 
   // Fecha dropdown ao clicar fora
   useEffect(() => {
@@ -118,6 +137,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       setResultado({ tickets: data.tickets, ticketName: data.ticketName })
       setEtapa('impressao')
       if (pollingRef.current) clearInterval(pollingRef.current)
+      canalRef.current?.postMessage({ type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length })
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao confirmar pagamento')
     } finally {
@@ -194,6 +214,15 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
         if (!res.ok) throw new Error(data.error ?? 'Erro ao gerar QR PIX')
         setPixData({ orderId: data.orderId, qrCode: data.qrCode, qrCodeBase64: data.qrCodeBase64, total: data.total, expiresAt: data.expiresAt })
         setEtapa('pix')
+        canalRef.current?.postMessage({
+          type:         'pix',
+          qrCode:       data.qrCode,
+          qrCodeBase64: data.qrCodeBase64,
+          total:        data.total,
+          expiresAt:    data.expiresAt,
+          ticketName:   ingressoSelecionado?.name ?? 'Ingresso',
+          quantidade,
+        })
       } catch (e: unknown) {
         setErr(e instanceof Error ? e.message : 'Erro ao gerar PIX')
       } finally {
@@ -245,6 +274,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     setCopiado(false)
     setTempoRestante(null)
     if (pollingRef.current) clearInterval(pollingRef.current)
+    canalRef.current?.postMessage({ type: 'cancelado' })
   }
 
   async function copiarQr() {
@@ -505,7 +535,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
         >
           <ShoppingBag size={16} style={{ color: ACCENT }} />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
             Bilheteria
           </h1>
@@ -513,6 +543,21 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
             {eventoTitle} • {operadorName}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={abrirSegundaTela}
+          title="Abrir segunda tela para o cliente"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
+          style={{
+            background:  '#0d0d0d',
+            border:      '1px solid #1e1e1e',
+            color:       '#555',
+            fontFamily:  'var(--font-dm-sans)',
+          }}
+        >
+          <Monitor size={13} />
+          Segunda tela
+        </button>
       </div>
 
       <div className="max-w-lg mx-auto px-5 py-6 flex flex-col gap-6">
