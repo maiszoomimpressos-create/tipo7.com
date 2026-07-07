@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   Ticket, User, Phone, CreditCard, Calendar, Printer, ChevronDown,
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
@@ -45,6 +45,7 @@ const QTDS_RAPIDAS = [1, 2, 3, 4, 5]
 export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLocal, ingressos, operadorName }: Props) {
   const [etapa,             setEtapa]             = useState<'venda' | 'impressao'>('venda')
   const [ticketId,          setTicketId]          = useState(ingressos[0]?.id ?? '')
+  const [dropdownAberto,    setDropdownAberto]    = useState(false)
   const [quantidade,        setQuantidade]        = useState(1)
   const [metodo,            setMetodo]            = useState<MetodoPagamento>('dinheiro')
   const [nome,              setNome]              = useState('')
@@ -55,9 +56,20 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const [salvando,          setSalvando]          = useState(false)
   const [err,               setErr]               = useState<string | null>(null)
   const [resultado,         setResultado]         = useState<{ tickets: TicketGerado[]; ticketName: string } | null>(null)
-  const printRef = useRef<HTMLDivElement>(null)
+  const printRef     = useRef<HTMLDivElement>(null)
+  const dropdownRef  = useRef<HTMLDivElement>(null)
 
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
+
+  useEffect(() => {
+    function fecharFora(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownAberto(false)
+      }
+    }
+    document.addEventListener('mousedown', fecharFora)
+    return () => document.removeEventListener('mousedown', fecharFora)
+  }, [])
   const total = (ingressoSelecionado?.price ?? 0) * quantidade
 
   function formatarCPF(v: string) {
@@ -246,32 +258,82 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
 
       <div className="max-w-lg mx-auto px-5 py-6 flex flex-col gap-6">
 
-        {/* Tipo de ingresso */}
-        <div>
+        {/* Tipo de ingresso — dropdown customizado */}
+        <div ref={dropdownRef} className="relative">
           <label className="text-[#555] text-xs uppercase tracking-wider mb-2 block" style={{ fontFamily: 'var(--font-dm-sans)' }}>
             Tipo de ingresso
           </label>
-          <div className="relative">
-            <select
-              value={ticketId}
-              onChange={e => setTicketId(e.target.value)}
-              className="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl px-4 py-3 text-white text-sm outline-none appearance-none focus:border-[#E8B84B]/40"
-              style={{ fontFamily: 'var(--font-dm-sans)' }}
+
+          {/* Botão disparador */}
+          <button
+            type="button"
+            onClick={() => setDropdownAberto(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm text-left transition-colors"
+            style={{
+              background: '#0d0d0d',
+              border: `1px solid ${dropdownAberto ? ACCENT + '50' : '#1e1e1e'}`,
+              fontFamily: 'var(--font-dm-sans)',
+            }}
+          >
+            {ingressoSelecionado ? (
+              <div className="flex items-center justify-between flex-1 mr-3">
+                <span className="text-white">{ingressoSelecionado.name}</span>
+                <span style={{ color: ACCENT }} className="font-semibold text-sm">
+                  {ingressoSelecionado.price === 0
+                    ? 'Grátis'
+                    : `R$ ${ingressoSelecionado.price.toFixed(2).replace('.', ',')}`}
+                </span>
+              </div>
+            ) : (
+              <span className="text-[#444]">Selecione o tipo de ingresso</span>
+            )}
+            <ChevronDown
+              size={14}
+              className="text-[#444] transition-transform shrink-0"
+              style={{ transform: dropdownAberto ? 'rotate(180deg)' : 'rotate(0deg)' }}
+            />
+          </button>
+
+          {/* Lista flutuante — sobrepõe o conteúdo abaixo */}
+          {dropdownAberto && (
+            <div
+              className="absolute left-0 right-0 top-full mt-1 rounded-xl overflow-hidden z-50 flex flex-col"
+              style={{ background: '#0d0d0d', border: `1px solid ${ACCENT}30`, boxShadow: '0 16px 48px rgba(0,0,0,0.6)' }}
             >
-              {ingressos.map(i => (
-                <option key={i.id} value={i.id} disabled={i.disponivel === 0}>
-                  {i.name} — R$ {i.price.toFixed(2).replace('.', ',')} ({i.disponivel} disponíveis)
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
-          </div>
-          {ingressoSelecionado && (
-            <div className="mt-2 flex items-center gap-2">
-              <Ticket size={12} style={{ color: ACCENT }} />
-              <span className="text-[10px]" style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-                {ingressoSelecionado.disponivel} disponíveis
-              </span>
+              {ingressos.length === 0 ? (
+                <p className="text-[#444] text-sm text-center py-4 px-4" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Nenhum ingresso disponível
+                </p>
+              ) : (
+                ingressos.map((i, idx) => (
+                  <button
+                    key={i.id}
+                    type="button"
+                    disabled={i.disponivel === 0}
+                    onClick={() => { setTicketId(i.id); setDropdownAberto(false) }}
+                    className="w-full flex items-center justify-between px-4 py-3.5 text-left transition-colors disabled:opacity-40"
+                    style={{
+                      background: ticketId === i.id ? `${ACCENT}10` : 'transparent',
+                      borderTop: idx > 0 ? '1px solid #1a1a1a' : 'none',
+                      fontFamily: 'var(--font-dm-sans)',
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      {ticketId === i.id && <Check size={12} style={{ color: ACCENT }} />}
+                      {ticketId !== i.id && <div className="w-3" />}
+                      <div>
+                        <p className="text-white text-sm">{i.name}</p>
+                        <p className="text-[#555] text-[11px] mt-0.5">
+                          {i.disponivel === 0 ? 'Esgotado' : `${i.disponivel} disponíveis`}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="font-semibold text-sm" style={{ color: ACCENT }}>
+                      {i.price === 0 ? 'Grátis' : `R$ ${i.price.toFixed(2).replace('.', ',')}`}
+                    </span>
+                  </button>
+                ))
+              )}
             </div>
           )}
         </div>
