@@ -377,7 +377,6 @@ function ModalTrabalho({
 export function TrabalhosClient({ registros }: Props) {
   const router = useRouter()
   const [conviteSelecionado, setConviteSelecionado] = useState<Registro | null>(null)
-  const [trabalhoSelecionado, setTrabalhoSelecionado] = useState<Registro | null>(null)
   const [respondendo,        setRespondendo]        = useState(false)
 
   const pendentes = registros.filter(r => r.status === 'pending')
@@ -432,14 +431,6 @@ export function TrabalhosClient({ registros }: Props) {
           onFechar={() => !respondendo && setConviteSelecionado(null)}
           onResponder={responder}
           respondendo={respondendo}
-        />
-      )}
-
-      {/* Modal de trabalho confirmado */}
-      {trabalhoSelecionado && (
-        <ModalTrabalho
-          registro={trabalhoSelecionado}
-          onFechar={() => setTrabalhoSelecionado(null)}
         />
       )}
 
@@ -531,10 +522,9 @@ export function TrabalhosClient({ registros }: Props) {
                 const cargo  = r.event_positions
 
                 return (
-                  <button
+                  <a
                     key={r.id}
-                    type="button"
-                    onClick={() => setTrabalhoSelecionado(r)}
+                    href={`/trabalho/${r.events?.id ?? ''}`}
                     className="w-full flex items-center justify-between px-5 py-4 rounded-2xl text-left transition-colors hover:border-[#2a2a2a]"
                     style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
                   >
@@ -557,7 +547,7 @@ export function TrabalhosClient({ registros }: Props) {
                       </div>
                     </div>
                     <ChevronRight size={14} className="text-[#333] shrink-0" />
-                  </button>
+                  </a>
                 )
               })}
             </div>
