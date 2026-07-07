@@ -12,7 +12,7 @@ import QRCode from 'react-qr-code'
 const ACCENT = '#E8B84B'
 
 type MetodoPagamento = 'dinheiro' | 'pix' | 'cartao'
-type Etapa = 'venda' | 'pix' | 'impressao'
+type Etapa = 'venda' | 'pix' | 'dados' | 'impressao'
 
 interface Ingresso {
   id:         string
@@ -64,19 +64,34 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const [nascimento,        setNascimento]        = useState('')
   const [dadosAbertos,      setDadosAbertos]      = useState(false)
   const [salvando,          setSalvando]          = useState(false)
+  const [salvandoDados,     setSalvandoDados]     = useState(false)
   const [confirmando,       setConfirmando]       = useState(false)
   const [err,               setErr]               = useState<string | null>(null)
   const [resultado,         setResultado]         = useState<{ tickets: TicketGerado[]; ticketName: string } | null>(null)
+  const [pendingTickets,    setPendingTickets]    = useState<{ tickets: TicketGerado[]; ticketName: string } | null>(null)
   const [pixData,           setPixData]           = useState<PixData | null>(null)
   const [copiado,           setCopiado]           = useState(false)
   const [tempoRestante,     setTempoRestante]     = useState<number | null>(null)
-  const printRef      = useRef<HTMLDivElement>(null)
-  const dropdownRef   = useRef<HTMLDivElement>(null)
-  const pollingRef    = useRef<ReturnType<typeof setInterval> | null>(null)
-  const canalRef      = useRef<BroadcastChannel | null>(null)
-  const segundaRef    = useRef<Window | null>(null)
+  const printRef         = useRef<HTMLDivElement>(null)
+  const dropdownRef      = useRef<HTMLDivElement>(null)
+  const pollingRef       = useRef<ReturnType<typeof setInterval> | null>(null)
+  const canalRef         = useRef<BroadcastChannel | null>(null)
+  const segundaRef       = useRef<Window | null>(null)
+  const pixBroadcastRef  = useRef<object | null>(null)   // último payload PIX enviado
 
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
+
+  // Cria o canal ao montar e responde ao ping 'ready' da segunda tela
+  useEffect(() => {
+    const canal = new BroadcastChannel(`tipo7-bilheteria-${eventoId}`)
+    canalRef.current = canal
+    canal.onmessage = (e: MessageEvent<{ type: string }>) => {
+      if (e.data.type === 'ready' && pixBroadcastRef.current) {
+        canal.postMessage(pixBroadcastRef.current)
+      }
+    }
+    return () => { canal.close(); canalRef.current = null }
+  }, [eventoId])
 
   // Abre segunda tela no mesmo browser
   function abrirSegundaTela() {
@@ -85,15 +100,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       return
     }
     segundaRef.current = window.open(`/segunda-tela/${eventoId}`, 'tipo7-segunda-tela')
-    if (!canalRef.current) {
-      canalRef.current = new BroadcastChannel(`tipo7-bilheteria-${eventoId}`)
-    }
   }
-
-  // Fecha BroadcastChannel ao desmontar
-  useEffect(() => {
-    return () => { canalRef.current?.close() }
-  }, [])
 
   // Fecha dropdown ao clicar fora
   useEffect(() => {
@@ -118,7 +125,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     return () => clearInterval(id)
   }, [etapa, pixData?.expiresAt])
 
-  // Confirmação manual do PIX (chamado pelo botão e pelo polling)
+  // Confirmação do PIX — gera os ingressos e abre tela de dados do comprador
   const confirmarPix = useCallback(async (orderId: string) => {
     if (confirmando) return
     setConfirmando(true)
@@ -127,23 +134,24 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       const res = await fetch('/api/bilheteria/pix/confirmar', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          orderId,
-          comprador: nome || cpf ? { nome: nome || undefined, cpf: cpf.replace(/\D/g, '') || undefined } : undefined,
-        }),
+        body:    JSON.stringify({ orderId }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao confirmar pagamento')
-      setResultado({ tickets: data.tickets, ticketName: data.ticketName })
-      setEtapa('impressao')
+      setPendingTickets({ tickets: data.tickets, ticketName: data.ticketName })
+      setEtapa('dados')
       if (pollingRef.current) clearInterval(pollingRef.current)
-      canalRef.current?.postMessage({ type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length })
+      pixBroadcastRef.current = null
+      const aprovMsg = { type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length }
+      localStorage.setItem(`tipo7-pix-${eventoId}`, JSON.stringify(aprovMsg))
+      setTimeout(() => localStorage.removeItem(`tipo7-pix-${eventoId}`), 5500)
+      canalRef.current?.postMessage(aprovMsg)
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao confirmar pagamento')
     } finally {
       setConfirmando(false)
     }
-  }, [confirmando, nome, cpf])
+  }, [confirmando, eventoId])
 
   // Polling de status do PIX a cada 5s
   useEffect(() => {
@@ -214,7 +222,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
         if (!res.ok) throw new Error(data.error ?? 'Erro ao gerar QR PIX')
         setPixData({ orderId: data.orderId, qrCode: data.qrCode, qrCodeBase64: data.qrCodeBase64, total: data.total, expiresAt: data.expiresAt })
         setEtapa('pix')
-        canalRef.current?.postMessage({
+        const pixPayload = {
           type:         'pix',
           qrCode:       data.qrCode,
           qrCodeBase64: data.qrCodeBase64,
@@ -222,7 +230,10 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           expiresAt:    data.expiresAt,
           ticketName:   ingressoSelecionado?.name ?? 'Ingresso',
           quantidade,
-        })
+        }
+        pixBroadcastRef.current = pixPayload
+        localStorage.setItem(`tipo7-pix-${eventoId}`, JSON.stringify(pixPayload))
+        canalRef.current?.postMessage(pixPayload)
       } catch (e: unknown) {
         setErr(e instanceof Error ? e.message : 'Erro ao gerar PIX')
       } finally {
@@ -260,7 +271,18 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     }
   }
 
+  function cancelarOrdemAtual() {
+    if (pixData?.orderId) {
+      fetch('/api/bilheteria/cancelar-pix', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ orderId: pixData.orderId }),
+      }).catch(() => {})
+    }
+  }
+
   function handleNovaVenda() {
+    cancelarOrdemAtual()
     setEtapa('venda')
     setNome('')
     setCpf('')
@@ -268,13 +290,63 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     setNascimento('')
     setQuantidade(1)
     setResultado(null)
+    setPendingTickets(null)
     setPixData(null)
     setErr(null)
     setDadosAbertos(false)
+    setSalvandoDados(false)
     setCopiado(false)
     setTempoRestante(null)
     if (pollingRef.current) clearInterval(pollingRef.current)
+    pixBroadcastRef.current = null
+    localStorage.removeItem(`tipo7-pix-${eventoId}`)
     canalRef.current?.postMessage({ type: 'cancelado' })
+  }
+
+  async function gerarNovoPix() {
+    cancelarOrdemAtual()
+    setPixData(null)
+    setTempoRestante(null)
+    setErr(null)
+    setCopiado(false)
+    if (pollingRef.current) clearInterval(pollingRef.current)
+    pixBroadcastRef.current = null
+    localStorage.removeItem(`tipo7-pix-${eventoId}`)
+    canalRef.current?.postMessage({ type: 'cancelado' })
+    await handleVender()
+  }
+
+  async function handleSubmitDados() {
+    if (!pendingTickets || !pixData) return
+    setSalvandoDados(true)
+    setErr(null)
+    try {
+      if (nome || cpf || telefone || nascimento) {
+        const res = await fetch('/api/bilheteria/holders', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            orderId:   pixData.orderId,
+            comprador: {
+              nome:       nome || undefined,
+              cpf:        cpf.replace(/\D/g, '') || undefined,
+              telefone:   telefone.replace(/\D/g, '') || undefined,
+              nascimento: nascimento || undefined,
+            },
+          }),
+        })
+        if (!res.ok) {
+          const d = await res.json()
+          throw new Error(d.error ?? 'Erro ao salvar dados')
+        }
+      }
+      setResultado(pendingTickets)
+      setEtapa('impressao')
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Erro ao salvar dados')
+    } finally {
+      setSalvandoDados(false)
+    }
   }
 
   async function copiarQr() {
@@ -386,14 +458,6 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
             </div>
           )}
 
-          {/* Instrução e status */}
-          <p className="text-[#444] text-sm text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            {expirado
-              ? 'O QR code expirou. Cancele e inicie uma nova venda.'
-              : 'Mostre o QR code para o cliente ou copie o código PIX. O pagamento será confirmado automaticamente.'
-            }
-          </p>
-
           {err && (
             <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10 w-full">
               <AlertTriangle size={14} className="shrink-0" />
@@ -401,25 +465,178 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
             </div>
           )}
 
-          {/* Botão confirmar manualmente */}
-          {!expirado && (
-            <button
-              type="button"
-              onClick={() => confirmarPix(pixData.orderId)}
-              disabled={confirmando}
-              className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] disabled:opacity-50 transition-all hover:brightness-110 active:scale-[0.98]"
-              style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-            >
-              {confirmando
-                ? <><Loader2 size={18} className="animate-spin" /> Confirmando...</>
-                : <><CheckCircle2 size={18} /> Confirmar pagamento recebido</>
-              }
-            </button>
+          {expirado ? (
+            /* ── PIX expirado: duas opções ── */
+            <div className="w-full flex flex-col gap-3">
+              <p className="text-[#555] text-sm text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                O QR code expirou. O que o cliente deseja fazer?
+              </p>
+              <button
+                type="button"
+                onClick={gerarNovoPix}
+                disabled={salvando}
+                className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] disabled:opacity-50 transition-all hover:brightness-110 active:scale-[0.98]"
+                style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+              >
+                {salvando
+                  ? <><Loader2 size={18} className="animate-spin" /> Gerando...</>
+                  : <><Smartphone size={18} /> Gerar novo QR PIX</>
+                }
+              </button>
+              <button
+                type="button"
+                onClick={handleNovaVenda}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-semibold transition-all hover:border-[#333] active:scale-[0.98]"
+                style={{
+                  background:  '#0d0d0d',
+                  border:      '1px solid #1e1e1e',
+                  color:       '#666',
+                  fontFamily:  'var(--font-dm-sans)',
+                }}
+              >
+                <ArrowLeft size={15} />
+                Cancelar venda
+              </button>
+            </div>
+          ) : (
+            /* ── PIX ativo: confirmar manualmente ── */
+            <div className="w-full flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => confirmarPix(pixData.orderId)}
+                disabled={confirmando}
+                className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] disabled:opacity-50 transition-all hover:brightness-110 active:scale-[0.98]"
+                style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+              >
+                {confirmando
+                  ? <><Loader2 size={18} className="animate-spin" /> Confirmando...</>
+                  : <><CheckCircle2 size={18} /> Confirmar pagamento recebido</>
+                }
+              </button>
+              <p className="text-[#2a2a2a] text-[11px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Use este botão se o cliente já pagou mas a confirmação automática ainda não chegou.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Tela de dados do comprador ────────────────────────────────────────────
+  if (etapa === 'dados' && pendingTickets) {
+    return (
+      <div className="min-h-dvh bg-[#070707]">
+
+        {/* Banner de sucesso */}
+        <div
+          className="px-6 py-5 flex items-center gap-4"
+          style={{ background: 'rgba(74,222,128,0.06)', borderBottom: '1px solid rgba(74,222,128,0.15)' }}
+        >
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)' }}
+          >
+            <CheckCircle2 size={20} className="text-green-400" />
+          </div>
+          <div>
+            <p className="text-green-400 text-sm font-bold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Pagamento confirmado!
+            </p>
+            <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {pendingTickets.tickets.length} ingresso{pendingTickets.tickets.length > 1 ? 's' : ''} — {pendingTickets.ticketName}
+            </p>
+          </div>
+        </div>
+
+        <div className="max-w-md mx-auto px-5 py-6 flex flex-col gap-6">
+          <div>
+            <h2 className="text-white text-lg font-bold mb-0.5" style={{ fontFamily: 'var(--font-syne)' }}>
+              Dados do comprador
+            </h2>
+            <p className="text-[#444] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Preencha para identificar o ingresso ou pule direto para impressão
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className="relative">
+              <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#444]" />
+              <input
+                type="text"
+                value={nome}
+                onChange={e => setNome(e.target.value)}
+                placeholder="Nome completo"
+                autoFocus
+                className="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl pl-9 pr-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              />
+            </div>
+
+            <div className="relative">
+              <CreditCard size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#444]" />
+              <input
+                type="text"
+                value={cpf}
+                onChange={e => setCpf(formatarCPF(e.target.value))}
+                placeholder="CPF"
+                className="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl pl-9 pr-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              />
+            </div>
+
+            <div className="relative">
+              <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#444]" />
+              <input
+                type="tel"
+                value={telefone}
+                onChange={e => setTelefone(formatarTelefone(e.target.value))}
+                placeholder="Telefone"
+                className="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl pl-9 pr-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              />
+            </div>
+
+            <div className="relative">
+              <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#444]" />
+              <input
+                type="date"
+                value={nascimento}
+                onChange={e => setNascimento(e.target.value)}
+                className="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl pl-9 pr-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
+                style={{ fontFamily: 'var(--font-dm-sans)', colorScheme: 'dark' }}
+              />
+            </div>
+          </div>
+
+          {err && (
+            <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10">
+              <AlertTriangle size={14} className="shrink-0" />
+              {err}
+            </div>
           )}
 
-          <p className="text-[#2a2a2a] text-[11px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            Use este botão se o cliente já pagou mas a confirmação automática ainda não chegou.
-          </p>
+          <button
+            type="button"
+            onClick={handleSubmitDados}
+            disabled={salvandoDados}
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] disabled:opacity-50 transition-all hover:brightness-110 active:scale-[0.98]"
+            style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+          >
+            {salvandoDados
+              ? <><Loader2 size={18} className="animate-spin" /> Salvando...</>
+              : <><Printer size={18} /> Salvar e imprimir ingresso</>
+            }
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setResultado(pendingTickets); setEtapa('impressao') }}
+            className="text-center text-[#3a3a3a] text-sm hover:text-[#666] transition-colors py-1"
+            style={{ fontFamily: 'var(--font-dm-sans)' }}
+          >
+            Pular e imprimir sem dados
+          </button>
         </div>
       </div>
     )

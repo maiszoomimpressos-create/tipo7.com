@@ -52,12 +52,8 @@ export async function POST(req: NextRequest) {
   const mpToken = await getMpToken(ownerId, admin)
   if (!mpToken) return NextResponse.json({ error: 'Promotor não tem conta Mercado Pago conectada.' }, { status: 422 })
 
-  // CPF do promotor (payer obrigatório no MP para PIX)
-  const { data: ownerProfile } = await admin.from('profiles').select('full_name, cpf').eq('id', ownerId).single()
-  const cpf = ownerProfile?.cpf?.replace(/\D/g, '')
-  if (!cpf || cpf.length !== 11) {
-    return NextResponse.json({ error: 'Promotor precisa cadastrar CPF no perfil para receber via PIX.' }, { status: 422 })
-  }
+  // Perfil do promotor — nome para logs, CPF não vai mais no payer
+  const { data: ownerProfile } = await admin.from('profiles').select('full_name').eq('id', ownerId).single()
 
   // Busca ingresso e valida evento
   const { data: ticket } = await admin.from('event_tickets').select('id, name, price').eq('id', ticketId).eq('event_id', eventoId).single()
@@ -85,24 +81,34 @@ export async function POST(req: NextRequest) {
   const mpClient = new MercadoPagoConfig({ accessToken: mpToken })
   const payment  = new Payment(mpClient)
 
-  const fullName  = ownerProfile?.full_name ?? ''
-  const nameParts = fullName.trim().split(' ')
-  const firstName = nameParts[0] ?? 'Evento'
-  const lastName  = nameParts.slice(1).join(' ') || firstName
-
   try {
     const { data: eventoInfo } = await admin.from('events').select('title').eq('id', eventoId).single()
+
+    // PIX expira em 3 minutos — mínimo seguro para autenticação + liquidação interbancária
+    // 2 min causava E1466 (Bradesco): cliente autentica ~60s + BACEN→MP ~30s = chega expirado
+    const dateOfExpiration = new Date(Date.now() + 3 * 60 * 1000).toISOString()
 
     const result = await payment.create({
       body: {
         transaction_amount: total,
-        description:        `Bilheteria — ${eventoInfo?.title ?? 'Evento'}`.slice(0, 255),
-        payment_method_id:  'pix',
+        description:          `Bilheteria — ${eventoInfo?.title ?? 'Evento'}`.slice(0, 255),
+        statement_descriptor: 'TIPO7.COM',
+        payment_method_id:    'pix',
+        date_of_expiration: dateOfExpiration,
+        // payer = cliente presencial (desconhecido na hora da cobrança)
+        // Usar e-mail genérico de bilheteria — CPF do promotor no payer causava
+        // detecção de autopagamento no MP e bloqueio do QR
         payer: {
-          email:          user.email ?? `bilheteria+${orderId}@tipo7.com`,
-          first_name:     firstName,
-          last_name:      lastName,
-          identification: { type: 'CPF', number: cpf },
+          email: `bilheteria+${orderId.slice(0, 8)}@tipo7.com`,
+        },
+        additional_info: {
+          items: [{
+            id:          ticketId,
+            title:       ticket.name,
+            description: `Ingresso — ${eventoInfo?.title ?? 'Evento'}`.slice(0, 255),
+            quantity:    quantidade,
+            unit_price:  Number(ticket.price ?? 0),
+          }],
         },
         notification_url:   'https://www.tipo7.com/api/webhooks/mercadopago',
         external_reference: orderId,

@@ -21,20 +21,37 @@ export default async function SegundaTelaPage({ params }: Props) {
     .eq('id', eventoId)
     .single()
 
-  // Próximos eventos da mesma organização (publicidade da casa/promotor)
-  const { data: proximos } = await admin
-    .from('events')
-    .select('id, title, date_start, venue_name, city, cover_url')
-    .eq('organization_id', evento?.organization_id ?? '')
-    .eq('is_published', true)
-    .gte('date_start', new Date().toISOString())
-    .order('date_start', { ascending: true })
-    .limit(10)
+  const orgId = evento?.organization_id ?? ''
+
+  // Slides do carrossel cadastrados pelo promotor (têm prioridade)
+  const { data: slidesRaw } = await admin
+    .from('carrossel_slides')
+    .select('id, image_url')
+    .eq('organization_id', orgId)
+    .order('created_at', { ascending: true })
+
+  const slides = (slidesRaw ?? []).map(s => ({
+    id:        s.id        as string,
+    image_url: s.image_url as string,
+  }))
+
+  // Próximos eventos da organização — usados como fallback quando não há slides
+  const { data: proximos } = slides.length === 0
+    ? await admin
+        .from('events')
+        .select('id, title, date_start, venue_name, city, cover_url')
+        .eq('organization_id', orgId)
+        .eq('is_published', true)
+        .gte('date_start', new Date().toISOString())
+        .order('date_start', { ascending: true })
+        .limit(10)
+    : { data: [] }
 
   return (
     <SegundaTelaClient
       eventoId={eventoId}
       eventoTitle={evento?.title ?? 'Evento'}
+      slides={slides}
       eventosProximos={(proximos ?? []).map(e => ({
         id:         e.id,
         title:      e.title ?? '',

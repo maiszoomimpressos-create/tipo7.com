@@ -28,8 +28,35 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (!order) return NextResponse.json({ error: 'Pedido não encontrado' }, { status: 404 })
-  if (order.status === 'approved') return NextResponse.json({ error: 'Pedido já aprovado' }, { status: 409 })
-  if (order.status !== 'pending') return NextResponse.json({ error: 'Pedido não está pendente' }, { status: 409 })
+  if (order.status !== 'pending' && order.status !== 'approved') {
+    return NextResponse.json({ error: 'Pedido não está pendente' }, { status: 409 })
+  }
+
+  // Pedido já aprovado pelo webhook — retorna os ingressos existentes
+  if (order.status === 'approved') {
+    const { data: existingTickets } = await admin
+      .from('tickets')
+      .select('id, slot_number, qr_token')
+      .eq('order_id', orderId)
+
+    const { data: orderItem } = await admin
+      .from('order_items')
+      .select('ticket_id')
+      .eq('order_id', orderId)
+      .single()
+
+    const { data: ticketType } = await admin
+      .from('event_tickets')
+      .select('name')
+      .eq('id', orderItem?.ticket_id ?? '')
+      .single()
+
+    return NextResponse.json({
+      ok:         true,
+      tickets:    (existingTickets ?? []).map(t => ({ id: t.id, slot_number: t.slot_number, qr_token: t.qr_token })),
+      ticketName: ticketType?.name ?? 'Ingresso',
+    })
+  }
 
   // Aprova o pedido
   await admin.from('orders').update({
@@ -55,7 +82,7 @@ export async function POST(req: NextRequest) {
 
   const { data: tickets, error: ticketErr } = await admin
     .from('tickets')
-    .insert(ticketRows)
+    .upsert(ticketRows, { onConflict: 'order_item_id,slot_number', ignoreDuplicates: true })
     .select('id, slot_number, qr_token')
 
   if (ticketErr || !tickets) return NextResponse.json({ error: 'Erro ao gerar ingressos' }, { status: 500 })
