@@ -3,7 +3,7 @@
 import {
   ArrowLeft, Calendar, MapPin, Shield,
   ShoppingCart, ScanQrCode, ClipboardList, BarChart2,
-  Settings, CheckCircle2, ChevronRight,
+  Settings, CheckCircle2, ChevronRight, Ticket,
 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
@@ -70,20 +70,30 @@ function buildAcessos(eventoId: string, permissoes: string[], isOwner: boolean):
   return visiveis.filter((a, i, arr) => arr.findIndex(b => b.href === a.href) === i)
 }
 
+interface Ingresso {
+  id:         string
+  name:       string
+  price:      number
+  total:      number
+  vendidos:   number
+  disponivel: number
+}
+
 interface Props {
-  eventoId:    string
-  eventoTitle: string
-  eventoDate:  string | null
-  eventoLocal: string
+  eventoId:     string
+  eventoTitle:  string
+  eventoDate:   string | null
+  eventoLocal:  string
   eventoBanner: string | null
-  cargoNome:   string
-  permissoes:  string[]
-  isOwner:     boolean
+  cargoNome:    string
+  permissoes:   string[]
+  ingressos:    Ingresso[]
+  isOwner:      boolean
 }
 
 export function TrabalhoClient({
   eventoId, eventoTitle, eventoDate, eventoLocal, eventoBanner,
-  cargoNome, permissoes, isOwner,
+  cargoNome, permissoes, ingressos, isOwner,
 }: Props) {
   const acessos = buildAcessos(eventoId, permissoes, isOwner)
 
@@ -222,6 +232,78 @@ export function TrabalhoClient({
           <p className="text-[#333] text-xs mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
             Fale com o organizador do evento.
           </p>
+        </div>
+      )}
+
+      {/* Ingressos do evento */}
+      {ingressos.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <Ticket size={13} style={{ color: ACCENT }} />
+            <p className="text-[#444] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Tipos de ingresso
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {ingressos.map(i => {
+              const pct = i.total > 0 ? Math.round((i.vendidos / i.total) * 100) : 0
+              const esgotado = i.disponivel === 0
+
+              return (
+                <div
+                  key={i.id}
+                  className="px-4 py-3.5 rounded-xl"
+                  style={{
+                    background: '#0d0d0d',
+                    border:     `1px solid ${esgotado ? '#1a1a1a' : '#1e1e1e'}`,
+                    opacity:    esgotado ? 0.5 : 1,
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <p
+                      className="text-white text-sm font-medium"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}
+                    >
+                      {i.name}
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="text-sm font-bold"
+                        style={{ color: ACCENT, fontFamily: 'var(--font-outfit)' }}
+                      >
+                        {i.price === 0 ? 'Grátis' : `R$ ${i.price.toFixed(2).replace('.', ',')}`}
+                      </span>
+                      {esgotado && (
+                        <span
+                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                          style={{ background: '#1a1a1a', color: '#444', fontFamily: 'var(--font-dm-sans)' }}
+                        >
+                          Esgotado
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Barra de progresso */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#1a1a1a' }}>
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width:      `${pct}%`,
+                          background: pct >= 90 ? '#f87171' : pct >= 60 ? ACCENT : '#4ade80',
+                        }}
+                      />
+                    </div>
+                    <span className="text-[#555] text-[10px] shrink-0" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {i.disponivel} disponíveis
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

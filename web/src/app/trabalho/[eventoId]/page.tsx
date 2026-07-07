@@ -63,6 +63,22 @@ export default async function TrabalhoPage({ params }: Props) {
     ? ['validar_ingresso', 'vender_ingresso', 'ver_lista_convidados', 'ver_relatorios', 'gerenciar_checkin', 'gerenciar_equipe']
     : (cargo?.event_position_permissions ?? []).map(p => p.permission)
 
+  // Busca tipos de ingresso do evento
+  const { data: tickets } = await admin
+    .from('event_tickets')
+    .select('id, name, price, quantity, quantity_sold')
+    .eq('event_id', eventoId)
+    .order('price')
+
+  const ingressos = (tickets ?? []).map(t => ({
+    id:         t.id,
+    name:       t.name ?? 'Ingresso',
+    price:      Number(t.price ?? 0),
+    total:      t.quantity ?? 0,
+    vendidos:   t.quantity_sold ?? 0,
+    disponivel: Math.max(0, (t.quantity ?? 0) - (t.quantity_sold ?? 0)),
+  }))
+
   return (
     <div className="min-h-dvh bg-[#070707]">
       <Header />
@@ -74,6 +90,7 @@ export default async function TrabalhoPage({ params }: Props) {
         eventoBanner={evento.banner_url ?? null}
         cargoNome={isOwner ? 'Organizador' : (cargo?.name ?? 'Equipe')}
         permissoes={permissoes}
+        ingressos={ingressos}
         isOwner={isOwner}
       />
     </div>
