@@ -1,6 +1,6 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { notFound }      from 'next/navigation'
-import { Header }        from '@/components/layout/Header'
+import { notFound }         from 'next/navigation'
+import { Header }           from '@/components/layout/Header'
 import { EventoPageClient } from './EventoPageClient'
 
 interface Props {
@@ -19,7 +19,8 @@ export default async function EventoPage({ params }: Props) {
       date_start, date_end,
       venue_name, city, state, street,
       ticket_mode, package_discount_pct,
-      banner_url, organization_id, capacity
+      banner_url, organization_id, capacity,
+      fee_mode
     `)
     .eq('id', id)
     .single()
@@ -54,6 +55,53 @@ export default async function EventoPage({ params }: Props) {
     .select('id, name, price, quantity, event_day_id')
     .eq('event_id', id)
     .order('order_index')
+
+  // Busca a taxa da plataforma para exibir preços corretos quando fee_mode = 'comprador'
+  const feeMode = (evento.fee_mode ?? 'promotor') as 'promotor' | 'comprador' | 'mista'
+  let feePct = 10 // fallback
+
+  if (feeMode === 'comprador') {
+    const adminFee = createServiceClient()
+    const { data: orgInfo } = await adminFee
+      .from('events')
+      .select('organization_id, organizations(owner_id)')
+      .eq('id', id)
+      .single()
+    const orgRaw  = orgInfo?.organizations as unknown
+    const orgData = (Array.isArray(orgRaw) ? orgRaw[0] : orgRaw) as { owner_id: string } | null
+    const ownerId = orgData?.owner_id
+
+    if (ownerId) {
+      const { data: mpAcc } = await adminFee
+        .from('promotor_mp_accounts')
+        .select('fee_pct')
+        .eq('user_id', ownerId)
+        .maybeSingle()
+      if (mpAcc?.fee_pct) { feePct = Number(mpAcc.fee_pct); }
+      else {
+        const { data: setting } = await adminFee
+          .from('platform_settings')
+          .select('value')
+          .eq('key', 'default_fee_pct')
+          .single()
+        if (setting?.value) feePct = Number(setting.value)
+      }
+    }
+  }
+
+  // Busca atributos ativos do evento (para exibição pública na página)
+  const { data: atributosRaw } = await supabase
+    .from('event_attribute_values')
+    .select('event_attributes(id, name, icon)')
+    .eq('event_id', id)
+
+  // Normaliza os dados — o join retorna o objeto aninhado como Record ou array
+  type AttrJoin = { id: string; name: string; icon: string }
+  const atributosAtivos: AttrJoin[] = (atributosRaw ?? []).flatMap(row => {
+    const a = row.event_attributes as unknown
+    if (!a) return []
+    return Array.isArray(a) ? (a as AttrJoin[]) : [a as AttrJoin]
+  })
 
   // Para o organizador: busca quantidades vendidas por tipo (usa service client — RLS bloquearia)
   let soldByTicket: Record<string, number> = {}
@@ -92,6 +140,8 @@ export default async function EventoPage({ params }: Props) {
           ticketMode:         (evento.ticket_mode ?? null) as 'individual' | 'pacote' | 'ambos' | null,
           packageDiscountPct: evento.package_discount_pct ?? 0,
           bannerUrl:          evento.banner_url         ?? null,
+          feeMode,
+          feePct,
         }}
         dias={(dias ?? []).map(d => ({
           id:          d.id,
@@ -113,6 +163,7 @@ export default async function EventoPage({ params }: Props) {
         isOwner={isOwner}
         capacity={evento.capacity ?? null}
         soldByTicket={soldByTicket}
+        atributosAtivos={atributosAtivos}
       />
     </div>
   )

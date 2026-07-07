@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   ArrowLeft, CheckCircle2, XCircle, Loader2, Rocket,
   CalendarDays, MapPin, Ticket, Tag, Users, Package, Layers,
-  ExternalLink, CreditCard,
+  ExternalLink, CreditCard, Car, X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -104,9 +104,10 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
   const router   = useRouter()
   const supabase = createClient()
 
-  const [publishing,           setPublishing]           = useState(false)
-  const [erro,                 setErro]                 = useState<string | null>(null)
+  const [publishing,             setPublishing]             = useState(false)
+  const [erro,                   setErro]                   = useState<string | null>(null)
   const [responsabilidadeAceita, setResponsabilidadeAceita] = useState(false)
+  const [modalEstacionamento,    setModalEstacionamento]    = useState(false)
   const jaPublicado = statusAtual === 'publicado'
 
   // ── Checklist de requisitos ──
@@ -120,11 +121,30 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
   const podePubilcar  = Object.values(checks).every(Boolean)
   const semBanner     = !resumo.bannerUrl
 
-  // ── Publica o evento ──
-  const handlePublicar = async () => {
+  // ── Abre o modal de estacionamento antes de publicar ──
+  const handlePublicar = () => {
     if (!podePubilcar || !responsabilidadeAceita) return
+    setModalEstacionamento(true)
+  }
+
+  // ── Confirma publicação (com ou sem estacionamento) ──
+  const confirmarPublicacao = async (temEstacionamento: boolean) => {
+    setModalEstacionamento(false)
     setPublishing(true); setErro(null)
     try {
+      if (temEstacionamento) {
+        const { data: attr } = await supabase
+          .from('event_attributes')
+          .select('id')
+          .ilike('name', '%estacionamento%')
+          .eq('active', true)
+          .maybeSingle()
+        if (attr?.id) {
+          await supabase
+            .from('event_attribute_values')
+            .upsert({ event_id: eventoId, attribute_id: attr.id }, { onConflict: 'event_id,attribute_id' })
+        }
+      }
       const { error } = await supabase
         .from('events')
         .update({ status: 'publicado' })
@@ -435,6 +455,66 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
             style={{ fontFamily: 'var(--font-dm-sans)' }}>
             Despublicar
           </button>
+        </div>
+      )}
+
+      {/* ── Modal: estacionamento ── */}
+      {modalEstacionamento && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
+          onClick={() => setModalEstacionamento(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-5"
+            style={{ background: '#0f0f0f', border: '1px solid #222' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Cabeçalho */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: 'rgba(232,184,75,0.10)', border: '1px solid rgba(232,184,75,0.25)' }}
+                >
+                  <Car size={20} style={{ color: '#E8B84B' }} />
+                </div>
+                <div>
+                  <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
+                    Estacionamento no evento?
+                  </p>
+                  <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Esta informação aparece para os compradores.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalEstacionamento(false)}
+                className="text-[#444] hover:text-white transition-colors shrink-0 mt-0.5"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Botões */}
+            <div className="flex flex-col gap-2.5">
+              <button
+                onClick={() => confirmarPublicacao(true)}
+                className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all hover:brightness-110 flex items-center justify-center gap-2"
+                style={{ background: '#E8B84B', color: '#070707', fontFamily: 'var(--font-dm-sans)' }}
+              >
+                <Car size={15} />
+                Sim, haverá estacionamento
+              </button>
+              <button
+                onClick={() => confirmarPublicacao(false)}
+                className="w-full py-3.5 rounded-xl text-sm font-medium transition-all hover:border-[#333] hover:text-[#aaa]"
+                style={{ color: '#666', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)' }}
+              >
+                Não, publicar sem estacionamento
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

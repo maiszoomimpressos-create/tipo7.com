@@ -77,13 +77,12 @@ export async function POST(req: NextRequest) {
     .eq('qr_token', qr_token)
     .single()
 
-  // Token não existe no banco
   if (!ticket) {
     await admin.from('ticket_validations').insert({
-      event_id:  eventoId,
+      event_id:   eventoId,
       scanned_by: user.id,
-      result:    'invalid',
-      raw_token: qr_token,
+      result:     'invalid',
+      raw_token:  qr_token,
     })
     return NextResponse.json({ result: 'invalid', message: 'Ingresso não encontrado.' })
   }
@@ -101,7 +100,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ result: 'wrong_event', message: 'Ingresso pertence a outro evento.' })
   }
 
-  // Ingresso cancelado
   if (ticket.status === 'cancelled') {
     await admin.from('ticket_validations').insert({
       ticket_id:  ticket.id,
@@ -113,9 +111,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ result: 'cancelled', message: 'Ingresso cancelado.' })
   }
 
-  // Ingresso já utilizado
   if (ticket.status === 'used') {
-    // Busca quem validou
     const { data: lastValidation } = await admin
       .from('ticket_validations')
       .select('scanned_at, profiles:scanned_by(full_name)')
@@ -146,9 +142,7 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // ── Ingresso válido — autoriza entrada ────────────────────────────────────
-
-  // Extrai nome do portador e tipo do ingresso
+  // ── Ingresso válido — autoriza entrada ───────────────────────────────────
   const itemData   = ticket.order_items as unknown as {
     event_tickets:  { name: string } | null
     ticket_holders: { slot_number: number; full_name: string }[]
@@ -157,9 +151,6 @@ export async function POST(req: NextRequest) {
   const ticketName  = itemData?.event_tickets?.name ?? 'Ingresso'
   const holderName  = itemData?.ticket_holders?.find(h => h.slot_number === ticket.slot_number)?.full_name ?? null
 
-  // UPDATE atômico: só marca como usado se ainda estiver 'valid'.
-  // Previne race condition quando dois scanners leem o mesmo QR simultaneamente —
-  // o segundo UPDATE não afeta nenhuma linha porque status já mudou para 'used'.
   const { data: marcado } = await admin
     .from('tickets')
     .update({ status: 'used', validated_at: new Date().toISOString(), validated_by: user.id })
@@ -178,7 +169,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ result: 'already_used', message: 'Este ingresso já foi utilizado.' })
   }
 
-  // Registra no log de auditoria
   await admin.from('ticket_validations').insert({
     ticket_id:  ticket.id,
     event_id:   eventoId,

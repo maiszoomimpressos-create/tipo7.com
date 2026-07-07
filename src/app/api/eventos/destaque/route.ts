@@ -40,7 +40,9 @@ export async function GET(request: NextRequest) {
 
     // Se encontrou eventos na cidade, retorna eles
     if (eventosCidade && eventosCidade.length > 0) {
-      return NextResponse.json({ eventos: normalizar(eventosCidade), filtrado: true, cidade })
+      return NextResponse.json({ eventos: normalizar(eventosCidade), filtrado: true, cidade }, {
+        headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' },
+      })
     }
     // Senão, cai no geral abaixo
   }
@@ -52,5 +54,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ eventos: normalizar(eventos ?? []), filtrado: false, cidade: null })
+  return NextResponse.json({ eventos: normalizar(eventos ?? []), filtrado: false, cidade: null }, {
+    headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' },
+  })
 }

@@ -6,10 +6,14 @@ import { QRCodeCanvas } from 'qrcode.react'
 import {
   MapPin, Calendar, Clock, Tag, ChevronDown, ChevronUp,
   Ticket, AlertCircle, ExternalLink, Music, Loader2,
-  Pencil, X, Check, Camera, Copy, Download, QrCode,
+  Pencil, X, Check, Camera, Copy, Download, QrCode, Lock,
+  Shield, Car, UtensilsCrossed, Beer, Accessibility, Wifi,
+  Baby, HeartPulse, Cigarette,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { PainelOrganizador } from './PainelOrganizador'
 import type { IngressoEditavel } from './PainelIngressos'
+import { CheckoutCardPanel } from './CheckoutCardPanel'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -29,6 +33,8 @@ interface Evento {
   ticketMode:         'individual' | 'pacote' | 'ambos' | null
   packageDiscountPct: number
   bannerUrl:          string | null
+  feeMode:            'promotor' | 'comprador' | 'mista'
+  feePct:             number
 }
 
 interface Attraction {
@@ -54,17 +60,24 @@ interface Ingresso {
 }
 
 interface Props {
-  evento:         Evento
-  dias:           Dia[]
-  ingressos:      Ingresso[]
-  isOwner:        boolean
-  capacity:       number | null
-  soldByTicket:   Record<string, number>
+  evento:          Evento
+  dias:            Dia[]
+  ingressos:       Ingresso[]
+  isOwner:         boolean
+  capacity:        number | null
+  soldByTicket:    Record<string, number>
+  atributosAtivos: { id: string; name: string; icon: string }[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const ACCENT = '#E8B84B'
+
+// Mapeamento de nome de ícone (string do banco) → componente Lucide
+const ICON_MAP: Record<string, LucideIcon> = {
+  Shield, Car, UtensilsCrossed, Beer, Accessibility, Wifi,
+  Baby, HeartPulse, Cigarette, Camera, Tag,
+}
 
 const CATEGORIAS = [
   'Show', 'Festa', 'Festival', 'Teatro', 'Esporte',
@@ -93,13 +106,14 @@ function formatPrice(price: number) {
 // ─── Linha de ingresso com seletor +/- ───────────────────────────────────────
 
 function TicketRow({
-  ingresso, qty, onQty,
+  ingresso, qty, onQty, displayPrice,
 }: {
-  ingresso: Ingresso
-  qty:      number
-  onQty:    (q: number) => void
+  ingresso:     Ingresso
+  qty:          number
+  onQty:        (q: number) => void
+  displayPrice: number
 }) {
-  const gratuito = ingresso.price === 0
+  const gratuito = displayPrice === 0
   return (
     <div className="flex items-center gap-3 py-3 border-b border-[#111] last:border-0">
       <div className="flex-1 min-w-0">
@@ -108,7 +122,7 @@ function TicketRow({
         </p>
         <p className="text-sm font-semibold mt-0.5"
            style={{ color: gratuito ? '#4ade80' : ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-          {formatPrice(ingresso.price)}
+          {formatPrice(displayPrice)}
         </p>
       </div>
       <div className="flex items-center gap-2 shrink-0">
@@ -134,13 +148,13 @@ function TicketRow({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, soldByTicket }: Props) {
+export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, soldByTicket, atributosAtivos }: Props) {
   // Accordion e checkout
   const [openDay,       setOpenDay]       = useState(0)
   const [selection,     setSelection]     = useState<Record<string, number>>({})
-  const [loading,       setLoading]       = useState(false)
   const [loadingPix,    setLoadingPix]    = useState(false)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
+  const [showCardForm,  setShowCardForm]  = useState(false)
 
   // Inline edit state (owner only)
   const [editField,       setEditField]       = useState<string | null>(null)
@@ -218,9 +232,17 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   const setQty = (id: string, qty: number, max: number) =>
     setSelection(prev => ({ ...prev, [id]: Math.max(0, Math.min(qty, max)) }))
 
+  // displayPrice = preço que o comprador vê e paga conforme o modo de taxa do evento
+  const effectivePrice = (facePrice: number) => {
+    if (evento.feeMode === 'comprador') return Math.round(facePrice * (1 + evento.feePct / 100) * 100) / 100
+    if (evento.feeMode === 'mista')     return Math.round(facePrice * (1 + evento.feePct / 2 / 100) * 100) / 100
+    return facePrice
+  }
+
   const total = useMemo(
-    () => ingressos.reduce((sum, t) => sum + (selection[t.id] ?? 0) * t.price, 0),
-    [selection, ingressos],
+    () => ingressos.reduce((sum, t) => sum + (selection[t.id] ?? 0) * effectivePrice(t.price), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selection, ingressos, evento.feeMode, evento.feePct],
   )
 
   const totalItems = useMemo(
@@ -238,24 +260,6 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
     return Object.entries(selection)
       .filter(([, qty]) => qty > 0)
       .map(([ticketId, quantity]) => ({ ticketId, quantity }))
-  }
-
-  async function handleCheckout() {
-    const items = getItems()
-    if (!items.length) return
-    setLoading(true); setCheckoutError(null)
-    try {
-      const res = await fetch('/api/checkout', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ eventoId: evento.id, items }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setCheckoutError(data.error ?? 'Erro ao processar checkout'); return }
-      window.location.href = data.checkoutUrl
-    } catch {
-      setCheckoutError('Erro de conexão. Tente novamente.')
-    } finally { setLoading(false) }
   }
 
   async function handlePixCheckout() {
@@ -520,86 +524,151 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
         </div>
       </div>
 
+      {/* ── Estrutura do evento — faixa pública de destaque ─────────────── */}
+      {atributosAtivos.length > 0 && (
+        <div className="border-b border-[#111]" style={{ background: '#09090b' }}>
+          <div className="max-w-6xl mx-auto px-6 py-5">
+            <p
+              className="text-[#444] text-[10px] uppercase tracking-widest mb-3"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              O evento conta com
+            </p>
+            <div className="flex flex-wrap gap-2.5">
+              {atributosAtivos.map(attr => {
+                const Icon = ICON_MAP[attr.icon] ?? Tag
+                return (
+                  <div
+                    key={attr.id}
+                    className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl"
+                    style={{
+                      background: 'rgba(232,184,75,0.06)',
+                      border:     '1px solid rgba(232,184,75,0.18)',
+                    }}>
+                    <div
+                      className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: 'rgba(232,184,75,0.12)' }}>
+                      <Icon size={14} style={{ color: ACCENT }} />
+                    </div>
+                    <span
+                      className="text-[#bbb] text-sm font-medium"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {attr.name}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Painel de divulgação (somente dono) ─────────────────────────── */}
       {isOwner && (
         <div className="border-b border-[#111] bg-[#080808]">
           <div className="max-w-6xl mx-auto px-6 py-5 flex flex-wrap items-center gap-6">
 
-            {/* QR code */}
-            <div className="relative shrink-0">
-              <div className="p-2 rounded-xl bg-white">
-                <QRCodeCanvas
-                  id="qr-evento-canvas"
-                  value={eventUrl}
-                  size={100}
-                  bgColor="#ffffff"
-                  fgColor="#070707"
-                  level="M"
-                />
-              </div>
-              <div
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
-                style={{ background: ACCENT }}>
-                <QrCode size={10} style={{ color: '#070707' }} />
-              </div>
-            </div>
+            {evento.status === 'publicado' ? (
+              <>
+                {/* QR code */}
+                <div className="relative shrink-0">
+                  <div className="p-2 rounded-xl bg-white">
+                    <QRCodeCanvas
+                      id="qr-evento-canvas"
+                      value={eventUrl}
+                      size={100}
+                      bgColor="#ffffff"
+                      fgColor="#070707"
+                      level="M"
+                    />
+                  </div>
+                  <div
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
+                    style={{ background: ACCENT }}>
+                    <QrCode size={10} style={{ color: '#070707' }} />
+                  </div>
+                </div>
 
-            {/* URL + ações */}
-            <div className="flex-1 min-w-0 flex flex-col gap-3">
-              <div>
-                <p className="text-[#444] text-[10px] uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Link do evento
-                </p>
-                <p className="text-[#666] text-sm truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  {eventUrl}
-                </p>
+                {/* URL + ações */}
+                <div className="flex-1 min-w-0 flex flex-col gap-3">
+                  <div>
+                    <p className="text-[#444] text-[10px] uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Link do evento
+                    </p>
+                    <p className="text-[#666] text-sm truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {eventUrl}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={copiarLink}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                      style={{
+                        background: linkCopiado ? 'rgba(34,197,94,0.10)' : 'rgba(232,184,75,0.08)',
+                        border:     `1px solid ${linkCopiado ? 'rgba(34,197,94,0.30)' : 'rgba(232,184,75,0.25)'}`,
+                        color:      linkCopiado ? '#22c55e' : ACCENT,
+                        fontFamily: 'var(--font-dm-sans)',
+                      }}>
+                      {linkCopiado
+                        ? <><Check size={12} /> Link copiado!</>
+                        : <><Copy size={12} /> Copiar link</>
+                      }
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={baixarQR}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                      style={{
+                        background: 'rgba(255,255,255,0.04)',
+                        border:     '1px solid #1e1e1e',
+                        color:      '#555',
+                        fontFamily: 'var(--font-dm-sans)',
+                      }}>
+                      <Download size={12} /> Baixar QR
+                    </button>
+
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(`Garanta seu ingresso para ${evento.title}! 🎟️ ${eventUrl}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                      style={{
+                        background: 'rgba(37,211,102,0.08)',
+                        border:     '1px solid rgba(37,211,102,0.20)',
+                        color:      '#25D366',
+                        fontFamily: 'var(--font-dm-sans)',
+                      }}>
+                      <ExternalLink size={12} /> Compartilhar no WhatsApp
+                    </a>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Bloqueado — evento ainda é rascunho */
+              <div className="flex items-center gap-4 w-full">
+                <div
+                  className="w-[116px] h-[116px] rounded-xl shrink-0 flex items-center justify-center"
+                  style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+                  <Lock size={28} className="text-[#2a2a2a]" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <p className="text-[#444] text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Divulgação bloqueada
+                  </p>
+                  <p className="text-[#2e2e2e] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    O QR code, o link e o compartilhamento via WhatsApp ficam disponíveis assim que você publicar o evento.
+                  </p>
+                  <a
+                    href={`/criar-evento/${evento.id}/publicar`}
+                    className="mt-2 text-xs font-medium w-fit flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all hover:brightness-110"
+                    style={{ background: 'rgba(232,184,75,0.10)', border: '1px solid rgba(232,184,75,0.20)', color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                    Publicar evento →
+                  </a>
+                </div>
               </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={copiarLink}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
-                  style={{
-                    background: linkCopiado ? 'rgba(34,197,94,0.10)' : 'rgba(232,184,75,0.08)',
-                    border:     `1px solid ${linkCopiado ? 'rgba(34,197,94,0.30)' : 'rgba(232,184,75,0.25)'}`,
-                    color:      linkCopiado ? '#22c55e' : ACCENT,
-                    fontFamily: 'var(--font-dm-sans)',
-                  }}>
-                  {linkCopiado
-                    ? <><Check size={12} /> Link copiado!</>
-                    : <><Copy size={12} /> Copiar link</>
-                  }
-                </button>
-
-                <button
-                  type="button"
-                  onClick={baixarQR}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
-                  style={{
-                    background: 'rgba(255,255,255,0.04)',
-                    border:     '1px solid #1e1e1e',
-                    color:      '#555',
-                    fontFamily: 'var(--font-dm-sans)',
-                  }}>
-                  <Download size={12} /> Baixar QR
-                </button>
-
-                <a
-                  href={`https://wa.me/?text=${encodeURIComponent(`Garanta seu ingresso para ${evento.title}! 🎟️ ${eventUrl}`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
-                  style={{
-                    background: 'rgba(37,211,102,0.08)',
-                    border:     '1px solid rgba(37,211,102,0.20)',
-                    color:      '#25D366',
-                    fontFamily: 'var(--font-dm-sans)',
-                  }}>
-                  <ExternalLink size={12} /> Compartilhar no WhatsApp
-                </a>
-              </div>
-            </div>
+            )}
 
           </div>
         </div>
@@ -856,7 +925,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                           {tickets.map(t => (
                             <TicketRow key={t.id} ingresso={t}
                               qty={selection[t.id] ?? 0}
-                              onQty={q => setQty(t.id, q, t.quantity)} />
+                              onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
                           ))}
                         </div>
                       )
@@ -864,7 +933,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                     {ingressosPacote.map(t => (
                       <TicketRow key={t.id} ingresso={t}
                         qty={selection[t.id] ?? 0}
-                        onQty={q => setQty(t.id, q, t.quantity)} />
+                        onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
                     ))}
                   </>
                 )}
@@ -875,7 +944,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                     {ingressosPacote.map(t => (
                       <TicketRow key={t.id} ingresso={t}
                         qty={selection[t.id] ?? 0}
-                        onQty={q => setQty(t.id, q, t.quantity)} />
+                        onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
                     ))}
                   </div>
                 )}
@@ -900,7 +969,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                         {ingressosPacote.map(t => (
                           <TicketRow key={t.id} ingresso={t}
                             qty={selection[t.id] ?? 0}
-                            onQty={q => setQty(t.id, q, t.quantity)} />
+                            onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
                         ))}
                       </div>
                     )}
@@ -925,7 +994,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                               {tickets.map(t => (
                                 <TicketRow key={t.id} ingresso={t}
                                   qty={selection[t.id] ?? 0}
-                                  onQty={q => setQty(t.id, q, t.quantity)} />
+                                  onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
                               ))}
                             </div>
                           )
@@ -963,46 +1032,57 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                       </p>
                     )}
 
-                    {/* Botão PIX */}
-                    <button
-                      onClick={handlePixCheckout}
-                      disabled={loadingPix || loading || totalItems === 0}
-                      className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-105"
-                      style={{
-                        background:  totalItems > 0 ? '#32D583' : '#0d1a12',
-                        color:       totalItems > 0 ? '#071209' : '#1a3322',
-                        border:      totalItems > 0 ? 'none' : '1px solid #0d1a12',
-                        fontFamily:  'var(--font-dm-sans)',
-                      }}>
-                      {loadingPix
-                        ? <><Loader2 size={14} className="animate-spin" /> Gerando PIX...</>
-                        : 'Pagar com PIX'
-                      }
-                    </button>
+                    {/* Formulário de cartão inline */}
+                    {showCardForm && (
+                      <CheckoutCardPanel
+                        eventoId={evento.id}
+                        items={getItems()}
+                        total={total}
+                        onClose={() => setShowCardForm(false)}
+                      />
+                    )}
 
-                    {/* Separador */}
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-px bg-[#111]" />
-                      <span className="text-[#2a2a2a] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>ou</span>
-                      <div className="flex-1 h-px bg-[#111]" />
-                    </div>
+                    {!showCardForm && (
+                      <>
+                        {/* Botão PIX */}
+                        <button
+                          onClick={handlePixCheckout}
+                          disabled={loadingPix || totalItems === 0}
+                          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-105"
+                          style={{
+                            background:  totalItems > 0 ? '#32D583' : '#0d1a12',
+                            color:       totalItems > 0 ? '#071209' : '#1a3322',
+                            border:      totalItems > 0 ? 'none' : '1px solid #0d1a12',
+                            fontFamily:  'var(--font-dm-sans)',
+                          }}>
+                          {loadingPix
+                            ? <><Loader2 size={14} className="animate-spin" /> Gerando PIX...</>
+                            : 'Pagar com PIX'
+                          }
+                        </button>
 
-                    {/* Botão Cartão/Boleto */}
-                    <button
-                      onClick={handleCheckout}
-                      disabled={loading || loadingPix || totalItems === 0}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110"
-                      style={{
-                        background:  'transparent',
-                        color:       totalItems > 0 ? ACCENT : '#333',
-                        border:      `1px solid ${totalItems > 0 ? ACCENT + '40' : '#1a1a1a'}`,
-                        fontFamily:  'var(--font-dm-sans)',
-                      }}>
-                      {loading
-                        ? <><Loader2 size={14} className="animate-spin" /> Processando...</>
-                        : 'Cartão ou Boleto'
-                      }
-                    </button>
+                        {/* Separador */}
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-px bg-[#111]" />
+                          <span className="text-[#2a2a2a] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>ou</span>
+                          <div className="flex-1 h-px bg-[#111]" />
+                        </div>
+
+                        {/* Botão Cartão de Crédito */}
+                        <button
+                          onClick={() => { setCheckoutError(null); setShowCardForm(true) }}
+                          disabled={loadingPix || totalItems === 0}
+                          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110"
+                          style={{
+                            background:  'transparent',
+                            color:       totalItems > 0 ? ACCENT : '#333',
+                            border:      `1px solid ${totalItems > 0 ? ACCENT + '40' : '#1a1a1a'}`,
+                            fontFamily:  'var(--font-dm-sans)',
+                          }}>
+                          Cartão de crédito
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

@@ -1,24 +1,27 @@
 // Helper central de cálculo de taxa da plataforma.
-// Verifica se existe alguma regra de isenção/desconto que se aplica ao checkout
-// antes de calcular a taxa final cobrada pelo Tipo7.
+// Modelo Sympla: application_fee = valor_de_face × taxa_plataforma%.
+// A taxa do MP é cobrada por fora pelo próprio MP — não entra no cálculo.
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-interface CalcParams {
+export interface CalcParams {
   eventoId:    string
   ownerId:     string | null
-  total:       number       // valor total do pedido em R$
+  total:       number       // valor de face do pedido em R$
   ticketCount: number       // quantidade de ingressos neste pedido
-  feePct:      number       // taxa configurada do promotor (0–100)
-  minFeePct:   number       // taxa mínima da plataforma mesmo com desconto (0–100)
+  feePct:      number       // taxa da plataforma cobrada do promotor (0–100)
+  minFeePct:   number       // taxa mínima mesmo com desconto (0–100)
   admin:       SupabaseClient
+}
+
+function toApplicationFee(effectivePct: number, total: number): number {
+  return Math.round(total * effectivePct) / 100
 }
 
 // Retorna o valor em R$ da taxa da plataforma após aplicar regras de isenção.
 export async function calcularTaxaPlataforma(p: CalcParams): Promise<number> {
   const { eventoId, ownerId, total, ticketCount, feePct, minFeePct, admin } = p
 
-  // Taxa mínima em R$ — nunca cai abaixo disso, mesmo com isenção total
-  const taxaMinima = Math.round(total * minFeePct) / 100
+  const taxaMinima = toApplicationFee(minFeePct, total)
 
   // ── 1. Isenção por evento específico ──────────────────────────────────────
   const { data: regraEvento } = await admin
@@ -31,7 +34,7 @@ export async function calcularTaxaPlataforma(p: CalcParams): Promise<number> {
 
   if (regraEvento) {
     const pctEfetivo = feePct * (1 - Number(regraEvento.discount_pct) / 100)
-    const taxa = Math.round(total * pctEfetivo) / 100
+    const taxa = toApplicationFee(pctEfetivo, total)
     return regraEvento.bypass_minimum ? taxa : Math.max(taxa, taxaMinima)
   }
 
@@ -50,13 +53,13 @@ export async function calcularTaxaPlataforma(p: CalcParams): Promise<number> {
       const restam = regraPromotor.quota_limit - usados
       if (restam >= ticketCount) {
         const pctEfetivo = feePct * (1 - Number(regraPromotor.discount_pct) / 100)
-        const taxa = Math.round(total * pctEfetivo) / 100
+        const taxa = toApplicationFee(pctEfetivo, total)
         return regraPromotor.bypass_minimum ? taxa : Math.max(taxa, taxaMinima)
       }
     }
   }
 
-  // ── 3. Quota global da plataforma (ex.: primeiros 100 ingressos do sistema) ─
+  // ── 3. Quota global da plataforma ─────────────────────────────────────────
   const { data: regraGlobal } = await admin
     .from('fee_rules')
     .select('discount_pct, quota_limit, quota_period, bypass_minimum')
@@ -69,13 +72,13 @@ export async function calcularTaxaPlataforma(p: CalcParams): Promise<number> {
     const restam = regraGlobal.quota_limit - usados
     if (restam >= ticketCount) {
       const pctEfetivo = feePct * (1 - Number(regraGlobal.discount_pct) / 100)
-      const taxa = Math.round(total * pctEfetivo) / 100
+      const taxa = toApplicationFee(pctEfetivo, total)
       return regraGlobal.bypass_minimum ? taxa : Math.max(taxa, taxaMinima)
     }
   }
 
   // ── 4. Taxa normal sem desconto ──────────────────────────────────────────
-  return Math.round(total * feePct) / 100
+  return toApplicationFee(feePct, total)
 }
 
 // ── Helpers de contagem ───────────────────────────────────────────────────────

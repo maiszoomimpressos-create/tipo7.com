@@ -3,21 +3,22 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect }     from 'next/navigation'
 import { Header }       from '@/components/layout/Header'
+import { PromoterLayout } from '@/components/layout/PromoterLayout'
 import { CriarEventoClient } from './CriarEventoClient'
-import { AlertCircle, CheckCircle, ArrowRight, CalendarPlus } from 'lucide-react'
+import { CompletarCadastroForm } from './CompletarCadastroForm'
 
 const CAMPOS_OBRIGATORIOS = [
-  { campo: 'full_name',     label: 'Nome completo'      },
-  { campo: 'phone',         label: 'Telefone'           },
-  { campo: 'cpf',           label: 'CPF'                },
-  { campo: 'birth_date',    label: 'Data de nascimento' },
-  { campo: 'zip_code',      label: 'CEP'                },
-  { campo: 'street',        label: 'Rua'                },
-  { campo: 'street_number', label: 'Número'             },
-  { campo: 'neighborhood',  label: 'Bairro'             },
-  { campo: 'city',          label: 'Cidade'             },
-  { campo: 'state',         label: 'Estado'             },
-  { campo: 'address_type',  label: 'Tipo de residência' },
+  { campo: 'full_name'     as const, label: 'Nome completo'      },
+  { campo: 'phone'         as const, label: 'Telefone'           },
+  { campo: 'cpf'           as const, label: 'CPF'                },
+  { campo: 'birth_date'    as const, label: 'Data de nascimento' },
+  { campo: 'zip_code'      as const, label: 'CEP'                },
+  { campo: 'street'        as const, label: 'Rua'                },
+  { campo: 'street_number' as const, label: 'Número'             },
+  { campo: 'neighborhood'  as const, label: 'Bairro'             },
+  { campo: 'city'          as const, label: 'Cidade'             },
+  { campo: 'state'         as const, label: 'Estado'             },
+  { campo: 'address_type'  as const, label: 'Tipo de residência' },
 ]
 
 export default async function CriarEventoPage() {
@@ -41,104 +42,86 @@ export default async function CriarEventoPage() {
     .eq('user_id', user.id)
     .single()
 
-  // Busca a organização do usuário (promotora ou estabelecimento)
-  const { data: org } = await supabase
+  // Busca todas as organizações do usuário (pode ter promotora + estabelecimento)
+  const { data: orgs } = await supabase
     .from('organizations')
     .select('id')
     .eq('owner_id', user.id)
-    .maybeSingle()
 
-  const { data: eventos } = org
+  const orgIds = (orgs ?? []).map(o => o.id)
+
+  const { data: eventos } = orgIds.length > 0
     ? await supabase
         .from('events')
         .select('id, title, status, date_start, created_at, banner_url')
-        .eq('organization_id', org.id)
-        .in('status', ['rascunho', 'publicado'])
+        .in('organization_id', orgIds)
         .order('created_at', { ascending: false })
     : { data: [] }
 
+  const temOrg = orgIds.length > 0
+
+  const conteudo = (
+    <main className="max-w-2xl mx-auto px-4 py-16">
+
+      {/* ── Perfil incompleto — formulário inline ── */}
+      {!perfilCompleto && (
+        <CompletarCadastroForm
+          profile={{
+            full_name:     profile?.full_name     ?? null,
+            phone:         profile?.phone         ?? null,
+            cpf:           profile?.cpf           ?? null,
+            birth_date:    profile?.birth_date    ?? null,
+            zip_code:      profile?.zip_code      ?? null,
+            street:        profile?.street        ?? null,
+            street_number: profile?.street_number ?? null,
+            neighborhood:  profile?.neighborhood  ?? null,
+            city:          profile?.city          ?? null,
+            state:         profile?.state         ?? null,
+            address_type:  profile?.address_type  ?? null,
+          }}
+          faltando={faltando}
+          todos={CAMPOS_OBRIGATORIOS}
+        />
+      )}
+
+      {/* ── Perfil completo — botão + modal + eventos ── */}
+      {perfilCompleto && (
+        <CriarEventoClient
+          promotorId={promotorProfile?.id ?? null}
+          tipoPessoaAtual={(promotorProfile?.tipo_pessoa ?? null) as 'pf' | 'pj' | null}
+          nomeUsuario={profile?.full_name ?? 'Promotor'}
+          profile={{
+            phone:         profile?.phone         ?? '',
+            zip_code:      profile?.zip_code      ?? '',
+            street:        profile?.street        ?? '',
+            street_number: profile?.street_number ?? '',
+            neighborhood:  profile?.neighborhood  ?? '',
+            city:          profile?.city          ?? '',
+            state:         profile?.state         ?? '',
+            complement:    profile?.complement    ?? '',
+          }}
+          eventos={(eventos ?? []).map(e => ({
+            id:         e.id,
+            title:      e.title ?? 'Novo evento',
+            status:     e.status as 'rascunho' | 'publicado',
+            date_start: e.date_start ?? null,
+            created_at: e.created_at,
+            banner_url: (e as unknown as { banner_url: string | null }).banner_url ?? null,
+          }))}
+        />
+      )}
+
+    </main>
+  )
+
   return (
-    <div className="min-h-dvh bg-[#070707]">
+    <div className="min-h-dvh bg-[#070707] flex flex-col">
       <Header />
-
-      <main className="max-w-2xl mx-auto px-4 py-16">
-
-        {/* ── Perfil incompleto — bloqueia ── */}
-        {!perfilCompleto && (
-          <div>
-            <div className="text-center mb-8">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
-                   style={{ background: 'rgba(232,184,75,0.08)', border: '1px solid rgba(232,184,75,0.15)' }}>
-                <CalendarPlus size={28} className="text-[#E8B84B]/50" />
-              </div>
-              <h1 className="text-2xl text-white mb-2"
-                  style={{ fontFamily: 'var(--font-outfit)', fontWeight: 500 }}>
-                Complete seu cadastro primeiro
-              </h1>
-              <p className="text-[#555] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Para criar eventos, seu perfil precisa estar 100% preenchido.
-              </p>
-            </div>
-
-            <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden mb-6">
-              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#141414]">
-                <AlertCircle size={14} className="text-[#E8B84B]" />
-                <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  {faltando.length} {faltando.length === 1 ? 'campo faltando' : 'campos faltando'}
-                </p>
-              </div>
-              <div className="divide-y divide-[#111]">
-                {CAMPOS_OBRIGATORIOS.map(({ campo, label }) => {
-                  const ok = !!profile?.[campo as keyof typeof profile]
-                  return (
-                    <div key={campo} className="flex items-center gap-3 px-5 py-3">
-                      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ok ? 'bg-green-500' : 'bg-red-500'}`} />
-                      <span className={`text-sm ${ok ? 'text-[#555]' : 'text-[#bbb]'}`}
-                            style={{ fontFamily: 'var(--font-dm-sans)' }}>{label}</span>
-                      {ok && <CheckCircle size={12} className="text-green-500 ml-auto" />}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            <a href="/perfil"
-               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold text-[#070707] hover:brightness-110 transition-all"
-               style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
-              Completar meu cadastro
-              <ArrowRight size={15} />
-            </a>
-          </div>
-        )}
-
-        {/* ── Perfil completo — botão + modal + eventos ── */}
-        {perfilCompleto && (
-          <CriarEventoClient
-            promotorId={promotorProfile?.id ?? null}
-            tipoPessoaAtual={(promotorProfile?.tipo_pessoa ?? null) as 'pf' | 'pj' | null}
-            nomeUsuario={profile?.full_name ?? 'Promotor'}
-            profile={{
-              phone:         profile?.phone         ?? '',
-              zip_code:      profile?.zip_code      ?? '',
-              street:        profile?.street        ?? '',
-              street_number: profile?.street_number ?? '',
-              neighborhood:  profile?.neighborhood  ?? '',
-              city:          profile?.city          ?? '',
-              state:         profile?.state         ?? '',
-              complement:    profile?.complement    ?? '',
-            }}
-            eventos={(eventos ?? []).map(e => ({
-              id:         e.id,
-              title:      e.title ?? 'Novo evento',
-              status:     e.status as 'rascunho' | 'publicado',
-              date_start: e.date_start ?? null,
-              created_at: e.created_at,
-              banner_url: (e as unknown as { banner_url: string | null }).banner_url ?? null,
-            }))}
-          />
-        )}
-
-      </main>
+      {temOrg ? (
+        <PromoterLayout>{conteudo}</PromoterLayout>
+      ) : (
+        conteudo
+      )}
     </div>
   )
 }

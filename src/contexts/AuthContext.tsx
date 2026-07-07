@@ -91,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
   }
 
-  // Login social via Google ou Facebook — redireciona para o provedor e volta para /auth/callback
+  // Login social via Facebook
   const signInWithSocial = async (provider: 'google' | 'facebook') => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({

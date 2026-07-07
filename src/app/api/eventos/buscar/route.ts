@@ -52,7 +52,8 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  return NextResponse.json({
-    eventos: (eventos ?? []).map(e => ({ ...e, minPrice: minPrices[e.id] ?? null }))
-  })
+  return NextResponse.json(
+    { eventos: (eventos ?? []).map(e => ({ ...e, minPrice: minPrices[e.id] ?? null })) },
+    { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120' } }
+  )
 }

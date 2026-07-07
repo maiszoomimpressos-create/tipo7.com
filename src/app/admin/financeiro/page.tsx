@@ -9,13 +9,13 @@ export default async function FinanceiroPage() {
     { data: settings },
     { data: mpAccounts },
     { data: eventos },
-    { data: promotoresPerfis },
+    { data: orgsPromotoras },
     { data: rules },
   ] = await Promise.all([
     admin.from('platform_settings').select('key, value'),
     admin.from('promotor_mp_accounts').select('user_id, fee_pct'),
     admin.from('events').select('id, title').eq('status', 'publicado').order('created_at', { ascending: false }),
-    admin.from('profiles').select('id, full_name'),
+    admin.from('organizations').select('owner_id, profiles!owner_id(full_name)').eq('type', 'promotora'),
     admin.from('fee_rules').select('*').order('created_at', { ascending: false }),
   ])
 
@@ -27,25 +27,33 @@ export default async function FinanceiroPage() {
     ? feePcts.reduce((s, f) => s + f, 0) / feePcts.length
     : Number(settingsMap['default_fee_pct'] ?? 10)
 
-  // Enriquece regras com nomes
-  const enrichedRules = await Promise.all((rules ?? []).map(async rule => {
-    let event_title:   string | null = null
-    let promoter_name: string | null = null
+  // Mapa owner_id → nome para enriquecer regras
+  const profileMap: Record<string, string> = {}
+  for (const org of orgsPromotoras ?? []) {
+    if (!org.owner_id) continue
+    const p = Array.isArray(org.profiles) ? org.profiles[0] : org.profiles
+    const nome = (p as { full_name: string | null } | null)?.full_name
+    if (nome) profileMap[org.owner_id] = nome
+  }
 
-    if (rule.event_id) {
-      const ev = (eventos ?? []).find(e => e.id === rule.event_id)
-      event_title = ev?.title ?? null
-    }
-    if (rule.user_id) {
-      const pf = (promotoresPerfis ?? []).find(p => p.id === rule.user_id)
-      promoter_name = pf?.full_name ?? null
-    }
-    return { ...rule, event_title, promoter_name, quota_used: 0 }
+  // Enriquece regras com nomes
+  const enrichedRules = (rules ?? []).map(rule => ({
+    ...rule,
+    event_title:   rule.event_id ? (eventos ?? []).find(e => e.id === rule.event_id)?.title ?? null : null,
+    promoter_name: rule.user_id  ? (profileMap[rule.user_id] ?? null) : null,
+    quota_used: 0,
   }))
 
-  const promotoresLista = (promotoresPerfis ?? [])
-    .filter(p => p.full_name)
-    .map(p => ({ id: p.id, nome: p.full_name! }))
+  // Lista de promotores únicos para o dropdown (deduplica por owner_id)
+  const seen = new Set<string>()
+  const promotoresLista = (orgsPromotoras ?? []).flatMap(org => {
+    if (!org.owner_id || seen.has(org.owner_id)) return []
+    seen.add(org.owner_id)
+    const p = Array.isArray(org.profiles) ? org.profiles[0] : org.profiles
+    const nome = (p as { full_name: string | null } | null)?.full_name
+    if (!nome) return []
+    return [{ id: org.owner_id, nome }]
+  })
 
   return (
     <div className="p-8 max-w-2xl">
@@ -61,6 +69,10 @@ export default async function FinanceiroPage() {
       <FinanceiroClient
         defaultFeePct={Number(settingsMap['default_fee_pct'] ?? 10)}
         minFeePct={Number(settingsMap['min_fee_pct'] ?? 0)}
+        feePixPct={Number(settingsMap['fee_pct_pix'] ?? 0.99)}
+        feeCredito1xPct={Number(settingsMap['fee_pct_credito_1x'] ?? 4.98)}
+        feeCredito6xPct={Number(settingsMap['fee_pct_credito_6x'] ?? 5.98)}
+        feeCredito12xPct={Number(settingsMap['fee_pct_credito_12x'] ?? 6.98)}
         totalConectados={mpAccounts?.length ?? 0}
         mediaFee={mediaFee}
       />

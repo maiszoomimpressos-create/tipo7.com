@@ -1,17 +1,33 @@
 'use client'
 
 import { useState } from 'react'
-import { Copy, Check, Users, MapPin } from 'lucide-react'
+import { Copy, Check, Users, MapPin, User } from 'lucide-react'
 
 interface Props {
   codigo:  string
-  tipo:    'promotora' | 'estabelecimento'
+  tipo:    'usuario' | 'promotora' | 'estabelecimento'
   nome:    string
 }
 
 const TIPO_CONFIG = {
-  promotora:      { label: 'Promotor de eventos', icon: Users,  prefix: 'T7-PRO' },
-  estabelecimento:{ label: 'Estabelecimento',      icon: MapPin, prefix: 'T7-EST' },
+  usuario: {
+    label: 'Seu código pessoal',
+    desc:  'Use este código para participar ou trabalhar em eventos na plataforma.',
+    icon:  User,
+    prefix: 'T7-USR',
+  },
+  promotora: {
+    label: 'Promotor de eventos',
+    desc:  null,
+    icon:  Users,
+    prefix: 'T7-PRO',
+  },
+  estabelecimento: {
+    label: 'Estabelecimento',
+    desc:  null,
+    icon:  MapPin,
+    prefix: 'T7-EST',
+  },
 }
 
 export function CodigoOrg({ codigo, tipo, nome }: Props) {
@@ -56,6 +72,11 @@ export function CodigoOrg({ codigo, tipo, nome }: Props) {
             <p className="text-[#444] text-xs truncate mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
               {nome}
             </p>
+            {cfg.desc && (
+              <p className="text-[#333] text-[11px] mt-1.5 leading-snug" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                {cfg.desc}
+              </p>
+            )}
           </div>
         </div>
 

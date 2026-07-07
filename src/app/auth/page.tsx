@@ -3,7 +3,7 @@
 // Página de autenticação — Login e Cadastro
 // Dois modos alternáveis por abas: Entrar / Criar conta
 // Conectada ao Supabase via AuthContext
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Ticket, Eye, EyeOff, ArrowLeft,
@@ -11,6 +11,20 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import { createClient } from '@/lib/supabase/client'
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: Record<string, unknown>) => void
+          prompt:     (cb?: (n: { isNotDisplayed: () => boolean; isSkippedMoment: () => boolean }) => void) => void
+        }
+      }
+    }
+  }
+}
 
 type Tab = 'entrar' | 'cadastrar'
 
@@ -87,7 +101,9 @@ const isStrongPassword = (v: string) => Object.values(pwdRules).every(fn => fn(v
 
 export default function AuthPage() {
   const { signIn, signUp, signInWithSocial } = useAuth()
-  const router = useRouter()
+  const supabase = createClient()
+  const router   = useRouter()
+  const gsiReady = useRef(false)
   const [tab, setTab] = useState<Tab>('entrar')
 
   // ── Estados do formulário de login ──────────────────────────
@@ -135,6 +151,65 @@ export default function AuthPage() {
     if (field === 'regBirthDate' && !value)                             error = 'Data de nascimento obrigatória'
     if (field === 'regBirthDate' && value && !isValidBirthDate(value))  error = 'Idade mínima: 13 anos'
     setFields(f => ({ ...f, [field]: { touched: true, error } }))
+  }
+
+  // Carrega o script do Google Identity Services uma vez
+  useEffect(() => {
+    if (gsiReady.current) return
+    const script = document.createElement('script')
+    script.src   = 'https://accounts.google.com/gsi/client'
+    script.async = true
+    script.onload = () => { gsiReady.current = true }
+    document.head.appendChild(script)
+    return () => { if (document.head.contains(script)) document.head.removeChild(script) }
+  }, [])
+
+  // Login com Google via Google Identity Services (One Tap)
+  // Mostra tipo7.com na tela de permissão do Google, não supabase.co
+  const handleGoogleLogin = async () => {
+    setSocialLoading('google')
+    setLoginError(null)
+    setRegError(null)
+    try {
+      if (!window.google?.accounts?.id) {
+        // GSI ainda não carregou — usa rota própria (mostra tipo7.com no Google)
+        const next = new URLSearchParams(window.location.search).get('next') ?? '/'
+        window.location.href = `/api/auth/google?next=${encodeURIComponent(next)}`
+        return
+      }
+
+      // Nonce: gera raw → passa hash para o Google → passa raw para o Supabase
+      const rawNonce    = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
+      const encoded     = new TextEncoder().encode(rawNonce)
+      const hashBuffer  = await crypto.subtle.digest('SHA-256', encoded)
+      const hashedNonce = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+      window.google.accounts.id.initialize({
+        client_id: '140800251762-77n3v5pogj8ipsktbdo06cfhd6aok84h.apps.googleusercontent.com',
+        nonce:     hashedNonce,
+        callback:  async ({ credential }: { credential: string }) => {
+          const { error } = await supabase.auth.signInWithIdToken({ provider: 'google', token: credential, nonce: rawNonce }).then(r => ({ error: r.error?.message ?? null }))
+          if (error) {
+            setLoginError('Não foi possível autenticar com Google. Tente novamente.')
+            setSocialLoading(null)
+          } else {
+            const next = new URLSearchParams(window.location.search).get('next') ?? '/'
+            router.push(next)
+          }
+        },
+      })
+
+      window.google.accounts.id.prompt(notification => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          // One Tap não abriu — usa rota própria (mostra tipo7.com no Google)
+          const next = new URLSearchParams(window.location.search).get('next') ?? '/'
+          window.location.href = `/api/auth/google?next=${encodeURIComponent(next)}`
+        }
+      })
+    } catch {
+      setLoginError('Erro ao carregar Google. Tente novamente.')
+      setSocialLoading(null)
+    }
   }
 
   // ── Submit: Login Social ────────────────────────────────────
@@ -320,7 +395,7 @@ export default function AuthPage() {
               {/* Google */}
               <button
                 type="button"
-                onClick={() => handleSocialLogin('google')}
+                onClick={handleGoogleLogin}
                 disabled={!!socialLoading}
                 className="w-full flex items-center justify-center gap-3 py-3 rounded-xl border border-[#2a2a2a] bg-[#111] hover:bg-[#161616] hover:border-[#333] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ fontFamily: 'var(--font-dm-sans)' }}

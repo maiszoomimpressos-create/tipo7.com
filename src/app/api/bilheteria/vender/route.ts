@@ -51,9 +51,10 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
   const body = await req.json() as {
-    eventoId:    string
-    ticketId:    string
-    quantidade:  number
+    eventoId:         string
+    ticketId:         string
+    quantidade:       number
+    metodoPagamento?: string
     comprador: {
       nome:           string
       cpf:            string
@@ -62,9 +63,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const { eventoId, ticketId, quantidade, comprador } = body
+  const { eventoId, ticketId, quantidade, metodoPagamento, comprador } = body
 
-  if (!eventoId || !ticketId || !quantidade || !comprador?.nome) {
+  if (!eventoId || !ticketId || !quantidade) {
     return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 })
   }
 
@@ -107,12 +108,13 @@ export async function POST(req: NextRequest) {
 
   const orderId = resultado.order_id as string
 
-  // Marca pedido como aprovado (pagamento presencial — dinheiro ou maquininha)
+  // Marca pedido como aprovado (pagamento presencial)
   await admin
     .from('orders')
     .update({
-      status:     'approved',
-      updated_at: new Date().toISOString(),
+      status:         'approved',
+      payment_method: metodoPagamento ?? 'dinheiro',
+      updated_at:     new Date().toISOString(),
     })
     .eq('id', orderId)
 
@@ -142,11 +144,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Erro ao gerar ingressos' }, { status: 500 })
   }
 
-  // Salva os dados do comprador em ticket_holders
+  // Salva os dados do comprador em ticket_holders (nome pode ser anônimo)
   const holderRows = tickets.map(t => ({
     order_item_id:  orderItem.id,
     slot_number:    t.slot_number,
-    full_name:      comprador.nome.trim(),
+    full_name:      comprador.nome?.trim() || 'Consumidor',
     cpf:            comprador.cpf?.trim()            || null,
     phone:          comprador.telefone?.trim()        || null,
     birth_date:     comprador.dataNascimento?.trim()  || null,
@@ -162,14 +164,14 @@ export async function POST(req: NextRequest) {
     action:       'venda_presencial',
     resourceType: 'order',
     resourceId:   orderId,
-    details:      { eventoId, ticketId, quantidade, comprador: comprador.nome },
+    details:      { eventoId, ticketId, quantidade, comprador: comprador.nome || 'Consumidor', metodoPagamento: metodoPagamento ?? 'dinheiro' },
     ip:           getIp(req),
   })
 
   return NextResponse.json({
-    ok:      true,
+    ok:         true,
     orderId,
-    tickets: tickets.map(t => ({ id: t.id, slot_number: t.slot_number, qr_token: t.qr_token })),
+    tickets:    tickets.map(t => ({ id: t.id, slot_number: t.slot_number, qr_token: t.qr_token })),
     ticketName: ticket.name,
   })
 }

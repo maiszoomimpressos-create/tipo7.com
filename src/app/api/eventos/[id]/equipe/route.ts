@@ -65,25 +65,41 @@ export async function POST(
   }
 
   const body = await req.json() as {
-    email:        string
-    positionName: string
-    permissions:  string[]
+    emailOuCodigo: string
+    funcaoId:      string   // ID de uma função já criada no evento
   }
 
-  if (!body.email || !body.positionName) {
-    return NextResponse.json({ error: 'Email e cargo são obrigatórios' }, { status: 400 })
+  if (!body.emailOuCodigo || !body.funcaoId) {
+    return NextResponse.json({ error: 'Email/código e função são obrigatórios' }, { status: 400 })
   }
 
-  // Busca o usuário pelo email (perPage 1000 — listUsers sem limite retorna só 50)
-  const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
-  const targetUser = users.find(u => u.email?.toLowerCase() === body.email.toLowerCase())
+  const busca = body.emailOuCodigo.trim()
 
-  if (!targetUser) {
+  // Busca por código T7-USR (direto na tabela profiles) ou por email (Auth)
+  let targetUserId: string | null = null
+
+  if (busca.toUpperCase().startsWith('T7-USR-')) {
+    const { data: perfil } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('user_code', busca.toUpperCase())
+      .maybeSingle()
+    targetUserId = perfil?.id ?? null
+  } else {
+    // Busca por email — listUsers com filtro para não carregar toda a base
+    const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
+    const found = users.find(u => u.email?.toLowerCase() === busca.toLowerCase())
+    targetUserId = found?.id ?? null
+  }
+
+  if (!targetUserId) {
     return NextResponse.json(
-      { error: 'Usuário não encontrado. Ele precisa ter uma conta no Tipo7.' },
+      { error: 'Usuário não encontrado. Verifique o email ou código T7-USR.' },
       { status: 404 }
     )
   }
+
+  const targetUser = { id: targetUserId }
 
   // Não pode adicionar a si mesmo
   if (targetUser.id === user.id) {
@@ -93,43 +109,78 @@ export async function POST(
     )
   }
 
-  // Cria o cargo (position) para esse membro
-  const { data: position, error: posErr } = await admin
+  // Valida que a função pertence a este evento
+  const { data: funcao } = await admin
     .from('event_positions')
-    .insert({ event_id: id, name: body.positionName.trim() })
     .select('id')
+    .eq('id', body.funcaoId)
+    .eq('event_id', id)
     .single()
 
-  if (posErr || !position) {
-    return NextResponse.json({ error: 'Erro ao criar cargo' }, { status: 500 })
+  if (!funcao) {
+    return NextResponse.json({ error: 'Função não encontrada neste evento' }, { status: 404 })
   }
 
-  // Salva as permissões do cargo
-  if (body.permissions.length > 0) {
-    await admin
-      .from('event_position_permissions')
-      .insert(
-        body.permissions.map(p => ({
-          event_position_id: position.id,
-          permission:        p,
-        }))
-      )
-  }
-
-  // Cria o vínculo do membro com o evento
+  // Cria o vínculo do membro com o evento — fica pendente até o convidado aceitar
   const { error: staffErr } = await admin
     .from('event_staff')
     .upsert({
       event_id:          id,
       user_id:           targetUser.id,
-      event_position_id: position.id,
-      status:            'active',
+      event_position_id: funcao.id,
+      status:            'pending',
       invited_by:        user.id,
     }, { onConflict: 'event_id,user_id' })
 
   if (staffErr) {
     return NextResponse.json({ error: staffErr.message }, { status: 500 })
   }
+
+  return NextResponse.json({ ok: true })
+}
+
+// PATCH /api/eventos/[id]/equipe — troca a função de um membro
+// body: { staffId, funcaoId }
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const supabase = await createClient()
+  const admin    = createServiceClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
+  if (!(await assertOwner(user.id, id))) {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
+
+  const { staffId, funcaoId } = await req.json() as { staffId: string; funcaoId: string }
+
+  if (!staffId || !funcaoId) {
+    return NextResponse.json({ error: 'staffId e funcaoId são obrigatórios' }, { status: 400 })
+  }
+
+  // Garante que a função pertence a este evento
+  const { data: funcao } = await admin
+    .from('event_positions')
+    .select('id')
+    .eq('id', funcaoId)
+    .eq('event_id', id)
+    .single()
+
+  if (!funcao) {
+    return NextResponse.json({ error: 'Função não encontrada neste evento' }, { status: 404 })
+  }
+
+  const { error } = await admin
+    .from('event_staff')
+    .update({ event_position_id: funcaoId })
+    .eq('id', staffId)
+    .eq('event_id', id)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ ok: true })
 }

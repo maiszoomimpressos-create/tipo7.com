@@ -8,7 +8,8 @@ const ACCENT = '#E8B84B'
 type Row = {
   userId:      string
   nome:        string
-  tipoPessoa:  string
+  codigo:      string | null
+  tipoPessoa:  string | null
   mpConected:  boolean
   feePct:      number
   totalVendas: number
@@ -106,7 +107,7 @@ export function PromotoresClient({ rows: initial }: { rows: Row[] }) {
         <table className="w-full">
           <thead>
             <tr style={{ background: '#0d0d0d', borderBottom: '1px solid #1a1a1a' }}>
-              {['Promotor', 'Tipo', 'Mercado Pago', 'Taxa', 'Volume vendas'].map(h => (
+              {['Promotor', 'Código', 'Tipo', 'Mercado Pago', 'Taxa', 'Volume vendas'].map(h => (
                 <th key={h} className="px-4 py-3 text-left text-[#444] text-xs font-medium uppercase tracking-wider"
                     style={{ fontFamily: 'var(--font-dm-sans)' }}>{h}</th>
               ))}
@@ -115,7 +116,7 @@ export function PromotoresClient({ rows: initial }: { rows: Row[] }) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-[#333] text-sm"
+                <td colSpan={6} className="px-4 py-8 text-center text-[#333] text-sm"
                     style={{ fontFamily: 'var(--font-dm-sans)' }}>
                   Nenhum promotor encontrado.
                 </td>
@@ -124,6 +125,12 @@ export function PromotoresClient({ rows: initial }: { rows: Row[] }) {
               <tr key={row.userId} style={{ borderBottom: i < filtered.length - 1 ? '1px solid #111' : 'none', background: '#070707' }}>
                 <td className="px-4 py-3">
                   <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>{row.nome}</p>
+                </td>
+                <td className="px-4 py-3">
+                  {row.codigo
+                    ? <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ background: 'rgba(232,184,75,0.10)', color: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>{row.codigo}</span>
+                    : <span className="text-[#333] text-sm">—</span>
+                  }
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-xs px-2 py-0.5 rounded-full uppercase font-semibold"

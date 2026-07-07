@@ -149,7 +149,7 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, pr
         {lista.length > 0 && (
           <div className="grid grid-cols-2 gap-4">
             {lista.map(ev => (
-              <a key={ev.id} href={`/evento/${ev.id}`}
+              <a key={ev.id} href={`/trabalho/${ev.id}`}
                 className="group relative bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden hover:border-[#E8B84B]/30 transition-colors block">
 
                 <div className="relative w-full h-[200px] bg-[#0a0a0a] flex items-center justify-center overflow-hidden">

@@ -20,7 +20,7 @@ export default async function PerfilPage() {
     .select(`
       full_name, phone, cpf, rg, birth_date, avatar_url,
       zip_code, street, street_number, neighborhood,
-      city, state, address_type, complement, created_at
+      city, state, address_type, complement, created_at, user_code
     `)
     .eq('id', user.id)
     .single()
@@ -49,13 +49,14 @@ export default async function PerfilPage() {
     !profile?.address_type  && 'Tipo de residência',
   ].filter(Boolean) as string[]
 
-  // Busca organização do usuário (se for promotor ou estabelecimento)
-  const { data: org } = await supabase
+  // Busca todas as organizações do usuário (pode ter promotora + estabelecimento)
+  const { data: orgsData } = await supabase
     .from('organizations')
     .select('codigo, type, name')
     .eq('owner_id', user.id)
     .not('codigo', 'is', null)
-    .maybeSingle()
+  const orgs = orgsData ?? []
+  const org = orgs[0] ?? null
 
   // Pega a inicial do nome ou email para o avatar placeholder
   const inicialAvatar = (profile?.full_name ?? user.email ?? '?').charAt(0).toUpperCase()
@@ -136,14 +137,24 @@ export default async function PerfilPage() {
           </div>
         </div>
 
-        {/* Badge de identificação — exibe código T7-PRO ou T7-EST se o usuário for promotor/estabelecimento */}
-        {org?.codigo && (org.type === 'promotora' || org.type === 'estabelecimento') && (
+        {/* Código pessoal do usuário — presente para todos */}
+        {profile?.user_code && (
           <CodigoOrg
-            codigo={org.codigo}
-            tipo={org.type}
-            nome={org.name ?? ''}
+            codigo={profile.user_code}
+            tipo="usuario"
+            nome={profile?.full_name ?? user.email ?? ''}
           />
         )}
+
+        {/* Badges de identificação — exibe um badge por organização (promotora e/ou estabelecimento) */}
+        {orgs.map(o => (
+          <CodigoOrg
+            key={o.codigo}
+            codigo={o.codigo!}
+            tipo={o.type as 'promotora' | 'estabelecimento'}
+            nome={o.name ?? ''}
+          />
+        ))}
 
         {/* Formulário editável — client component com foto, dados e endereço */}
         <ProfileForm

@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { Ticket, Users, Settings, ExternalLink, BarChart2 } from 'lucide-react'
+import { Ticket, Users, Settings, ExternalLink, BarChart2, Layers } from 'lucide-react'
 import { PainelIngressos, type IngressoEditavel } from './PainelIngressos'
 import { PainelEquipe } from './PainelEquipe'
+import { PainelAtributos } from './PainelAtributos'
 
 const ACCENT = '#E8B84B'
 
-type Tab = 'ingressos' | 'equipe'
+type Tab = 'ingressos' | 'atributos' | 'equipe'
 
 interface Props {
   eventoId:  string
@@ -27,7 +28,7 @@ export function PainelOrganizador({ eventoId, ingressos, capacity }: Props) {
     <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #1a1a1a', background: '#0a0a0a' }}>
 
       {/* Cabeçalho do painel */}
-      <div className="px-4 pt-4 pb-0">
+      <div className="px-4 pt-4 pb-0 min-w-0">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Settings size={14} style={{ color: ACCENT }} />
@@ -57,14 +58,15 @@ export function PainelOrganizador({ eventoId, ingressos, capacity }: Props) {
         {/* Abas */}
         <div className="flex border-b border-[#1a1a1a]">
           {([
-            { key: 'ingressos', label: 'Ingressos', icon: Ticket },
-            { key: 'equipe',    label: 'Equipe',    icon: Users  },
+            { key: 'ingressos',  label: 'Ingressos', icon: Ticket },
+            { key: 'atributos', label: 'Estrutura',  icon: Layers },
+            { key: 'equipe',    label: 'Equipe',     icon: Users  },
           ] as { key: Tab; label: string; icon: typeof Ticket }[]).map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               type="button"
               onClick={() => setTab(key)}
-              className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors relative"
+              className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors relative"
               style={{
                 color:      tab === key ? ACCENT : '#555',
                 fontFamily: 'var(--font-dm-sans)',
@@ -92,6 +94,10 @@ export function PainelOrganizador({ eventoId, ingressos, capacity }: Props) {
             capacity={capacity}
             onUpdate={handleUpdate}
           />
+        )}
+        {/* Aba de estrutura: atributos disponíveis no evento */}
+        {tab === 'atributos' && (
+          <PainelAtributos eventoId={eventoId} />
         )}
         {tab === 'equipe' && (
           <PainelEquipe eventoId={eventoId} />

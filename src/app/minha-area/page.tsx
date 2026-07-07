@@ -2,6 +2,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
+import { PromoterLayout } from '@/components/layout/PromoterLayout'
 import { DashboardClient } from './DashboardClient'
 import type { Comprador, EventoResumo, TipoIngresso } from './DashboardClient'
 
@@ -12,20 +13,24 @@ export default async function MinhaAreaPage() {
 
   const admin = createServiceClient()
 
-  // Organização do usuário
-  const { data: org } = await admin
+  // Todas as organizações do usuário (pode ter promotora + estabelecimento)
+  const { data: orgsData } = await admin
     .from('organizations')
     .select('id, name, codigo, type')
     .eq('owner_id', user.id)
-    .maybeSingle()
 
-  if (!org) redirect('/criar-evento')
+  const orgs = orgsData ?? []
+  if (orgs.length === 0) redirect('/criar-evento')
 
-  // Todos os eventos
+  // Usa a primeira org para nome/código de exibição (preferindo promotora)
+  const org = orgs.find(o => o.type === 'promotora') ?? orgs[0]
+  const orgIds = orgs.map(o => o.id)
+
+  // Todos os eventos de todas as orgs do usuário
   const { data: eventosRaw } = await admin
     .from('events')
     .select('id, title, status, date_start, date_end, banner_url, category')
-    .eq('organization_id', org.id)
+    .in('organization_id', orgIds)
     .order('created_at', { ascending: false })
 
   const eventos: EventoResumo[] = (eventosRaw ?? []).map(e => ({
@@ -44,15 +49,17 @@ export default async function MinhaAreaPage() {
     return (
       <div className="min-h-dvh bg-[#070707] flex flex-col">
         <Header />
-        <main className="flex-1">
-          <DashboardClient
-            orgName={org.name ?? 'Minha organização'}
-            orgCodigo={(org as { codigo?: string | null }).codigo ?? null}
-            orgTipo={(org as { type?: string | null }).type as 'promotora' | 'estabelecimento' | null}
-            eventos={[]} kpis={{ receita: 0, vendidos: 0, checkins: 0, totalEventos: 0 }} tiposIngresso={[]} compradores={[]}
-          />
-        </main>
-        <Footer />
+        <PromoterLayout>
+          <main className="flex-1">
+            <DashboardClient
+              orgName={org.name ?? 'Minha organização'}
+              orgCodigo={(org as { codigo?: string | null }).codigo ?? null}
+              orgTipo={(org as { type?: string | null }).type as 'promotora' | 'estabelecimento' | null}
+              eventos={[]} kpis={{ receita: 0, vendidos: 0, checkins: 0, totalEventos: 0 }} tiposIngresso={[]} compradores={[]}
+            />
+          </main>
+          <Footer />
+        </PromoterLayout>
       </div>
     )
   }
@@ -166,18 +173,20 @@ export default async function MinhaAreaPage() {
   return (
     <div className="min-h-dvh bg-[#070707] flex flex-col">
       <Header />
-      <main className="flex-1">
-        <DashboardClient
-          orgName={org.name ?? 'Minha organização'}
-          orgCodigo={(org as { codigo?: string | null }).codigo ?? null}
-          orgTipo={(org as { type?: string | null }).type as 'promotora' | 'estabelecimento' | null}
-          eventos={eventos}
-          kpis={{ receita, vendidos, checkins, totalEventos: eventos.length }}
-          tiposIngresso={tiposIngresso}
-          compradores={compradores}
-        />
-      </main>
-      <Footer />
+      <PromoterLayout>
+        <main className="flex-1">
+          <DashboardClient
+            orgName={org.name ?? 'Minha organização'}
+            orgCodigo={(org as { codigo?: string | null }).codigo ?? null}
+            orgTipo={(org as { type?: string | null }).type as 'promotora' | 'estabelecimento' | null}
+            eventos={eventos}
+            kpis={{ receita, vendidos, checkins, totalEventos: eventos.length }}
+            tiposIngresso={tiposIngresso}
+            compradores={compradores}
+          />
+        </main>
+        <Footer />
+      </PromoterLayout>
     </div>
   )
 }
