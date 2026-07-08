@@ -17,6 +17,7 @@ const ROTAS_PRIVADAS = [
   '/dashboard',
   '/bilheteria',
   '/minha-area',
+  '/segunda-tela',
 ]
 
 // Domínios internos permitidos no parâmetro ?next= (evita open redirect)

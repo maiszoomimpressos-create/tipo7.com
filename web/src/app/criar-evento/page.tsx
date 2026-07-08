@@ -55,7 +55,6 @@ export default async function CriarEventoPage() {
         .from('events')
         .select('id, title, status, date_start, created_at, banner_url')
         .in('organization_id', orgIds)
-        .in('status', ['rascunho', 'publicado'])
         .order('created_at', { ascending: false })
     : { data: [] }
 
