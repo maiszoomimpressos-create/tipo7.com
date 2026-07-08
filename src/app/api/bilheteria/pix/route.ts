@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
   try {
     const { data: eventoInfo } = await admin.from('events').select('title').eq('id', eventoId).single()
 
-    const dateOfExpiration = new Date(Date.now() + 2 * 60 * 1000).toISOString()
+    const dateOfExpiration = new Date(Date.now() + 5 * 60 * 1000).toISOString()
 
     const result = await payment.create({
       body: {
