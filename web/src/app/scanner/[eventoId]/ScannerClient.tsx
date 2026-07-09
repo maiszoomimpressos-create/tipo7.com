@@ -223,7 +223,7 @@ export function ScannerClient({ eventoId, eventoTitle, operadorName }: Props) {
                     )}
                     {result.validatedAt && (
                       <p className="text-white/60 text-xs mt-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        Usado em {formatDateTime(result.validatedAt)} por {result.validatedBy}
+                        Entrada autorizada por <span className="text-white/80 font-semibold">{result.validatedBy}</span> em {formatDateTime(result.validatedAt)}
                       </p>
                     )}
                     {!result.holderName && result.result !== 'valid' && (
