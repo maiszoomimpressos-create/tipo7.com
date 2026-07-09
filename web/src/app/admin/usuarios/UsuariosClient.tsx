@@ -11,6 +11,7 @@ type Row = {
   nome:       string
   cpf:        string | null
   phone:      string | null
+  userCode:   string | null
   cadastroEm: string
   qtdCompras: number
   totalGasto: number
@@ -39,7 +40,8 @@ export function UsuariosClient({ rows }: { rows: Row[] }) {
     return rows.filter(r =>
       r.nome.toLowerCase().includes(q) ||
       r.email.toLowerCase().includes(q) ||
-      (r.phone ?? '').includes(q)
+      (r.phone ?? '').includes(q) ||
+      (r.userCode ?? '').toLowerCase().includes(q)
     )
   }, [rows, search])
 
@@ -64,7 +66,7 @@ export function UsuariosClient({ rows }: { rows: Row[] }) {
         <table className="w-full">
           <thead>
             <tr style={{ background: '#0d0d0d', borderBottom: '1px solid #1a1a1a' }}>
-              {['Usuário', 'CPF', 'Telefone', 'Cadastro', 'Compras'].map(h => (
+              {['Usuário', 'Código T7', 'CPF', 'Telefone', 'Cadastro', 'Compras'].map(h => (
                 <th key={h} className="px-4 py-3 text-left text-[#444] text-xs font-medium uppercase tracking-wider"
                     style={{ fontFamily: 'var(--font-dm-sans)' }}>
                   {h}
@@ -75,7 +77,7 @@ export function UsuariosClient({ rows }: { rows: Row[] }) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-[#333] text-sm"
+                <td colSpan={6} className="px-4 py-10 text-center text-[#333] text-sm"
                     style={{ fontFamily: 'var(--font-dm-sans)' }}>
                   Nenhum usuário encontrado.
                 </td>
@@ -96,6 +98,20 @@ export function UsuariosClient({ rows }: { rows: Row[] }) {
                   <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                     {row.email}
                   </p>
+                </td>
+
+                {/* Código T7 */}
+                <td className="px-4 py-3">
+                  {row.userCode ? (
+                    <span
+                      className="px-2 py-1 rounded-lg text-xs font-mono font-semibold"
+                      style={{ background: `${ACCENT}15`, color: ACCENT, border: `1px solid ${ACCENT}30` }}
+                    >
+                      {row.userCode}
+                    </span>
+                  ) : (
+                    <span className="text-[#333] text-sm">—</span>
+                  )}
                 </td>
 
                 {/* CPF */}

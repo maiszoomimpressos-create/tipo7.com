@@ -13,14 +13,14 @@ export default async function UsuariosPage() {
   // Busca perfis e pedidos aprovados em paralelo
   const [perfisRes, pedidosRes] = await Promise.all([
     ids.length
-      ? admin.from('profiles').select('id, full_name, cpf, phone').in('id', ids)
+      ? admin.from('profiles').select('id, full_name, cpf, phone, user_code').in('id', ids)
       : Promise.resolve({ data: [] }),
     ids.length
       ? admin.from('orders').select('user_id, total').eq('status', 'approved').in('user_id', ids)
       : Promise.resolve({ data: [] }),
   ])
 
-  const perfilMap: Record<string, { full_name: string | null; cpf: string | null; phone: string | null }> = {}
+  const perfilMap: Record<string, { full_name: string | null; cpf: string | null; phone: string | null; user_code: string | null }> = {}
   for (const p of perfisRes.data ?? []) perfilMap[p.id] = p
 
   const comprasPorUser: Record<string, { qtd: number; total: number }> = {}
@@ -38,6 +38,7 @@ export default async function UsuariosPage() {
       nome:        p?.full_name ?? u.user_metadata?.full_name ?? '—',
       cpf:         p?.cpf ?? null,
       phone:       p?.phone ?? null,
+      userCode:    p?.user_code ?? null,
       cadastroEm:  u.created_at,
       qtdCompras:  c?.qtd ?? 0,
       totalGasto:  c?.total ?? 0,
