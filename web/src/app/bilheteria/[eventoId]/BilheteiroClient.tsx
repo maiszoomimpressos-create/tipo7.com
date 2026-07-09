@@ -81,6 +81,11 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
 
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
 
+  // Abre dados do comprador automaticamente ao selecionar PIX (CPF obrigatório)
+  useEffect(() => {
+    if (metodo === 'pix') setDadosAbertos(true)
+  }, [metodo])
+
   // Cria o canal ao montar e responde ao ping 'ready' da segunda tela
   useEffect(() => {
     const canal = new BroadcastChannel(`tipo7-bilheteria-${eventoId}`)
@@ -200,6 +205,11 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     }
     if (metodo === 'pix' && total <= 0) {
       setErr('PIX não disponível para ingressos gratuitos.'); return
+    }
+    if (metodo === 'pix' && cpf.replace(/\D/g, '').length !== 11) {
+      setErr('CPF do comprador é obrigatório para pagamento via PIX (exigência do Banco Central).')
+      setDadosAbertos(true)
+      return
     }
 
     setSalvando(true)
@@ -964,7 +974,10 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
               <span className="text-[#555] text-xs uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 Dados do comprador
               </span>
-              <span className="text-[#333] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>(opcional)</span>
+              {metodo === 'pix'
+                ? <span className="text-red-400 text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>(CPF obrigatório para PIX)</span>
+                : <span className="text-[#333] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>(opcional)</span>
+              }
             </div>
             {dadosAbertos
               ? <ChevronUp size={13} className="text-[#444]" />
@@ -992,9 +1005,14 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
                   type="text"
                   value={cpf}
                   onChange={e => setCpf(formatarCPF(e.target.value))}
-                  placeholder="CPF"
-                  className="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl pl-9 pr-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
-                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                  placeholder={metodo === 'pix' ? 'CPF (obrigatório para PIX)' : 'CPF'}
+                  className="w-full bg-[#0d0d0d] rounded-xl pl-9 pr-4 py-3 text-white text-sm outline-none placeholder:text-[#383838]"
+                  style={{
+                    fontFamily: 'var(--font-dm-sans)',
+                    border: metodo === 'pix' && cpf.replace(/\D/g, '').length !== 11
+                      ? '1px solid rgba(248,113,113,0.4)'
+                      : '1px solid #1e1e1e',
+                  }}
                 />
               </div>
 
