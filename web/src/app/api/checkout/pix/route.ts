@@ -177,6 +177,8 @@ export async function POST(req: NextRequest) {
         external_reference: orderId,
         application_fee:    applicationFee,
       },
+      // Idempotência: garante que tentativas repetidas não criam cobranças duplicadas
+      requestOptions: { idempotencyKey: orderId },
     })
 
     // QR code para exibir como imagem; qr_code é o código copia-e-cola

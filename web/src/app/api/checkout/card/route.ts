@@ -208,6 +208,8 @@ export async function POST(req: NextRequest) {
         external_reference: orderId,
         application_fee:    applicationFee,
       },
+      // Idempotência: garante que tentativas repetidas não criam cobranças duplicadas
+      requestOptions: { idempotencyKey: orderId },
     })
 
     const paymentStatus = result.status ?? 'rejected'
