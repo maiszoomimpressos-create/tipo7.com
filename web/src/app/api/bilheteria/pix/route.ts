@@ -84,7 +84,9 @@ export async function POST(req: NextRequest) {
   try {
     const { data: eventoInfo } = await admin.from('events').select('title').eq('id', eventoId).single()
 
-    const dateOfExpiration = new Date(Date.now() + 5 * 60 * 1000).toISOString()
+    const dateOfExpiration = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+
+    const compradorCpf = (comprador?.cpf ?? '').replace(/\D/g, '')
 
     const result = await payment.create({
       body: {
@@ -93,10 +95,11 @@ export async function POST(req: NextRequest) {
         statement_descriptor: 'TIPO7.COM',
         payment_method_id:    'pix',
         date_of_expiration: dateOfExpiration,
-        // payer = cliente presencial (desconhecido na hora da cobrança)
-        // CPF do promotor no payer causava detecção de autopagamento no MP
         payer: {
           email: `bilheteria+${orderId.slice(0, 8)}@tipo7.com`,
+          ...(compradorCpf.length === 11 && {
+            identification: { type: 'CPF', number: compradorCpf },
+          }),
         },
         additional_info: {
           items: [{
