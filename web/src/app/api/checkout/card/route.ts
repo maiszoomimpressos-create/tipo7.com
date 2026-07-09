@@ -36,7 +36,8 @@ type MpInstallmentsResponse = Array<{
 }>
 
 export async function POST(req: NextRequest) {
-  if (!(await rateLimit(getIp(req), 'checkout-card', 5, 60_000))) return tooManyRequests()
+  const isLocal = process.env.NODE_ENV === 'development'
+  if (!(await rateLimit(getIp(req), 'checkout-card', isLocal ? 100 : 5, 60_000))) return tooManyRequests()
 
   try {
     const {
