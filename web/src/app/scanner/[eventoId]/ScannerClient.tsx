@@ -54,12 +54,16 @@ const RESULT_CONFIG = {
 export function ScannerClient({ eventoId, eventoTitle, operadorName }: Props) {
   const scannerRef    = useRef<unknown>(null)
   const processingRef = useRef(false)
+  const readerBuffer  = useRef('')
+  const readerTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastKeyTime   = useRef(0)
 
-  const [result,       setResult]       = useState<ScanResult | null>(null)
-  const [history,      setHistory]      = useState<ScanRecord[]>([])
-  const [showHistory,  setShowHistory]  = useState(false)
-  const [camError,     setCamError]     = useState<string | null>(null)
-  const [initialized,  setInitialized]  = useState(false)
+  const [result,        setResult]        = useState<ScanResult | null>(null)
+  const [history,       setHistory]       = useState<ScanRecord[]>([])
+  const [showHistory,   setShowHistory]   = useState(false)
+  const [camError,      setCamError]      = useState<string | null>(null)
+  const [initialized,   setInitialized]   = useState(false)
+  const [readerAtivo,   setReaderAtivo]   = useState(false)
 
   // ── Validação via API ──────────────────────────────────────────────────────
 
@@ -128,6 +132,53 @@ export function ScannerClient({ eventoId, eventoTitle, operadorName }: Props) {
     }
   }, [handleScan])
 
+  // ── Leitor de mão (USB/Bluetooth) — captura input de teclado rápido ──────────
+  // Leitores de mão funcionam como teclado: "digitam" o código muito rápido
+  // (< 50ms entre teclas) e pressionam Enter no final.
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Não intercepta se o foco estiver num campo de texto
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+      const now = Date.now()
+      const delta = now - lastKeyTime.current
+      lastKeyTime.current = now
+
+      if (e.key === 'Enter') {
+        const token = readerBuffer.current.trim()
+        readerBuffer.current = ''
+        if (readerTimer.current) { clearTimeout(readerTimer.current); readerTimer.current = null }
+        if (token.length > 5) handleScan(token)
+        return
+      }
+
+      // Se a pausa entre teclas for > 100ms, provavelmente é digitação humana — descarta
+      if (delta > 100 && readerBuffer.current.length > 0) {
+        readerBuffer.current = ''
+      }
+
+      if (e.key.length === 1) {
+        readerBuffer.current += e.key
+        setReaderAtivo(true)
+
+        // Indicador visual some após 2s sem input
+        if (readerTimer.current) clearTimeout(readerTimer.current)
+        readerTimer.current = setTimeout(() => {
+          readerBuffer.current = ''
+          setReaderAtivo(false)
+        }, 2000)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      if (readerTimer.current) clearTimeout(readerTimer.current)
+    }
+  }, [handleScan])
+
   // ── Resultado atual ────────────────────────────────────────────────────────
 
   const cfg = result ? RESULT_CONFIG[result.result] : null
@@ -148,14 +199,24 @@ export function ScannerClient({ eventoId, eventoTitle, operadorName }: Props) {
             {operadorName}
           </p>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: '#111' }}>
-          <div
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ background: initialized ? '#4ade80' : camError ? '#f87171' : '#E8B84B', animation: initialized ? 'pulse 2s infinite' : 'none' }}
-          />
-          <span className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            {initialized ? 'Ao vivo' : camError ? 'Erro' : 'Iniciando...'}
-          </span>
+        <div className="flex items-center gap-2">
+          {readerAtivo && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: '#0d2b0d', border: '1px solid #4ade8030' }}>
+              <div className="w-1.5 h-1.5 rounded-full bg-[#4ade80]" style={{ animation: 'pulse 1s infinite' }} />
+              <span className="text-[#4ade80] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Leitor conectado
+              </span>
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: '#111' }}>
+            <div
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: initialized ? '#4ade80' : camError ? '#f87171' : '#E8B84B', animation: initialized ? 'pulse 2s infinite' : 'none' }}
+            />
+            <span className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {initialized ? 'Câmera ativa' : camError ? 'Sem câmera' : 'Iniciando...'}
+            </span>
+          </div>
         </div>
       </div>
 
