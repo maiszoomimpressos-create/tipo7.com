@@ -31,7 +31,9 @@ type Template = {
 type Membro = {
   id: string
   status: string
-  profiles: { id: string; full_name: string | null } | null
+  email:    string | null
+  userCode: string | null
+  profiles: { id: string; full_name: string | null; user_code?: string | null } | null
   event_positions: { id: string; name: string } | null
 }
 
@@ -620,7 +622,7 @@ export function PainelEquipe({ eventoId }: Props) {
       ) : (
         <div className="flex flex-col gap-2">
           {membros.map(m => {
-            const profile  = m.profiles  as { full_name: string | null } | null
+            const profile  = m.profiles
             const position = m.event_positions as { id: string; name: string } | null
             const editando = editandoMembro === m.id
             return (
@@ -631,14 +633,29 @@ export function PainelEquipe({ eventoId }: Props) {
               >
                 {/* Linha principal */}
                 <div className="flex items-center justify-between px-4 py-3">
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-white text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                       {profile?.full_name ?? 'Usuário'}
                     </p>
-                    <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {position?.name ?? 'Sem cargo'}
+                    {m.email && (
+                      <p className="text-[#555] text-xs mt-0.5 truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        {m.email}
+                      </p>
+                    )}
+                    <div className="flex items-center flex-wrap gap-1.5 mt-1">
+                      <span className="text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        {position?.name ?? 'Sem cargo'}
+                      </span>
+                      {m.userCode && (
+                        <span
+                          className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold"
+                          style={{ background: `${ACCENT}15`, color: ACCENT, border: `1px solid ${ACCENT}30` }}
+                        >
+                          {m.userCode}
+                        </span>
+                      )}
                       <span
-                        className="ml-2 inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase"
+                        className="inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase"
                         style={{
                           background: m.status === 'active' ? '#4ade8015' : '#E8B84B15',
                           color:      m.status === 'active' ? '#4ade80'   : ACCENT,
@@ -646,7 +663,7 @@ export function PainelEquipe({ eventoId }: Props) {
                       >
                         {m.status === 'active' ? 'Ativo' : 'Pendente'}
                       </span>
-                    </p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
