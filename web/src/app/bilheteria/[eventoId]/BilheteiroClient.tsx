@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import {
   Ticket, User, Phone, CreditCard, Calendar, Printer, ChevronDown,
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
@@ -770,21 +771,36 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
             {eventoTitle} • {operadorName}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={abrirSegundaTela}
-          title="Abrir segunda tela para o cliente"
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
-          style={{
-            background:  '#0d0d0d',
-            border:      '1px solid #1e1e1e',
-            color:       '#555',
-            fontFamily:  'var(--font-dm-sans)',
-          }}
-        >
-          <Monitor size={13} />
-          Segunda tela
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={abrirSegundaTela}
+            title="Abrir segunda tela para o cliente"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
+            style={{
+              background:  '#0d0d0d',
+              border:      '1px solid #1e1e1e',
+              color:       '#555',
+              fontFamily:  'var(--font-dm-sans)',
+            }}
+          >
+            <Monitor size={13} />
+            Segunda tela
+          </button>
+          <Link
+            href={`/dashboard/${eventoId}`}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
+            style={{
+              background:  '#0d0d0d',
+              border:      '1px solid #1e1e1e',
+              color:       '#555',
+              fontFamily:  'var(--font-dm-sans)',
+            }}
+          >
+            <ArrowLeft size={13} />
+            Voltar
+          </Link>
+        </div>
       </div>
 
       <div className="max-w-lg mx-auto px-5 py-6 flex flex-col gap-6">
