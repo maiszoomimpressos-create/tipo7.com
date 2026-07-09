@@ -39,7 +39,7 @@ export async function GET(
     .select(`
       id, status, created_at, user_id,
       profiles:user_id (id, full_name, user_code),
-      event_positions:event_position_id (id, name)
+      event_positions:event_position_id (id, name, event_position_permissions(permission))
     `)
     .eq('event_id', id)
     .order('created_at')

@@ -34,7 +34,7 @@ type Membro = {
   email:    string | null
   userCode: string | null
   profiles: { id: string; full_name: string | null; user_code?: string | null } | null
-  event_positions: { id: string; name: string } | null
+  event_positions: { id: string; name: string; event_position_permissions: { permission: string }[] } | null
 }
 
 interface Props {
@@ -240,7 +240,7 @@ export function PainelEquipe({ eventoId }: Props) {
 
   function abrirEdicaoMembro(m: Membro) {
     setEditandoMembro(m.id)
-    setFuncaoEditando((m.event_positions as { id: string } | null)?.id ?? '')
+    setFuncaoEditando(m.event_positions?.id ?? '')
   }
 
   async function salvarEdicaoMembro() {
@@ -256,7 +256,7 @@ export function PainelEquipe({ eventoId }: Props) {
       setMembros(prev => prev.map(m => {
         if (m.id !== editandoMembro) return m
         const novaFuncao = funcoes.find(f => f.id === funcaoEditando)
-        return { ...m, event_positions: novaFuncao ? { id: novaFuncao.id, name: novaFuncao.name } : m.event_positions }
+        return { ...m, event_positions: novaFuncao ? { id: novaFuncao.id, name: novaFuncao.name, event_position_permissions: novaFuncao.event_position_permissions } : m.event_positions }
       }))
       setEditandoMembro(null)
     } finally { setSalvandoMembro(false) }
@@ -623,7 +623,7 @@ export function PainelEquipe({ eventoId }: Props) {
         <div className="flex flex-col gap-2">
           {membros.map(m => {
             const profile  = m.profiles
-            const position = m.event_positions as { id: string; name: string } | null
+            const position = m.event_positions as { id: string; name: string; event_position_permissions: { permission: string }[] } | null
             const editando = editandoMembro === m.id
             return (
               <div
@@ -646,6 +646,11 @@ export function PainelEquipe({ eventoId }: Props) {
                       <span className="text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                         {position?.name ?? 'Sem cargo'}
                       </span>
+                      {position && (
+                        <span className="text-[#333] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                          {position.event_position_permissions.length} permiss{position.event_position_permissions.length === 1 ? 'ão' : 'ões'}
+                        </span>
+                      )}
                       {m.userCode && (
                         <span
                           className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold"
