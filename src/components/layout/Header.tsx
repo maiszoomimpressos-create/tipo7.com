@@ -24,8 +24,10 @@ function LocationChip() {
     return (
       <button
         onClick={requestLocation}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#222] text-[#555] hover:text-[#E8B84B] hover:border-[#E8B84B]/30 text-xs transition-all"
-        style={{ fontFamily: 'var(--font-dm-sans)' }}>
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs transition-all"
+        style={{ borderColor: 'var(--dk-border)', color: 'var(--dk-text-2)', fontFamily: 'var(--font-dm-sans)' }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--gold-bright)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(232,184,75,0.35)' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--dk-text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--dk-border)' }}>
         <Navigation size={12} strokeWidth={2.5} />
         Detectar localização
       </button>
@@ -44,15 +46,19 @@ function LocationChip() {
 
   if (city) {
     return (
-      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#111] border border-[#222]">
-        <MapPin size={12} style={{ color: '#E8B84B' }} />
-        <span className="text-[#E8B84B] text-xs font-medium"
-              style={{ fontFamily: 'var(--font-dm-sans)' }}>
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border"
+           style={{ background: 'var(--dk-surface)', borderColor: 'var(--dk-border)' }}>
+        <MapPin size={12} style={{ color: 'var(--gold-bright)' }} />
+        <span className="text-xs font-medium"
+              style={{ color: 'var(--gold-bright)', fontFamily: 'var(--font-dm-sans)' }}>
           {city}
         </span>
         <button
           onClick={clearCity}
-          className="text-[#444] hover:text-[#888] transition-colors ml-0.5"
+          className="transition-colors ml-0.5"
+          style={{ color: 'var(--dk-text-3)' }}
+          onMouseEnter={e => (e.currentTarget.style.color = 'var(--dk-text-2)')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'var(--dk-text-3)')}
           aria-label="Mudar cidade">
           <X size={11} />
         </button>
@@ -198,9 +204,13 @@ export function Header() {
         className={cn(
           'fixed top-0 left-0 right-0 z-50 h-[60px] transition-all duration-300',
           scrolled
-            ? 'bg-[#070707]/95 backdrop-blur-md border-b border-[#E8B84B]/20'
-            : 'bg-[#070707]/80 backdrop-blur-sm border-b border-white/5'
+            ? 'backdrop-blur-md border-b'
+            : 'backdrop-blur-sm border-b'
         )}
+        style={{
+          background: scrolled ? 'rgba(17,19,24,0.97)' : 'rgba(17,19,24,0.90)',
+          borderColor: scrolled ? 'rgba(37,42,56,0.8)' : 'rgba(37,42,56,0.4)',
+        }}
       >
         <div className="max-w-7xl mx-auto h-full px-4 md:px-8 flex items-center">
 
@@ -242,12 +252,7 @@ export function Header() {
             {!loading && !user && (
               <a
                 href="/auth"
-                className={cn(
-                  'group flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold',
-                  'bg-[#E8B84B] text-[#070707]',
-                  'hover:bg-[#F0C96A] transition-all duration-200',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E8B84B]/50'
-                )}
+                className="t7-btn-primary group flex items-center gap-2 text-sm focus-visible:outline-none"
                 style={{ fontFamily: 'var(--font-dm-sans)' }}
               >
                 Entrar / Cadastrar
@@ -309,12 +314,17 @@ export function Header() {
 
                   {/* Dropdown */}
                   {userMenuOpen && (
-                    <div className="absolute right-0 top-[calc(100%+8px)] w-52 bg-[#0d0d0d] border border-[#1c1c1c] rounded-xl overflow-hidden shadow-xl shadow-black/50">
-                      <div className="px-4 py-3 border-b border-[#1a1a1a]">
-                        <p className="text-white text-sm font-medium truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    <div className="absolute right-0 top-[calc(100%+8px)] w-56 rounded-xl overflow-hidden"
+                       style={{
+                         background: 'var(--dk-bg)',
+                         border: '1px solid var(--dk-border)',
+                         boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+                       }}>
+                      <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--dk-border)' }}>
+                        <p className="text-sm font-medium truncate" style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--dk-text)' }}>
                           {displayName}
                         </p>
-                        <p className="text-[#555] text-xs truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        <p className="text-xs truncate" style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--dk-text-3)' }}>
                           {user.email}
                         </p>
 
@@ -371,8 +381,10 @@ export function Header() {
                         <a
                           href="/perfil"
                           onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-[#bbb] hover:text-white hover:bg-white/5 transition-colors"
-                          style={{ fontFamily: 'var(--font-dm-sans)' }}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors"
+                          style={{ color: 'var(--dk-text-2)', fontFamily: 'var(--font-dm-sans)' }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--dk-text)'; (e.currentTarget as HTMLElement).style.background = 'var(--dk-surface)' }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--dk-text-2)'; (e.currentTarget as HTMLElement).style.background = '' }}
                         >
                           <User size={14} className="text-[#555]" />
                           Meu perfil
@@ -380,8 +392,10 @@ export function Header() {
                         <a
                           href="/meus-ingressos"
                           onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-[#bbb] hover:text-white hover:bg-white/5 transition-colors"
-                          style={{ fontFamily: 'var(--font-dm-sans)' }}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors"
+                          style={{ color: 'var(--dk-text-2)', fontFamily: 'var(--font-dm-sans)' }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--dk-text)'; (e.currentTarget as HTMLElement).style.background = 'var(--dk-surface)' }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--dk-text-2)'; (e.currentTarget as HTMLElement).style.background = '' }}
                         >
                           <Ticket size={14} className="text-[#555]" />
                           Meus ingressos
@@ -389,8 +403,10 @@ export function Header() {
                         <a
                           href="/trabalhos"
                           onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center justify-between px-4 py-2.5 text-sm text-[#bbb] hover:text-white hover:bg-white/5 transition-colors"
-                          style={{ fontFamily: 'var(--font-dm-sans)' }}
+                          className="flex items-center justify-between px-4 py-2.5 text-sm transition-colors"
+                          style={{ color: 'var(--dk-text-2)', fontFamily: 'var(--font-dm-sans)' }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--dk-text)'; (e.currentTarget as HTMLElement).style.background = 'var(--dk-surface)' }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--dk-text-2)'; (e.currentTarget as HTMLElement).style.background = '' }}
                         >
                           <span className="flex items-center gap-3">
                             <Briefcase size={14} className="text-[#555]" />
@@ -404,12 +420,14 @@ export function Header() {
                         </a>
                       </div>
 
-                      <div className="border-t border-[#1a1a1a] py-1">
+                      <div className="py-1" style={{ borderTop: '1px solid var(--dk-border)' }}>
                         <a
                           href="/minha-area"
                           onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-[#bbb] hover:text-white hover:bg-white/5 transition-colors"
-                          style={{ fontFamily: 'var(--font-dm-sans)' }}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors"
+                          style={{ color: 'var(--dk-text-2)', fontFamily: 'var(--font-dm-sans)' }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--dk-text)'; (e.currentTarget as HTMLElement).style.background = 'var(--dk-surface)' }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--dk-text-2)'; (e.currentTarget as HTMLElement).style.background = '' }}
                         >
                           <CalendarPlus size={14} className="text-[#555]" />
                           Meus eventos
@@ -425,11 +443,13 @@ export function Header() {
                         </a>
                       </div>
 
-                      <div className="border-t border-[#1a1a1a] py-1">
+                      <div className="py-1" style={{ borderTop: '1px solid var(--dk-border)' }}>
                         <button
                           onClick={handleSignOut}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[#bbb] hover:text-red-400 hover:bg-red-400/5 transition-colors"
-                          style={{ fontFamily: 'var(--font-dm-sans)' }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors"
+                          style={{ color: 'var(--dk-text-2)', fontFamily: 'var(--font-dm-sans)' }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--error)'; (e.currentTarget as HTMLElement).style.background = 'var(--error-bg)' }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--dk-text-2)'; (e.currentTarget as HTMLElement).style.background = '' }}
                         >
                           <LogOut size={14} className="text-[#555]" />
                           Sair
@@ -458,10 +478,10 @@ export function Header() {
       {/* ─── Menu mobile (tela cheia) ───────────────────────────── */}
       <div
         className={cn(
-          'fixed inset-0 z-40 flex flex-col md:hidden transition-all duration-300',
-          'bg-[#070707]/98 backdrop-blur-xl pt-[60px]',
+          'fixed inset-0 z-40 flex flex-col md:hidden transition-all duration-300 backdrop-blur-xl pt-[60px]',
           menuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         )}
+        style={{ background: 'rgba(17,19,24,0.98)' }}
         aria-hidden={!menuOpen}
       >
         <div className="flex flex-col items-center justify-center flex-1 gap-5 px-8">

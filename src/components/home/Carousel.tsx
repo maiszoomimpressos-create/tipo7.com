@@ -24,8 +24,8 @@ type CarouselItem =
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-const ACCENT_COLORS = ['#a855f7','#f97316','#E8B84B','#ec4899','#22c55e','#06b6d4','#eab308']
-const GOLD = '#E8B84B'
+const ACCENT_COLORS = ['#fb5607','#8338ec','#f97316','#ec4899','#22c55e','#06b6d4','#fb5607']
+const GOLD = '#fb5607'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -39,33 +39,33 @@ function formatDate(iso: string) {
 const getCarouselConfig = (width: number) => {
   if (width < 640) {
     return {
-      height:      280,
-      centerWidth: Math.min(width * 0.82, 380),
+      height:      300,
+      centerWidth: Math.min(width * 0.84, 400),
       maxSides:    1,
       sideConfig: [
-        { width: 48, gap: 3, opacity: 0.75, scale: 0.85 },
+        { width: 48, gap: 3, opacity: 0.70, scale: 0.85 },
       ],
     }
   }
   if (width < 1024) {
     return {
-      height:      360,
-      centerWidth: Math.min(width * 0.62, 580),
+      height:      400,
+      centerWidth: Math.min(width * 0.64, 620),
       maxSides:    2,
       sideConfig: [
-        { width: 105, gap: 5, opacity: 0.85, scale: 0.85 },
-        { width:  85, gap: 3, opacity: 0.50, scale: 0.72 },
+        { width: 110, gap: 5, opacity: 0.85, scale: 0.85 },
+        { width:  88, gap: 3, opacity: 0.45, scale: 0.72 },
       ],
     }
   }
   return {
-    height:      420,
-    centerWidth: 780,
+    height:      480,
+    centerWidth: 820,
     maxSides:    3,
     sideConfig: [
-      { width: 175, gap: 1, opacity: 0.90, scale: 0.85 },
-      { width: 155, gap: 1, opacity: 0.65, scale: 0.72 },
-      { width: 135, gap: 1, opacity: 0.38, scale: 0.61 },
+      { width: 185, gap: 1, opacity: 0.90, scale: 0.85 },
+      { width: 160, gap: 1, opacity: 0.60, scale: 0.72 },
+      { width: 138, gap: 1, opacity: 0.32, scale: 0.61 },
     ],
   }
 }
@@ -172,7 +172,7 @@ export function Carousel() {
 
   return (
     <section
-      className="w-full py-6 px-4"
+      className="w-full pt-8 pb-10 px-4"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onTouchStart={onTouchStart}
@@ -180,8 +180,8 @@ export function Carousel() {
     >
       {/* Título da seção */}
       <p
-        className="text-center text-[#555555] text-xs tracking-widest uppercase mb-4"
-        style={{ fontFamily: 'var(--font-dm-sans)' }}
+        className="text-center text-[11px] tracking-[0.18em] uppercase mb-5"
+        style={{ color: 'rgba(255,255,255,0.30)', fontFamily: 'var(--font-dm-sans)', letterSpacing: '0.18em' }}
       >
         {filtrado && city ? `Eventos em destaque em ${city}` : 'Eventos em destaque'}
       </p>
@@ -222,7 +222,7 @@ export function Carousel() {
                       zIndex:    20,
                       left:      '50%',
                       transform: 'translateX(-50%)',
-                      background: 'linear-gradient(135deg, #0c0c0c 0%, #111 55%, #1c1400 100%)',
+                      background: 'linear-gradient(135deg, #0e0604 0%, #160a08 55%, #1f0800 100%)',
                     }}
                   >
                     {/* Grid pontilhado de fundo */}
@@ -388,7 +388,7 @@ export function Carousel() {
                     zIndex:    20 - absPos * 3,
                     left:      '50%',
                     transform: `translateX(calc(-50% + ${translateX}px)) scale(${sideConfig.scale})`,
-                    background: 'linear-gradient(135deg, #0d0d0d, #1c1400)',
+                    background: 'linear-gradient(135deg, #100604, #1f0800)',
                     border:     `1px solid ${GOLD}20`,
                   }}
                 >
@@ -432,21 +432,21 @@ export function Carousel() {
 
       {/* ─── Informações abaixo do banner ─────────────────────── */}
       {!loading && activeItem && (
-        <div className="mt-5 flex flex-col items-center gap-3 text-center transition-all duration-300">
+        <div className="mt-7 flex flex-col items-center gap-4 text-center transition-all duration-300">
 
           {activeItem.type === 'anuncio' ? (
             // Info do slot "Anuncie aqui"
             <>
               <h2
-                className="text-white text-xl md:text-2xl leading-tight"
-                style={{ fontFamily: 'var(--font-outfit)', fontWeight: 500 }}>
+                className="text-xl md:text-2xl leading-tight"
+                style={{ fontFamily: 'var(--font-outfit)', fontWeight: 600, color: 'rgba(255,255,255,0.95)', lineHeight: 1.2 }}>
                 Publique seu evento no{' '}
                 <span style={{ color: GOLD }}>Tipo7</span>
               </h2>
               <div className="flex flex-wrap items-center justify-center gap-4">
                 <span
-                  className="text-[#666] text-sm"
-                  style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  className="text-sm"
+                  style={{ fontFamily: 'var(--font-dm-sans)', color: 'rgba(255,255,255,0.50)' }}>
                   Venda ingressos, gerencie equipes e divulgue para todo o Brasil
                 </span>
                 <a
@@ -462,16 +462,16 @@ export function Carousel() {
             // Info do evento ativo
             <>
               <h2
-                className="text-white text-xl md:text-2xl leading-tight tracking-wide"
-                style={{ fontFamily: 'var(--font-outfit)', fontWeight: 500 }}>
+                className="text-xl md:text-2xl leading-tight tracking-wide"
+                style={{ fontFamily: 'var(--font-outfit)', fontWeight: 600, color: 'rgba(255,255,255,0.95)', lineHeight: 1.2 }}>
                 {activeItem.data.title}
               </h2>
-              <div className="flex flex-wrap items-center justify-center gap-4">
-                <span className="flex items-center gap-1.5 text-[#888] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              <div className="flex flex-wrap items-center justify-center gap-5">
+                <span className="flex items-center gap-1.5 text-sm" style={{ fontFamily: 'var(--font-dm-sans)', color: 'rgba(255,255,255,0.50)' }}>
                   <MapPin size={13} style={{ color: ACCENT_COLORS[eventColorIndex(activeItem, current)] }} />
                   {activeItem.data.city} · {activeItem.data.state}
                 </span>
-                <span className="flex items-center gap-1.5 text-[#888] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <span className="flex items-center gap-1.5 text-sm" style={{ fontFamily: 'var(--font-dm-sans)', color: 'rgba(255,255,255,0.50)' }}>
                   <Calendar size={13} style={{ color: ACCENT_COLORS[eventColorIndex(activeItem, current)] }} />
                   {formatDate(activeItem.data.date_start)}
                 </span>
@@ -498,9 +498,7 @@ export function Carousel() {
                   height:     '6px',
                   background: current === index
                     ? (item.type === 'anuncio' ? GOLD : ACCENT_COLORS[eventColorIndex(item, index)])
-                    : item.type === 'anuncio'
-                      ? `${GOLD}40`
-                      : 'rgba(255,255,255,0.2)',
+                    : 'rgba(255,255,255,0.18)',
                 }}
                 aria-label={`Ir para item ${index + 1}`}
               />

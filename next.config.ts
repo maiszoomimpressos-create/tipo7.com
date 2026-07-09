@@ -16,8 +16,8 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      // unsafe-eval removido — se o SDK do Mercado Pago parar de funcionar, reativar temporariamente
-      "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com",
+      // unsafe-eval necessário apenas em dev (React reconstrução de callstacks); removido em produção
+      `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''} https://sdk.mercadopago.com`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.supabase.co https://picsum.photos https://fastly.picsum.photos",
       "font-src 'self'",
