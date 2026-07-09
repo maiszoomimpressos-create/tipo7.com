@@ -25,6 +25,46 @@ interface Props {
 }
 
 // ---------------------------------------------------------------------------
+// Áudio de feedback
+// ---------------------------------------------------------------------------
+
+function playBeep(type: 'valid' | 'invalid') {
+  try {
+    const ctx  = new AudioContext()
+    const gain = ctx.createGain()
+    gain.connect(ctx.destination)
+
+    if (type === 'valid') {
+      // Dois bipes curtos ascendentes (aprovado)
+      [800, 1050].forEach((freq, i) => {
+        const osc = ctx.createOscillator()
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(freq, ctx.currentTime)
+        osc.connect(gain)
+        gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.13)
+        gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + i * 0.13 + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.13 + 0.12)
+        osc.start(ctx.currentTime + i * 0.13)
+        osc.stop(ctx.currentTime + i * 0.13 + 0.12)
+      })
+      setTimeout(() => ctx.close(), 400)
+    } else {
+      // Um bipe grave descendente (recusado)
+      const osc = ctx.createOscillator()
+      osc.type = 'sawtooth'
+      osc.frequency.setValueAtTime(380, ctx.currentTime)
+      osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.4)
+      osc.connect(gain)
+      gain.gain.setValueAtTime(0.35, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.45)
+      setTimeout(() => ctx.close(), 600)
+    }
+  } catch { /* AudioContext indisponível */ }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -79,6 +119,7 @@ export function ScannerClient({ eventoId, eventoTitle, operadorName }: Props) {
       })
       const data = await res.json() as ScanResult
 
+      playBeep(data.result === 'valid' ? 'valid' : 'invalid')
       setResult(data)
       setHistory(prev => [{ ...data, token, at: new Date() }, ...prev.slice(0, 49)])
 
