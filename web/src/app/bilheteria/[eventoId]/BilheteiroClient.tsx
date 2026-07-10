@@ -1153,10 +1153,10 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
                         style={{ background: '#1a1a1a', color: ACCENT }}>1</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-[11px] font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Instale o QZ Tray no computador
+                      Instale o QZ Tray
                     </p>
                     <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Programa gratuito que permite impressão silenciosa
+                      Programa gratuito para impressão silenciosa
                     </p>
                   </div>
                   <a href="https://qz.io/download/" target="_blank" rel="noreferrer"
@@ -1172,48 +1172,29 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
                         style={{ background: '#1a1a1a', color: ACCENT }}>2</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-[11px] font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Baixe o certificado do Tipo7
+                      Configure automaticamente
                     </p>
                     <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Arquivo que autoriza o site a imprimir sem pedir confirmação
+                      Baixe e execute este arquivo — ele faz tudo sozinho
                     </p>
                   </div>
-                  <a href="/api/qz/cert" download="tipo7-qztray.pem"
+                  <a href="/api/qz/setup" download="configurar-tipo7.bat"
                      className="shrink-0 text-[11px] px-3 py-1.5 rounded-lg font-semibold"
                      style={{ background: '#1a1a1a', color: ACCENT, border: `1px solid ${ACCENT}40`, fontFamily: 'var(--font-dm-sans)' }}>
-                    Baixar
+                    Baixar .bat
                   </a>
                 </div>
 
                 {/* Passo 3 */}
-                <div className="flex items-start gap-3 px-4 py-3 border-b" style={{ borderColor: '#1a1a1a' }}>
-                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
-                        style={{ background: '#1a1a1a', color: ACCENT }}>3</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-[11px] font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Adicione o certificado no QZ Tray
-                    </p>
-                    <p className="text-[#444] text-[10px] mt-1 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Clique no ícone do QZ Tray na bandeja do Windows →{' '}
-                      <span style={{ color: '#888' }}>Advanced</span> →{' '}
-                      <span style={{ color: '#888' }}>Site Manager</span> →{' '}
-                      clique no <span style={{ color: '#888' }}>+</span> →{' '}
-                      <span style={{ color: '#888' }}>Browse</span> →{' '}
-                      selecione o arquivo <span style={{ color: ACCENT }}>tipo7-qztray.pem</span> baixado
-                    </p>
-                  </div>
-                </div>
-
-                {/* Passo 4 */}
                 <div className="flex items-start gap-3 px-4 py-3">
                   <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
-                        style={{ background: '#1a1a1a', color: ACCENT }}>4</span>
+                        style={{ background: '#1a1a1a', color: ACCENT }}>3</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-[11px] font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                       Recarregue esta página
                     </p>
                     <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      O status deve ficar verde — configurado para sempre
+                      Status deve ficar verde — nunca mais pede confirmação
                     </p>
                   </div>
                   <button
