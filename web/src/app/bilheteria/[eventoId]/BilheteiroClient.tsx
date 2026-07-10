@@ -170,10 +170,13 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     if (metodo === 'pix') setDadosAbertos(true)
   }, [metodo])
 
-  // Imprime automaticamente ao chegar na tela de impressão (exceto "sem impressão")
+  // Imprime automaticamente ao chegar na tela de impressão e volta para nova venda
   useEffect(() => {
     if (etapa === 'impressao' && resultado && formato && formato !== 'nenhuma') {
-      const t = setTimeout(() => window.print(), 600)
+      const t = setTimeout(() => {
+        window.print()
+        handleNovaVenda()
+      }, 600)
       return () => clearTimeout(t)
     }
   }, [etapa, resultado, formato])
