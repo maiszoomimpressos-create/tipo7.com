@@ -91,8 +91,12 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const pixBroadcastRef  = useRef<object | null>(null)   // último payload PIX enviado
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const qzRef            = useRef<any>(null)
+  const qzStatusRef      = useRef<QzStatus>('idle')   // ref para leitura dentro de callbacks
 
   const [qzStatus, setQzStatus] = useState<QzStatus>('idle')
+
+  // Mantém o ref sincronizado para leitura dentro de timeouts/promises
+  useEffect(() => { qzStatusRef.current = qzStatus }, [qzStatus])
 
   const [formato,      setFormato]      = useState<PrintFormat | null>(null)
   const [setupAberto,  setSetupAberto]  = useState(false)
@@ -206,22 +210,19 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   }, [metodo])
 
   // Imprime automaticamente ao chegar na tela de impressão — QZ Tray (silencioso) ou window.print()
+  // qzStatus NÃO está nas deps: o timer não pode ser cancelado por mudança de status do QZ Tray.
+  // Usamos qzStatusRef para ler o status atual no momento em que o timer dispara.
   useEffect(() => {
     if (etapa !== 'impressao' || !resultado || !formato || formato === 'nenhuma') return
 
-    let cancelado = false
-
     const t = setTimeout(async () => {
-      if (cancelado) return
-
-      // Tenta QZ Tray primeiro (impressão silenciosa sem diálogo)
-      if (qzStatus === 'conectado' && qzRef.current) {
+      // Tenta QZ Tray (impressão silenciosa sem diálogo)
+      if (qzStatusRef.current === 'conectado' && qzRef.current) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const qrLib = await import('qrcode' as any)
           const { tickets, ticketName } = resultado
-          const isTermica = formato === 'termica80'
-          const pageW = isTermica ? '76mm' : '185mm'
+          const pageW = formato === 'termica80' ? '76mm' : '185mm'
 
           const cards = await Promise.all(tickets.map(async (tk: { id: string; slot_number: number; qr_token: string }) => {
             const qrUrl: string = await qrLib.toDataURL(tk.qr_token, { width: 200, margin: 1 })
@@ -251,7 +252,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           const printer = await qzRef.current.printers.getDefault()
           const config = qzRef.current.configs.create(printer)
           await qzRef.current.print(config, [{ type: 'html', format: 'plain', data: html }])
-          if (!cancelado) handleNovaVenda()
+          handleNovaVenda()
           return
         } catch (e) {
           console.warn('QZ Tray falhou, usando window.print():', e)
@@ -260,12 +261,12 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
 
       // Fallback: diálogo padrão do navegador
       window.print()
-      if (!cancelado) handleNovaVenda()
+      handleNovaVenda()
     }, 600)
 
-    return () => { cancelado = true; clearTimeout(t) }
+    return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [etapa, resultado, formato, qzStatus])
+  }, [etapa, resultado, formato])
 
   // Cria o canal Realtime ao montar — permite comunicação entre dispositivos
   useEffect(() => {
