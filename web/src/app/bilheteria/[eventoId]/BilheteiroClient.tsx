@@ -156,7 +156,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     return () => { document.getElementById('tipo7-print-css')?.remove() }
   }, [formato])
 
-  // Carrega QZ Tray via npm e conecta via WebSocket local
+  // Carrega QZ Tray via npm e conecta com certificado assinado pelo servidor
   useEffect(() => {
     async function conectar() {
       try {
@@ -164,8 +164,26 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
         const mod = await import('qz-tray' as any)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const qz: any = mod.default ?? mod
-        qz.security.setCertificatePromise((resolve: (v: string) => void) => resolve(''))
-        qz.security.setSignaturePromise(() => (resolve: (v: string) => void) => resolve(''))
+
+        // Certificado público: QZ Tray usa isso para identificar o site
+        qz.security.setCertificatePromise((resolve: (v: string) => void, reject: (e: unknown) => void) => {
+          fetch('/api/qz/cert').then(r => r.text()).then(resolve).catch(reject)
+        })
+
+        // Assinatura: o servidor assina com a chave privada para provar identidade
+        qz.security.setSignaturePromise((toSign: string) => {
+          return (resolve: (v: string) => void, reject: (e: unknown) => void) => {
+            fetch('/api/qz/sign', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ request: toSign }),
+            })
+              .then(r => r.json())
+              .then(d => resolve(d.signature))
+              .catch(reject)
+          }
+        })
+
         setQzStatus('conectando')
         await qz.websocket.connect({ retries: 2, delay: 1 })
         qzRef.current = qz
@@ -1085,63 +1103,150 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
             </div>
           )}
 
-          {/* Status do QZ Tray */}
-          <div className="rounded-2xl p-4 flex items-center justify-between gap-4"
+          {/* QZ Tray — status ou guia de instalação */}
+          <div className="rounded-2xl flex flex-col gap-0"
                style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full shrink-0" style={{
-                background: qzStatus === 'conectado' ? '#4ade80'
-                          : qzStatus === 'conectando' ? ACCENT
-                          : '#2a2a2a',
-              }} />
-              <div>
-                <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  QZ Tray — impressão silenciosa
-                </p>
-                <p className="text-[#444] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  {qzStatus === 'conectado'    && 'Conectado — zero cliques para imprimir'}
-                  {qzStatus === 'conectando'   && 'Conectando...'}
-                  {qzStatus === 'indisponivel' && 'Não detectado — instale e ative "Allow unsigned"'}
-                  {qzStatus === 'idle'         && 'Carregando...'}
-                </p>
+
+            {/* Cabeçalho com status */}
+            <div className="flex items-center justify-between gap-3 p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full shrink-0" style={{
+                  background: qzStatus === 'conectado' ? '#4ade80'
+                            : qzStatus === 'conectando' ? ACCENT
+                            : '#333',
+                }} />
+                <div>
+                  <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    QZ Tray — impressão silenciosa
+                  </p>
+                  <p className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    {qzStatus === 'conectado'    && '✓ Conectado — impressão automática sem diálogos'}
+                    {qzStatus === 'conectando'   && 'Conectando...'}
+                    {qzStatus === 'indisponivel' && 'Não instalado — siga os passos abaixo'}
+                    {qzStatus === 'idle'         && 'Carregando...'}
+                  </p>
+                </div>
               </div>
+              {qzStatus === 'indisponivel' && (
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="shrink-0 text-[11px] px-2.5 py-1 rounded-lg"
+                  style={{ background: '#1a1a1a', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  Verificar
+                </button>
+              )}
             </div>
-            {qzStatus === 'indisponivel' && (
-              <a
-                href="https://qz.io/download/"
-                target="_blank"
-                rel="noreferrer"
-                className="shrink-0 text-xs underline"
-                style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-              >
-                Instalar
-              </a>
+
+            {/* Guia passo a passo — só aparece quando não conectado */}
+            {(qzStatus === 'indisponivel') && (
+              <div className="border-t flex flex-col gap-0" style={{ borderColor: '#1a1a1a' }}>
+                {/* Passo 1 */}
+                <div className="flex items-start gap-3 px-4 py-3 border-b" style={{ borderColor: '#1a1a1a' }}>
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
+                        style={{ background: '#1a1a1a', color: ACCENT }}>1</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-[11px] font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Instale o QZ Tray no computador
+                    </p>
+                    <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Programa gratuito que permite impressão silenciosa
+                    </p>
+                  </div>
+                  <a href="https://qz.io/download/" target="_blank" rel="noreferrer"
+                     className="shrink-0 text-[11px] px-3 py-1.5 rounded-lg font-semibold"
+                     style={{ background: ACCENT, color: '#000', fontFamily: 'var(--font-dm-sans)' }}>
+                    Baixar
+                  </a>
+                </div>
+
+                {/* Passo 2 */}
+                <div className="flex items-start gap-3 px-4 py-3 border-b" style={{ borderColor: '#1a1a1a' }}>
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
+                        style={{ background: '#1a1a1a', color: ACCENT }}>2</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-[11px] font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Baixe o certificado do Tipo7
+                    </p>
+                    <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Arquivo que autoriza o site a imprimir sem pedir confirmação
+                    </p>
+                  </div>
+                  <a href="/api/qz/cert" download="tipo7-qztray.pem"
+                     className="shrink-0 text-[11px] px-3 py-1.5 rounded-lg font-semibold"
+                     style={{ background: '#1a1a1a', color: ACCENT, border: `1px solid ${ACCENT}40`, fontFamily: 'var(--font-dm-sans)' }}>
+                    Baixar
+                  </a>
+                </div>
+
+                {/* Passo 3 */}
+                <div className="flex items-start gap-3 px-4 py-3 border-b" style={{ borderColor: '#1a1a1a' }}>
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
+                        style={{ background: '#1a1a1a', color: ACCENT }}>3</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-[11px] font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Adicione o certificado no QZ Tray
+                    </p>
+                    <p className="text-[#444] text-[10px] mt-1 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Clique no ícone do QZ Tray na bandeja do Windows →{' '}
+                      <span style={{ color: '#888' }}>Advanced</span> →{' '}
+                      <span style={{ color: '#888' }}>Site Manager</span> →{' '}
+                      clique no <span style={{ color: '#888' }}>+</span> →{' '}
+                      <span style={{ color: '#888' }}>Browse</span> →{' '}
+                      selecione o arquivo <span style={{ color: ACCENT }}>tipo7-qztray.pem</span> baixado
+                    </p>
+                  </div>
+                </div>
+
+                {/* Passo 4 */}
+                <div className="flex items-start gap-3 px-4 py-3">
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
+                        style={{ background: '#1a1a1a', color: ACCENT }}>4</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-[11px] font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Recarregue esta página
+                    </p>
+                    <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      O status deve ficar verde — configurado para sempre
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="shrink-0 text-[11px] px-3 py-1.5 rounded-lg font-semibold"
+                    style={{ background: '#1a1a1a', color: '#4ade80', border: '1px solid #1f3a26', fontFamily: 'var(--font-dm-sans)' }}
+                  >
+                    Recarregar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Dropdown de impressoras — só quando conectado */}
+            {qzStatus === 'conectado' && printerList.length > 0 && (
+              <div className="border-t px-4 py-3" style={{ borderColor: '#1a1a1a' }}>
+                <p className="text-[#555] text-[11px] uppercase tracking-wider mb-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Impressora
+                </p>
+                <select
+                  value={printerSel}
+                  onChange={e => setPrinterSel(e.target.value)}
+                  className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
+                  style={{
+                    background:  '#111',
+                    border:      `1px solid ${ACCENT}40`,
+                    fontFamily:  'var(--font-dm-sans)',
+                    colorScheme: 'dark',
+                  }}
+                >
+                  {printerList.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
             )}
           </div>
-
-          {/* Dropdown de impressoras — só aparece quando QZ Tray está conectado */}
-          {qzStatus === 'conectado' && printerList.length > 0 && (
-            <div className="mt-3 flex flex-col gap-1.5">
-              <p className="text-[#555] text-[11px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Impressora
-              </p>
-              <select
-                value={printerSel}
-                onChange={e => setPrinterSel(e.target.value)}
-                className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
-                style={{
-                  background:  '#111',
-                  border:      `1px solid ${ACCENT}40`,
-                  fontFamily:  'var(--font-dm-sans)',
-                  colorScheme: 'dark',
-                }}
-              >
-                {printerList.map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-          )}
 
           {/* Botão abrir caixa */}
           <button type="button" onClick={salvarFormato}
