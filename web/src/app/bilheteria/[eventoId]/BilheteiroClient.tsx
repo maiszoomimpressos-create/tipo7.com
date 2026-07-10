@@ -868,13 +868,25 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
               {eventoTitle} • escolha o formato antes de abrir o caixa
             </p>
           </div>
-          {setupAberto && (
-            <button type="button" onClick={() => setSetupAberto(false)}
-              className="text-[#444] hover:text-white text-xs transition-colors"
-              style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              Cancelar
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={abrirSegundaTela}
+              title="Abrir segunda tela para o cliente"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
+              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <Monitor size={13} />
+              Segunda tela
             </button>
-          )}
+            {setupAberto && (
+              <button type="button" onClick={() => setSetupAberto(false)}
+                className="text-[#444] hover:text-white text-xs transition-colors"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Cancelar
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="max-w-md mx-auto w-full px-5 py-8 flex flex-col gap-8">
