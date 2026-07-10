@@ -17,6 +17,7 @@ const ACCENT = '#E8B84B'
 type MetodoPagamento = 'dinheiro' | 'pix' | 'cartao'
 type Etapa = 'venda' | 'pix' | 'dados' | 'impressao'
 type PrintFormat = 'a4' | 'termica80' | 'nenhuma'
+type QzStatus = 'idle' | 'conectando' | 'conectado' | 'indisponivel'
 
 const PRINT_FORMATS: { value: PrintFormat; label: string; sub: string; Icon: React.ElementType }[] = [
   { value: 'a4',       label: 'A4',          sub: 'Impressora comum',    Icon: FileText    },
@@ -88,6 +89,10 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const realtimeRef      = useRef<RealtimeChannel | null>(null)
   const segundaRef       = useRef<Window | null>(null)
   const pixBroadcastRef  = useRef<object | null>(null)   // último payload PIX enviado
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const qzRef            = useRef<any>(null)
+
+  const [qzStatus, setQzStatus] = useState<QzStatus>('idle')
 
   const [formato,      setFormato]      = useState<PrintFormat | null>(null)
   const [setupAberto,  setSetupAberto]  = useState(false)
@@ -143,6 +148,36 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     return () => { document.getElementById('tipo7-print-css')?.remove() }
   }, [formato])
 
+  // Carrega QZ Tray (Java bridge para impressão silenciosa) e tenta conectar
+  useEffect(() => {
+    function conectar() {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const qz = (window as any).qz
+      if (!qz) return
+      // Permite conexão não-assinada — o usuário deve ativar "Allow unsigned" no QZ Tray
+      qz.security.setCertificatePromise((resolve: (v: string) => void) => resolve(''))
+      qz.security.setSignaturePromise(() => (resolve: (v: string) => void) => resolve(''))
+      setQzStatus('conectando')
+      qz.websocket.connect({ retries: 2, delay: 1 })
+        .then(() => { qzRef.current = qz; setQzStatus('conectado') })
+        .catch(() => setQzStatus('indisponivel'))
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).qz) { conectar(); return }
+    const script = document.createElement('script')
+    script.src = 'https://cdn.qz.io/qz-tray/qz-tray.js'
+    script.onload = conectar
+    script.onerror = () => setQzStatus('indisponivel')
+    document.head.appendChild(script)
+
+    return () => {
+      if (qzRef.current?.websocket?.isActive?.()) {
+        qzRef.current.websocket.disconnect().catch(() => {})
+      }
+    }
+  }, [])
+
   function salvarFormato() {
     localStorage.setItem(`tipo7-impressora-${eventoId}`, formatoSel)
     setFormato(formatoSel)
@@ -170,16 +205,67 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     if (metodo === 'pix') setDadosAbertos(true)
   }, [metodo])
 
-  // Imprime automaticamente ao chegar na tela de impressão e volta para nova venda
+  // Imprime automaticamente ao chegar na tela de impressão — QZ Tray (silencioso) ou window.print()
   useEffect(() => {
-    if (etapa === 'impressao' && resultado && formato && formato !== 'nenhuma') {
-      const t = setTimeout(() => {
-        window.print()
-        handleNovaVenda()
-      }, 600)
-      return () => clearTimeout(t)
-    }
-  }, [etapa, resultado, formato])
+    if (etapa !== 'impressao' || !resultado || !formato || formato === 'nenhuma') return
+
+    let cancelado = false
+
+    const t = setTimeout(async () => {
+      if (cancelado) return
+
+      // Tenta QZ Tray primeiro (impressão silenciosa sem diálogo)
+      if (qzStatus === 'conectado' && qzRef.current) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const qrLib = await import('qrcode' as any)
+          const { tickets, ticketName } = resultado
+          const isTermica = formato === 'termica80'
+          const pageW = isTermica ? '76mm' : '185mm'
+
+          const cards = await Promise.all(tickets.map(async (tk: { id: string; slot_number: number; qr_token: string }) => {
+            const qrUrl: string = await qrLib.toDataURL(tk.qr_token, { width: 200, margin: 1 })
+            return `
+              <div style="width:${pageW};padding:8mm;font-family:sans-serif;box-sizing:border-box;page-break-after:always">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6mm">
+                  <div style="flex:1">
+                    <div style="color:#b8840a;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">Tipo7.com</div>
+                    <div style="font-size:14px;font-weight:700;margin-bottom:4px">${eventoTitle.replace(/</g, '&lt;')}</div>
+                    ${dataFormatada ? `<div style="font-size:10px;color:#555">${dataFormatada}</div>` : ''}
+                    ${eventoLocal ? `<div style="font-size:10px;color:#666">${eventoLocal.replace(/</g, '&lt;')}</div>` : ''}
+                  </div>
+                  <img src="${qrUrl}" style="width:85px;height:85px;flex-shrink:0"/>
+                </div>
+                <hr style="border:none;border-top:1px dashed #ccc;margin:6px 0"/>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+                  <div><div style="font-size:8px;color:#888;text-transform:uppercase">Tipo</div><div style="font-size:11px;font-weight:600">${ticketName.replace(/</g, '&lt;')}</div></div>
+                  <div><div style="font-size:8px;color:#888;text-transform:uppercase">Ingresso</div><div style="font-size:11px;font-weight:600">#${tk.slot_number} de ${tickets.length}</div></div>
+                  <div><div style="font-size:8px;color:#888;text-transform:uppercase">Portador</div><div style="font-size:11px;font-weight:600">${(nome || 'Consumidor').replace(/</g, '&lt;')}</div></div>
+                  ${cpf ? `<div><div style="font-size:8px;color:#888;text-transform:uppercase">CPF</div><div style="font-size:11px;font-weight:600">${cpf}</div></div>` : ''}
+                </div>
+                <div style="margin-top:7px;font-size:8px;color:#999;text-align:center">Ingresso válido — apresente o QR code na entrada • tipo7.com</div>
+              </div>`
+          }))
+
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page{margin:0}body{margin:0;padding:0}</style></head><body>${cards.join('')}</body></html>`
+          const printer = await qzRef.current.printers.getDefault()
+          const config = qzRef.current.configs.create(printer)
+          await qzRef.current.print(config, [{ type: 'html', format: 'plain', data: html }])
+          if (!cancelado) handleNovaVenda()
+          return
+        } catch (e) {
+          console.warn('QZ Tray falhou, usando window.print():', e)
+        }
+      }
+
+      // Fallback: diálogo padrão do navegador
+      window.print()
+      if (!cancelado) handleNovaVenda()
+    }, 600)
+
+    return () => { cancelado = true; clearTimeout(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etapa, resultado, formato, qzStatus])
 
   // Cria o canal Realtime ao montar — permite comunicação entre dispositivos
   useEffect(() => {
@@ -966,6 +1052,40 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
             </div>
           )}
 
+          {/* Status do QZ Tray */}
+          <div className="rounded-2xl p-4 flex items-center justify-between gap-4"
+               style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full shrink-0" style={{
+                background: qzStatus === 'conectado' ? '#4ade80'
+                          : qzStatus === 'conectando' ? ACCENT
+                          : '#2a2a2a',
+              }} />
+              <div>
+                <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  QZ Tray — impressão silenciosa
+                </p>
+                <p className="text-[#444] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  {qzStatus === 'conectado'    && 'Conectado — zero cliques para imprimir'}
+                  {qzStatus === 'conectando'   && 'Conectando...'}
+                  {qzStatus === 'indisponivel' && 'Não detectado — instale e ative "Allow unsigned"'}
+                  {qzStatus === 'idle'         && 'Carregando...'}
+                </p>
+              </div>
+            </div>
+            {qzStatus === 'indisponivel' && (
+              <a
+                href="https://qz.io/download/"
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 text-xs underline"
+                style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+              >
+                Instalar
+              </a>
+            )}
+          </div>
+
           {/* Botão abrir caixa */}
           <button type="button" onClick={salvarFormato}
             className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] transition-all hover:brightness-110 active:scale-[0.98]"
@@ -1018,11 +1138,14 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           <button
             type="button"
             onClick={() => { setSetupAberto(true); setFormatoSel(formato ?? 'a4') }}
-            title="Configurar impressora"
-            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
+            title={`Configurar impressora${qzStatus === 'conectado' ? ' • QZ Tray ativo' : ''}`}
+            className="relative w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
             style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}
           >
             <Settings size={14} />
+            {qzStatus === 'conectado' && (
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-green-400" />
+            )}
           </button>
           <Link
             href={`/dashboard/${eventoId}`}
