@@ -37,14 +37,31 @@ export async function GET(
   const { data: staff } = await admin
     .from('event_staff')
     .select(`
-      id, status, created_at,
-      profiles:user_id (id, full_name),
-      event_positions:event_position_id (id, name)
+      id, status, created_at, user_id,
+      profiles:user_id (id, full_name, user_code),
+      event_positions:event_position_id (id, name, event_position_permissions(permission))
     `)
     .eq('event_id', id)
     .order('created_at')
 
-  return NextResponse.json({ staff: staff ?? [] })
+  // Busca emails dos membros via Auth
+  const userIds = (staff ?? []).map((s: { user_id: string }) => s.user_id)
+  const emailMap: Record<string, string> = {}
+  if (userIds.length > 0) {
+    const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
+    for (const u of users) {
+      if (userIds.includes(u.id)) emailMap[u.id] = u.email ?? ''
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const staffComEmail = (staff ?? []).map((s: any) => ({
+    ...s,
+    email:    emailMap[s.user_id] ?? null,
+    userCode: (Array.isArray(s.profiles) ? s.profiles[0] : s.profiles)?.user_code ?? null,
+  }))
+
+  return NextResponse.json({ staff: staffComEmail })
 }
 
 // POST /api/eventos/[id]/equipe — adiciona membro por email

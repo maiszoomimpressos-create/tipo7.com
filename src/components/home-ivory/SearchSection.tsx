@@ -60,24 +60,24 @@ function EventCard({ evento, color }: { evento: EventoItem; color: string }) {
   return (
     <a
       href={`/evento/${evento.id}`}
-      className="group relative bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden hover:border-[#2a2a2a] hover:-translate-y-0.5 transition-all duration-200"
+      className="group t7-event-card block"
     >
       {/* Thumbnail */}
       <div
         className="relative w-full aspect-video flex items-center justify-center overflow-hidden"
-        style={{ background: `linear-gradient(135deg, #0d0d0d 0%, ${color}18 100%)` }}
+        style={{ background: `linear-gradient(135deg, var(--bg-raised) 0%, ${color}15 100%)` }}
       >
         {evento.banner_url
           ? <img src={evento.banner_url} alt={evento.title} className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500" />
-          : <ImageIcon size={28} style={{ color: `${color}30` }} />
+          : <ImageIcon size={28} style={{ color: `${color}50` }} />
         }
 
         {/* Linha colorida na base */}
         <div className="absolute bottom-0 left-0 right-0 h-[2px]"
-             style={{ background: `linear-gradient(90deg, transparent, ${color}80, transparent)` }} />
+             style={{ background: `linear-gradient(90deg, transparent, ${color}70, transparent)` }} />
 
         {/* Overlay hover */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all duration-200" />
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/8 transition-all duration-200" />
 
         {/* Badge de categoria */}
         {evento.category && (
@@ -85,7 +85,7 @@ function EventCard({ evento, color }: { evento: EventoItem; color: string }) {
             <span
               className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide"
               style={{
-                background:  `${color}22`,
+                background:  `${color}20`,
                 color,
                 border:      `1px solid ${color}40`,
                 fontFamily:  'var(--font-dm-sans)',
@@ -99,19 +99,19 @@ function EventCard({ evento, color }: { evento: EventoItem; color: string }) {
       {/* Informações */}
       <div className="p-4 flex flex-col gap-3">
         <h3
-          className="text-white text-sm font-medium leading-snug line-clamp-2 group-hover:text-[#E8B84B] transition-colors duration-200"
-          style={{ fontFamily: 'var(--font-outfit)' }}>
+          className="text-sm font-medium leading-snug line-clamp-2 transition-colors duration-200"
+          style={{ fontFamily: 'var(--font-outfit)', color: 'var(--text-1)' }}>
           {evento.title}
         </h3>
 
         <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1 text-[#555] text-[11px] flex-1 min-w-0"
-                style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="flex items-center gap-1 text-[11px] flex-1 min-w-0"
+                style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-3)' }}>
             <Calendar size={10} className="shrink-0" />
             {formatDate(evento.date_start)}
           </span>
-          <span className="flex items-center gap-1 text-[#555] text-[11px] flex-1 min-w-0 truncate"
-                style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="flex items-center gap-1 text-[11px] flex-1 min-w-0 truncate"
+                style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-3)' }}>
             <MapPin size={10} className="shrink-0" />
             {evento.city}
           </span>
@@ -121,9 +121,9 @@ function EventCard({ evento, color }: { evento: EventoItem; color: string }) {
         <div
           className="w-full py-2 rounded-xl text-center text-xs font-semibold"
           style={{
-            background: gratuito ? 'rgba(34,197,94,0.08)' : semPreco ? 'rgba(255,255,255,0.03)' : `${color}10`,
-            border:     gratuito ? '1px solid rgba(34,197,94,0.20)' : semPreco ? '1px solid rgba(255,255,255,0.06)' : `1px solid ${color}30`,
-            color:      gratuito ? '#4ade80' : semPreco ? '#444' : color,
+            background: gratuito ? 'rgba(34,197,94,0.08)' : semPreco ? 'var(--bg-raised)' : `${color}10`,
+            border:     gratuito ? '1px solid rgba(34,197,94,0.20)' : semPreco ? '1px solid var(--border-light)' : `1px solid ${color}30`,
+            color:      gratuito ? '#16a34a' : semPreco ? 'var(--text-3)' : color,
             fontFamily: 'var(--font-dm-sans)',
           }}>
           {formatPrice(evento.minPrice)}
@@ -137,16 +137,16 @@ function EventCard({ evento, color }: { evento: EventoItem; color: string }) {
 
 function CardSkeleton({ i }: { i: number }) {
   return (
-    <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden animate-pulse"
-         style={{ animationDelay: `${i * 80}ms` }}>
-      <div className="w-full aspect-video bg-[#141414]" />
+    <div className="rounded-2xl overflow-hidden animate-pulse"
+         style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', animationDelay: `${i * 80}ms` }}>
+      <div className="w-full aspect-video" style={{ background: 'var(--bg-raised)' }} />
       <div className="p-4 flex flex-col gap-3">
-        <div className="h-4 bg-[#1a1a1a] rounded-lg w-3/4" />
+        <div className="h-4 rounded-lg w-3/4" style={{ background: 'var(--border)' }} />
         <div className="flex gap-3">
-          <div className="h-3 bg-[#141414] rounded-lg flex-1" />
-          <div className="h-3 bg-[#141414] rounded-lg flex-1" />
+          <div className="h-3 rounded-lg flex-1" style={{ background: 'var(--border-light)' }} />
+          <div className="h-3 rounded-lg flex-1" style={{ background: 'var(--border-light)' }} />
         </div>
-        <div className="h-8 bg-[#141414] rounded-xl" />
+        <div className="h-8 rounded-xl" style={{ background: 'var(--bg-raised)' }} />
       </div>
     </div>
   )
@@ -200,17 +200,17 @@ export function SearchSection({ limit = 12 }: { limit?: number }) {
     <section className="px-4 pb-16 max-w-6xl mx-auto mt-10">
 
       {/* Divisor sutil */}
-      <div className="h-px bg-gradient-to-r from-transparent via-[#1e1e1e] to-transparent mb-10" />
+      <div className="t7-divider mb-10" />
 
       {/* Cabeçalho */}
       <div className="flex items-end justify-between mb-5">
         <div>
           <h2
-            className="text-white text-lg font-medium"
-            style={{ fontFamily: 'var(--font-outfit)' }}>
+            className="text-lg font-medium"
+            style={{ fontFamily: 'var(--font-outfit)', color: 'var(--text-1)' }}>
             Próximos eventos
           </h2>
-          <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <p className="text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-2)' }}>
             {city ? `Eventos em ${city}` : 'Encontre experiências perto de você'}
           </p>
         </div>
@@ -218,8 +218,8 @@ export function SearchSection({ limit = 12 }: { limit?: number }) {
         {temFiltro && (
           <button
             onClick={limparFiltros}
-            className="flex items-center gap-1 text-[#555] text-xs hover:text-[#E8B84B] transition-colors"
-            style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            className="t7-hover-gold flex items-center gap-1 text-xs transition-colors"
+            style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-3)' }}>
             <X size={12} />
             Limpar filtros
           </button>
@@ -228,19 +228,20 @@ export function SearchSection({ limit = 12 }: { limit?: number }) {
 
       {/* Barra de busca */}
       <div className="relative mb-4">
-        <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+        <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-3)' }} />
         <input
           type="text"
           value={q}
           onChange={e => handleSearch(e.target.value)}
           placeholder="Buscar eventos por nome..."
-          className="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl pl-10 pr-10 py-3 text-white text-sm outline-none focus:border-[#2e2e2e] placeholder:text-[#2e2e2e] transition-colors"
+          className="t7-input w-full pl-10 pr-10 py-3 text-sm"
           style={{ fontFamily: 'var(--font-dm-sans)' }}
         />
         {q && (
           <button
             onClick={() => { setQ(''); fetchEventos('', categoria, city) }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] hover:text-[#888] transition-colors">
+            className="t7-hover-text1 absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
+            style={{ color: 'var(--text-3)' }}>
             <X size={15} />
           </button>
         )}
@@ -258,9 +259,9 @@ export function SearchSection({ limit = 12 }: { limit?: number }) {
               onClick={() => setCategoria(cat.value)}
               className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-200"
               style={{
-                background:  ativo ? '#E8B84B' : 'rgba(255,255,255,0.04)',
-                color:       ativo ? '#070707' : '#666',
-                border:      ativo ? '1px solid #E8B84B' : '1px solid rgba(255,255,255,0.08)',
+                background:  ativo ? 'var(--gold)' : 'var(--bg-raised)',
+                color:       ativo ? '#1A1714' : 'var(--text-2)',
+                border:      ativo ? '1px solid var(--gold)' : '1px solid var(--border-light)',
                 fontFamily:  'var(--font-dm-sans)',
               }}>
               <span>{cat.emoji}</span>
@@ -295,19 +296,19 @@ export function SearchSection({ limit = 12 }: { limit?: number }) {
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <div
             className="w-14 h-14 rounded-2xl flex items-center justify-center"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #1a1a1a' }}>
-            <Search size={22} className="text-[#2a2a2a]" />
+            style={{ background: 'var(--bg-raised)', border: '1px solid var(--border-light)' }}>
+            <Search size={22} style={{ color: 'var(--text-3)' }} />
           </div>
           <div className="text-center">
-            <p className="text-[#444] text-sm mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            <p className="text-sm mb-1" style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-2)' }}>
               Nenhum evento encontrado
-              {q ? <span className="text-[#666]"> para <em className="not-italic text-white">"{q}"</em></span> : ''}
+              {q ? <span> para <em className="not-italic" style={{ color: 'var(--text-1)' }}>"{q}"</em></span> : ''}
             </p>
             {temFiltro && (
               <button
                 onClick={limparFiltros}
-                className="inline-flex items-center gap-1 text-[#E8B84B] text-xs hover:underline mt-2"
-                style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                className="inline-flex items-center gap-1 text-xs hover:underline mt-2"
+                style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--gold)' }}>
                 Limpar filtros
                 <ArrowRight size={11} />
               </button>

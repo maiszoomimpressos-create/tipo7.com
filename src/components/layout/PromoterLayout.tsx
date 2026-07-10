@@ -35,8 +35,8 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
 
       {/* ── Sidebar desktop ───────────────────────────────────────── */}
       <aside
-        className="hidden md:flex flex-col w-52 shrink-0 sticky top-[60px] self-start dk-scroll"
-        style={{ background: 'var(--dk-bg)', borderRight: '1px solid var(--dk-border)', height: 'calc(100vh - 60px)' }}
+        className="hidden md:flex flex-col w-52 shrink-0 sticky top-[60px] self-start bg-[#0a0a0a] border-r border-[#141414]"
+        style={{ height: 'calc(100vh - 60px)' }}
       >
         <nav className="flex flex-col gap-0.5 p-3 pt-5">
 
@@ -47,7 +47,7 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
               'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all',
               dashActive && !inEventos
                 ? 'bg-[#E8B84B]/10 text-[#E8B84B]'
-                : 'hover:bg-white/5'
+                : 'text-[#555] hover:text-[#bbb] hover:bg-white/5'
             )}
             style={{ fontFamily: 'var(--font-dm-sans)', fontWeight: dashActive && !inEventos ? 500 : 400 }}
           >
@@ -66,7 +66,7 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
               'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all w-full text-left',
               inEventos
                 ? 'bg-[#E8B84B]/10 text-[#E8B84B]'
-                : 'hover:bg-white/5'
+                : 'text-[#555] hover:text-[#bbb] hover:bg-white/5'
             )}
             style={{ fontFamily: 'var(--font-dm-sans)', fontWeight: inEventos ? 500 : 400 }}
           >
@@ -79,7 +79,7 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
           </button>
 
           {openEventos && (
-            <div className="ml-3 flex flex-col gap-0.5 pl-3" style={{ borderLeft: '1px solid var(--dk-border)' }}>
+            <div className="ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
 
               {/* Meus eventos */}
               {(() => {
@@ -89,7 +89,7 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
                     href="/criar-evento"
                     className={cn(
                       'flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-all',
-                      active ? 'text-[#E8B84B]' : 'hover:bg-white/5'
+                      active ? 'text-[#E8B84B]' : 'text-[#444] hover:text-[#bbb] hover:bg-white/5'
                     )}
                     style={{ fontFamily: 'var(--font-dm-sans)', fontWeight: active ? 500 : 400 }}
                   >
@@ -104,7 +104,7 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
                 onClick={() => setOpenMarketing(v => !v)}
                 className={cn(
                   'flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-all w-full text-left',
-                  inMarketing ? 'text-[#E8B84B]' : 'hover:bg-white/5'
+                  inMarketing ? 'text-[#E8B84B]' : 'text-[#444] hover:text-[#bbb] hover:bg-white/5'
                 )}
                 style={{ fontFamily: 'var(--font-dm-sans)', fontWeight: inMarketing ? 500 : 400 }}
               >
@@ -117,7 +117,7 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
               </button>
 
               {openMarketing && (
-                <div className="ml-3 flex flex-col gap-0.5 pl-3" style={{ borderLeft: '1px solid var(--dk-border)' }}>
+                <div className="ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
                   {MARKETING_SUB.map(({ label, href, icon: Icon }) => {
                     const active = pathname.startsWith(href)
                     return (
@@ -126,7 +126,7 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
                         href={href}
                         className={cn(
                           'flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-all',
-                          active ? 'text-[#E8B84B]' : 'hover:bg-white/5'
+                          active ? 'text-[#E8B84B]' : 'text-[#444] hover:text-[#bbb] hover:bg-white/5'
                         )}
                         style={{ fontFamily: 'var(--font-dm-sans)', fontWeight: active ? 500 : 400 }}
                       >
@@ -148,7 +148,7 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
               'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all w-full text-left',
               inConfig
                 ? 'bg-[#E8B84B]/10 text-[#E8B84B]'
-                : 'hover:bg-white/5'
+                : 'text-[#555] hover:text-[#bbb] hover:bg-white/5'
             )}
             style={{ fontFamily: 'var(--font-dm-sans)', fontWeight: inConfig ? 500 : 400 }}
           >
@@ -161,7 +161,7 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
           </button>
 
           {openConfig && (
-            <div className="ml-3 flex flex-col gap-0.5 pl-3" style={{ borderLeft: '1px solid var(--dk-border)' }}>
+            <div className="ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
               {CONFIG_SUB.map(({ label, href, icon: Icon }) => {
                 const active = pathname === href
                 return (
@@ -172,7 +172,7 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
                       'flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-all',
                       active
                         ? 'text-[#E8B84B]'
-                        : 'hover:bg-white/5'
+                        : 'text-[#444] hover:text-[#bbb] hover:bg-white/5'
                     )}
                     style={{ fontFamily: 'var(--font-dm-sans)', fontWeight: active ? 500 : 400 }}
                   >
@@ -191,16 +191,16 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col flex-1 min-w-0">
 
         {/* Tab bar horizontal — mobile */}
-        <div className="md:hidden flex" style={{ borderBottom: '1px solid var(--dk-border)', background: 'var(--dk-bg)' }}>
+        <div className="md:hidden flex border-b border-[#141414] bg-[#0a0a0a]">
           <a
             href="/minha-area"
             className={cn(
               'flex-1 flex items-center justify-center gap-2 py-3 text-sm border-b-2 transition-all',
               dashActive && !inEventos
                 ? 'text-[#E8B84B] border-[#E8B84B]'
-                : 'border-transparent'
+                : 'text-[#555] border-transparent hover:text-[#bbb]'
             )}
-            style={{ fontFamily: 'var(--font-dm-sans)', color: dashActive && !inEventos ? undefined : 'var(--dk-text-2)' }}
+            style={{ fontFamily: 'var(--font-dm-sans)' }}
           >
             <LayoutDashboard size={14} strokeWidth={2} />
             Dashboard
@@ -211,9 +211,9 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
               'flex-1 flex items-center justify-center gap-2 py-3 text-sm border-b-2 transition-all',
               inEventos
                 ? 'text-[#E8B84B] border-[#E8B84B]'
-                : 'border-transparent'
+                : 'text-[#555] border-transparent hover:text-[#bbb]'
             )}
-            style={{ fontFamily: 'var(--font-dm-sans)', color: inEventos ? undefined : 'var(--dk-text-2)' }}
+            style={{ fontFamily: 'var(--font-dm-sans)' }}
           >
             <CalendarRange size={14} strokeWidth={2} />
             Eventos
@@ -224,9 +224,9 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
               'flex-1 flex items-center justify-center gap-2 py-3 text-sm border-b-2 transition-all',
               inConfig
                 ? 'text-[#E8B84B] border-[#E8B84B]'
-                : 'border-transparent'
+                : 'text-[#555] border-transparent hover:text-[#bbb]'
             )}
-            style={{ fontFamily: 'var(--font-dm-sans)', color: inConfig ? undefined : 'var(--dk-text-2)' }}
+            style={{ fontFamily: 'var(--font-dm-sans)' }}
           >
             <Settings2 size={14} strokeWidth={2} />
             Configurar

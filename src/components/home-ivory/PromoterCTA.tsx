@@ -13,8 +13,8 @@ export function PromoterCTA() {
       <div
         className="relative rounded-3xl overflow-hidden px-8 py-14 md:px-16 md:py-20 flex flex-col items-center text-center gap-8"
         style={{
-          background: 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(232,184,75,0.10) 0%, transparent 70%), #0d0d0d',
-          border: '1px solid rgba(232,184,75,0.12)',
+          background: 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(201,151,58,0.12) 0%, transparent 70%), var(--dk-bg)',
+          border: '1px solid rgba(201,151,58,0.14)',
         }}
       >
         {/* Linha dourada decorativa no topo */}
@@ -38,14 +38,14 @@ export function PromoterCTA() {
         {/* Headline */}
         <div className="flex flex-col gap-3 max-w-xl">
           <h2
-            className="text-white text-3xl md:text-4xl leading-tight"
-            style={{ fontFamily: 'var(--font-outfit)', fontWeight: 600 }}>
+            className="text-3xl md:text-4xl leading-tight"
+            style={{ fontFamily: 'var(--font-outfit)', fontWeight: 600, color: 'var(--dk-text)' }}>
             Crie e venda ingressos<br />
-            <span style={{ color: '#E8B84B' }}>do seu jeito</span>
+            <span style={{ color: 'var(--gold)' }}>do seu jeito</span>
           </h2>
           <p
-            className="text-[#555] text-sm md:text-base leading-relaxed"
-            style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            className="text-sm md:text-base leading-relaxed"
+            style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--dk-text-2)' }}>
             Do cadastro à venda em minutos. Gerencie dias, atrações e ingressos com total controle.
           </p>
         </div>
@@ -57,9 +57,9 @@ export function PromoterCTA() {
               key={text}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm"
               style={{
-                background:  'rgba(255,255,255,0.03)',
-                border:      '1px solid rgba(255,255,255,0.07)',
-                color:       '#888',
+                background:  'rgba(255,255,255,0.04)',
+                border:      '1px solid var(--dk-border)',
+                color:       'var(--dk-text-2)',
                 fontFamily:  'var(--font-dm-sans)',
               }}>
               <Icon size={13} style={{ color: '#E8B84B' }} />
@@ -71,8 +71,8 @@ export function PromoterCTA() {
         {/* CTA */}
         <a
           href="/criar-evento"
-          className="group inline-flex items-center gap-2 px-8 py-3.5 rounded-xl font-semibold text-sm text-[#070707] hover:brightness-110 transition-all duration-200"
-          style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
+          className="t7-btn-primary group inline-flex items-center gap-2 px-8 py-3.5 rounded-xl font-semibold text-sm hover:brightness-110 transition-all duration-200"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
           Criar meu evento
           <ArrowRight size={15} strokeWidth={2.5} className="transition-transform duration-200 group-hover:translate-x-0.5" />
         </a>

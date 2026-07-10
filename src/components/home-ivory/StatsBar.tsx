@@ -59,13 +59,13 @@ function StatItem({
     <div className="flex flex-col items-center gap-1.5 px-6 md:px-10">
       <Icon size={16} style={{ color }} className="mb-0.5 opacity-70" />
       <span
-        className="text-3xl md:text-4xl font-bold text-white tabular-nums"
-        style={{ fontFamily: 'var(--font-syne)' }}>
+        className="text-3xl md:text-4xl font-bold tabular-nums"
+        style={{ color: 'var(--text-1)', fontFamily: 'var(--font-syne)' }}>
         {fmt(count)}{value > 0 ? suffix : ''}
       </span>
       <span
-        className="text-[#555] text-xs tracking-wide text-center leading-snug"
-        style={{ fontFamily: 'var(--font-dm-sans)' }}>
+        className="text-xs tracking-wide text-center leading-snug"
+        style={{ color: 'var(--text-3)', fontFamily: 'var(--font-dm-sans)' }}>
         {label}
       </span>
     </div>
@@ -75,7 +75,7 @@ function StatItem({
 // ─── Divisor vertical ─────────────────────────────────────────────────────────
 
 function Divider() {
-  return <div className="h-12 w-px bg-[#1c1c1c] hidden sm:block" />
+  return <div className="h-12 w-px hidden sm:block" style={{ background: 'var(--border)' }} />
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ export function StatsBar() {
     <div
       ref={ref}
       className="w-full py-10"
-      style={{ borderTop: '1px solid #111', borderBottom: '1px solid #111' }}
+      style={{ borderTop: '1px solid var(--border-light)', borderBottom: '1px solid var(--border-light)' }}
     >
       <div className="max-w-3xl mx-auto px-4 flex items-center justify-center flex-wrap gap-y-8">
 

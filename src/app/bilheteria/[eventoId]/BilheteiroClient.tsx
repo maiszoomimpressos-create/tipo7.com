@@ -1,11 +1,14 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import Link from 'next/link'
+import { createClient as createSupabase } from '@/lib/supabase/client'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import {
   Ticket, User, Phone, CreditCard, Calendar, Printer, ChevronDown,
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
-  Clock, Monitor,
+  Clock, Monitor, Settings, Download, FileText, Thermometer, MonitorOff,
 } from 'lucide-react'
 import QRCode from 'react-qr-code'
 
@@ -13,6 +16,14 @@ const ACCENT = '#E8B84B'
 
 type MetodoPagamento = 'dinheiro' | 'pix' | 'cartao'
 type Etapa = 'venda' | 'pix' | 'dados' | 'impressao'
+type PrintFormat = 'a4' | 'termica80' | 'nenhuma'
+type QzStatus = 'idle' | 'conectando' | 'conectado' | 'indisponivel'
+
+const PRINT_FORMATS: { value: PrintFormat; label: string; sub: string; Icon: React.ElementType }[] = [
+  { value: 'a4',       label: 'A4',          sub: 'Impressora comum',    Icon: FileText    },
+  { value: 'termica80', label: 'Térmica 80mm', sub: 'Impressora de cupom', Icon: Thermometer },
+  { value: 'nenhuma',  label: 'Sem impressão', sub: 'Somente tela',       Icon: MonitorOff  },
+]
 
 interface Ingresso {
   id:         string
@@ -75,22 +86,222 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const printRef         = useRef<HTMLDivElement>(null)
   const dropdownRef      = useRef<HTMLDivElement>(null)
   const pollingRef       = useRef<ReturnType<typeof setInterval> | null>(null)
-  const canalRef         = useRef<BroadcastChannel | null>(null)
+  const realtimeRef      = useRef<RealtimeChannel | null>(null)
   const segundaRef       = useRef<Window | null>(null)
   const pixBroadcastRef  = useRef<object | null>(null)   // último payload PIX enviado
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const qzRef            = useRef<any>(null)
+  const qzStatusRef      = useRef<QzStatus>('idle')   // ref para leitura dentro de callbacks
+
+  const [qzStatus,    setQzStatus]    = useState<QzStatus>('idle')
+  const [printerList, setPrinterList] = useState<string[]>([])
+  const [printerSel,  setPrinterSel]  = useState('')
+  const printerSelRef = useRef('')
+
+  // Mantém refs sincronizados para leitura dentro de timeouts/promises
+  useEffect(() => { qzStatusRef.current  = qzStatus  }, [qzStatus])
+  useEffect(() => { printerSelRef.current = printerSel }, [printerSel])
+
+  const [formato,      setFormato]      = useState<PrintFormat | null>(null)
+  const [setupAberto,  setSetupAberto]  = useState(false)
+  const [formatoSel,   setFormatoSel]   = useState<PrintFormat>('a4')
 
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
 
-  // Cria o canal ao montar e responde ao ping 'ready' da segunda tela
+  // Lê formato salvo ao montar
   useEffect(() => {
-    const canal = new BroadcastChannel(`tipo7-bilheteria-${eventoId}`)
-    canalRef.current = canal
-    canal.onmessage = (e: MessageEvent<{ type: string }>) => {
-      if (e.data.type === 'ready' && pixBroadcastRef.current) {
-        canal.postMessage(pixBroadcastRef.current)
+    const saved = localStorage.getItem(`tipo7-impressora-${eventoId}`) as PrintFormat | null
+    if (saved) { setFormato(saved); setFormatoSel(saved) }
+  }, [eventoId])
+
+  // Injeta CSS de impressão dinamicamente conforme o formato escolhido
+  useEffect(() => {
+    const prev = document.getElementById('tipo7-print-css')
+    if (prev) prev.remove()
+    if (!formato || formato === 'nenhuma') return
+    const s = document.createElement('style')
+    s.id = 'tipo7-print-css'
+    if (formato === 'termica80') {
+      s.textContent = `
+        @media print {
+          @page { size: 80mm auto; margin: 0; }
+          body { background: #fff !important; }
+          .ingresso-print {
+            width: 76mm !important; padding: 4mm 3mm !important;
+            border: none !important; border-radius: 0 !important;
+            background: #fff !important; color: #000 !important;
+            page-break-after: always; break-after: page;
+            box-shadow: none !important;
+          }
+          .ingresso-print * { color: #000 !important; }
+          .ingresso-print svg rect { fill: #000 !important; }
+        }
+      `
+    } else {
+      s.textContent = `
+        @media print {
+          @page { size: A4; margin: 15mm; }
+          body { background: #fff !important; }
+          .ingresso-print {
+            background: #fff !important; color: #000 !important;
+            border: 1px solid #ccc !important;
+            page-break-after: always; break-after: page;
+            box-shadow: none !important;
+          }
+          .ingresso-print * { color: #000 !important; }
+        }
+      `
+    }
+    document.head.appendChild(s)
+    return () => { document.getElementById('tipo7-print-css')?.remove() }
+  }, [formato])
+
+  // Carrega QZ Tray (Java bridge para impressão silenciosa) e tenta conectar
+  useEffect(() => {
+    function conectar() {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const qz = (window as any).qz
+      if (!qz) return
+      // Permite conexão não-assinada — o usuário deve ativar "Allow unsigned" no QZ Tray
+      qz.security.setCertificatePromise((resolve: (v: string) => void) => resolve(''))
+      qz.security.setSignaturePromise(() => (resolve: (v: string) => void) => resolve(''))
+      setQzStatus('conectando')
+      qz.websocket.connect({ retries: 2, delay: 1 })
+        .then(() => { qzRef.current = qz; setQzStatus('conectado') })
+        .catch(() => setQzStatus('indisponivel'))
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).qz) { conectar(); return }
+    const script = document.createElement('script')
+    script.src = 'https://cdn.qz.io/qz-tray/qz-tray.js'
+    script.onload = conectar
+    script.onerror = () => setQzStatus('indisponivel')
+    document.head.appendChild(script)
+
+    return () => {
+      if (qzRef.current?.websocket?.isActive?.()) {
+        qzRef.current.websocket.disconnect().catch(() => {})
       }
     }
-    return () => { canal.close(); canalRef.current = null }
+  }, [])
+
+  // Quando QZ Tray conecta, busca lista de impressoras e restaura seleção salva
+  useEffect(() => {
+    if (qzStatus !== 'conectado' || !qzRef.current) return
+    const qz = qzRef.current
+    qz.printers.find()
+      .then((printers: string | string[]) => {
+        const list = Array.isArray(printers) ? printers : [printers]
+        setPrinterList(list)
+        const saved = localStorage.getItem(`tipo7-qz-printer-${eventoId}`)
+        if (saved && list.includes(saved)) {
+          setPrinterSel(saved)
+        } else {
+          qz.printers.getDefault()
+            .then((def: string) => { if (def) setPrinterSel(def) })
+            .catch(() => {})
+        }
+      })
+      .catch(() => {})
+  }, [qzStatus, eventoId])
+
+  function salvarFormato() {
+    localStorage.setItem(`tipo7-impressora-${eventoId}`, formatoSel)
+    if (printerSel) localStorage.setItem(`tipo7-qz-printer-${eventoId}`, printerSel)
+    setFormato(formatoSel)
+    setSetupAberto(false)
+  }
+
+  function baixarAtalhoKiosk() {
+    const url = `${window.location.origin}/bilheteria/${eventoId}`
+    const bat = [
+      '@echo off',
+      'echo Abrindo Tipo7 Bilheteria em modo kiosk...',
+      `start "" "chrome" --kiosk-printing "${url}"`,
+      'if errorlevel 1 start "" "msedge" --kiosk-printing "${url}"',
+    ].join('\r\n')
+    const blob = new Blob([bat], { type: 'text/plain' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `tipo7-bilheteria.bat`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  // Abre dados do comprador automaticamente ao selecionar PIX (CPF obrigatório)
+  useEffect(() => {
+    if (metodo === 'pix') setDadosAbertos(true)
+  }, [metodo])
+
+  // Imprime automaticamente ao chegar na tela de impressão — QZ Tray (silencioso) ou window.print()
+  // qzStatus NÃO está nas deps: o timer não pode ser cancelado por mudança de status do QZ Tray.
+  // Usamos qzStatusRef para ler o status atual no momento em que o timer dispara.
+  useEffect(() => {
+    if (etapa !== 'impressao' || !resultado || !formato || formato === 'nenhuma') return
+
+    const t = setTimeout(async () => {
+      // Tenta QZ Tray (impressão silenciosa sem diálogo)
+      if (qzStatusRef.current === 'conectado' && qzRef.current) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const qrLib = await import('qrcode' as any)
+          const { tickets, ticketName } = resultado
+          const pageW = formato === 'termica80' ? '76mm' : '185mm'
+
+          const cards = await Promise.all(tickets.map(async (tk: { id: string; slot_number: number; qr_token: string }) => {
+            const qrUrl: string = await qrLib.toDataURL(tk.qr_token, { width: 200, margin: 1 })
+            return `
+              <div style="width:${pageW};padding:8mm;font-family:sans-serif;box-sizing:border-box;page-break-after:always">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6mm">
+                  <div style="flex:1">
+                    <div style="color:#b8840a;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">Tipo7.com</div>
+                    <div style="font-size:14px;font-weight:700;margin-bottom:4px">${eventoTitle.replace(/</g, '&lt;')}</div>
+                    ${dataFormatada ? `<div style="font-size:10px;color:#555">${dataFormatada}</div>` : ''}
+                    ${eventoLocal ? `<div style="font-size:10px;color:#666">${eventoLocal.replace(/</g, '&lt;')}</div>` : ''}
+                  </div>
+                  <img src="${qrUrl}" style="width:85px;height:85px;flex-shrink:0"/>
+                </div>
+                <hr style="border:none;border-top:1px dashed #ccc;margin:6px 0"/>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+                  <div><div style="font-size:8px;color:#888;text-transform:uppercase">Tipo</div><div style="font-size:11px;font-weight:600">${ticketName.replace(/</g, '&lt;')}</div></div>
+                  <div><div style="font-size:8px;color:#888;text-transform:uppercase">Ingresso</div><div style="font-size:11px;font-weight:600">#${tk.slot_number} de ${tickets.length}</div></div>
+                  <div><div style="font-size:8px;color:#888;text-transform:uppercase">Portador</div><div style="font-size:11px;font-weight:600">${(nome || 'Consumidor').replace(/</g, '&lt;')}</div></div>
+                  ${cpf ? `<div><div style="font-size:8px;color:#888;text-transform:uppercase">CPF</div><div style="font-size:11px;font-weight:600">${cpf}</div></div>` : ''}
+                </div>
+                <div style="margin-top:7px;font-size:8px;color:#999;text-align:center">Ingresso válido — apresente o QR code na entrada • tipo7.com</div>
+              </div>`
+          }))
+
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page{margin:0}body{margin:0;padding:0}</style></head><body>${cards.join('')}</body></html>`
+          const printer = printerSelRef.current || (await qzRef.current.printers.getDefault())
+          const config = qzRef.current.configs.create(printer)
+          await qzRef.current.print(config, [{ type: 'html', format: 'plain', data: html }])
+          handleNovaVenda()
+          return
+        } catch (e) {
+          console.warn('QZ Tray falhou, usando window.print():', e)
+        }
+      }
+
+      // Fallback: diálogo padrão do navegador
+      window.print()
+      handleNovaVenda()
+    }, 600)
+
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etapa, resultado, formato])
+
+  // Cria o canal Realtime ao montar — permite comunicação entre dispositivos
+  useEffect(() => {
+    const supabase = createSupabase()
+    const channel = supabase.channel(`bilheteria-${eventoId}`, {
+      config: { broadcast: { self: false } },
+    })
+    channel.subscribe()
+    realtimeRef.current = channel
+    return () => { supabase.removeChannel(channel); realtimeRef.current = null }
   }, [eventoId])
 
   // Abre segunda tela no mesmo browser
@@ -125,7 +336,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     return () => clearInterval(id)
   }, [etapa, pixData?.expiresAt])
 
-  // Confirmação do PIX — gera os ingressos e abre tela de dados do comprador
+  // Confirmação do PIX — gera os ingressos e vai direto para impressão
   const confirmarPix = useCallback(async (orderId: string) => {
     if (confirmando) return
     setConfirmando(true)
@@ -138,20 +349,38 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao confirmar pagamento')
-      setPendingTickets({ tickets: data.tickets, ticketName: data.ticketName })
-      setEtapa('dados')
+
+      // Salva dados do comprador silenciosamente (CPF já foi coletado antes do PIX)
+      if (nome || cpf || telefone || nascimento) {
+        fetch('/api/bilheteria/holders', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            orderId,
+            comprador: {
+              nome:       nome       || undefined,
+              cpf:        cpf.replace(/\D/g, '') || undefined,
+              telefone:   telefone.replace(/\D/g, '') || undefined,
+              nascimento: nascimento || undefined,
+            },
+          }),
+        }).catch(() => {})
+      }
+
+      setResultado({ tickets: data.tickets, ticketName: data.ticketName })
+      setEtapa('impressao')
       if (pollingRef.current) clearInterval(pollingRef.current)
       pixBroadcastRef.current = null
       const aprovMsg = { type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length }
       localStorage.setItem(`tipo7-pix-${eventoId}`, JSON.stringify(aprovMsg))
       setTimeout(() => localStorage.removeItem(`tipo7-pix-${eventoId}`), 5500)
-      canalRef.current?.postMessage(aprovMsg)
+      realtimeRef.current?.send({ type: 'broadcast', event: 'aprovado', payload: aprovMsg })
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao confirmar pagamento')
     } finally {
       setConfirmando(false)
     }
-  }, [confirmando, eventoId])
+  }, [confirmando, eventoId, nome, cpf, telefone, nascimento])
 
   // Polling de status do PIX a cada 5s
   useEffect(() => {
@@ -201,6 +430,11 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     if (metodo === 'pix' && total <= 0) {
       setErr('PIX não disponível para ingressos gratuitos.'); return
     }
+    if (metodo === 'pix' && cpf.replace(/\D/g, '').length !== 11) {
+      setErr('CPF do comprador é obrigatório para pagamento via PIX (exigência do Banco Central).')
+      setDadosAbertos(true)
+      return
+    }
 
     setSalvando(true)
     setErr(null)
@@ -233,7 +467,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
         }
         pixBroadcastRef.current = pixPayload
         localStorage.setItem(`tipo7-pix-${eventoId}`, JSON.stringify(pixPayload))
-        canalRef.current?.postMessage(pixPayload)
+        realtimeRef.current?.send({ type: 'broadcast', event: 'pix', payload: pixPayload })
       } catch (e: unknown) {
         setErr(e instanceof Error ? e.message : 'Erro ao gerar PIX')
       } finally {
@@ -300,7 +534,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     if (pollingRef.current) clearInterval(pollingRef.current)
     pixBroadcastRef.current = null
     localStorage.removeItem(`tipo7-pix-${eventoId}`)
-    canalRef.current?.postMessage({ type: 'cancelado' })
+    realtimeRef.current?.send({ type: 'broadcast', event: 'cancelado', payload: {} })
   }
 
   async function gerarNovoPix() {
@@ -312,7 +546,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     if (pollingRef.current) clearInterval(pollingRef.current)
     pixBroadcastRef.current = null
     localStorage.removeItem(`tipo7-pix-${eventoId}`)
-    canalRef.current?.postMessage({ type: 'cancelado' })
+    realtimeRef.current?.send({ type: 'broadcast', event: 'cancelado', payload: {} })
     await handleVender()
   }
 
@@ -740,6 +974,190 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     )
   }
 
+  // ── Tela de setup de impressão ────────────────────────────────────────────
+  if (!formato || setupAberto) {
+    return (
+      <div className="min-h-dvh bg-[#070707] flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-[#111] flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+               style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}30` }}>
+            <Settings size={16} style={{ color: ACCENT }} />
+          </div>
+          <div className="flex-1">
+            <h1 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
+              Configurar impressão
+            </h1>
+            <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {eventoTitle} • escolha o formato antes de abrir o caixa
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={abrirSegundaTela}
+              title="Abrir segunda tela para o cliente"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
+              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <Monitor size={13} />
+              Segunda tela
+            </button>
+            {setupAberto ? (
+              <button type="button" onClick={() => setSetupAberto(false)}
+                className="text-[#444] hover:text-white text-xs transition-colors"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Cancelar
+              </button>
+            ) : (
+              <Link
+                href={`/dashboard/${eventoId}`}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
+                style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
+              >
+                <ArrowLeft size={13} />
+                Voltar
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div className="max-w-md mx-auto w-full px-5 py-8 flex flex-col gap-8">
+
+          {/* Seleção de formato */}
+          <div className="flex flex-col gap-3">
+            <p className="text-[#555] text-xs uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Formato do papel
+            </p>
+            <div className="flex flex-col gap-2">
+              {PRINT_FORMATS.map(f => (
+                <button key={f.value} type="button" onClick={() => setFormatoSel(f.value)}
+                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all"
+                  style={{
+                    background: formatoSel === f.value ? `${ACCENT}10` : '#0d0d0d',
+                    border: `1px solid ${formatoSel === f.value ? ACCENT + '50' : '#1a1a1a'}`,
+                  }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                       style={{ background: formatoSel === f.value ? `${ACCENT}20` : '#111' }}>
+                    <f.Icon size={18} style={{ color: formatoSel === f.value ? ACCENT : '#444' }} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {f.label}
+                    </p>
+                    <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {f.sub}
+                    </p>
+                  </div>
+                  <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0"
+                       style={{ borderColor: formatoSel === f.value ? ACCENT : '#333',
+                                background:  formatoSel === f.value ? ACCENT : 'transparent' }}>
+                    {formatoSel === f.value && <div className="w-2 h-2 rounded-full bg-[#070707]" />}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Seção impressão silenciosa */}
+          {formatoSel !== 'nenhuma' && (
+            <div className="rounded-2xl p-4 flex flex-col gap-3"
+                 style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+              <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Impressão silenciosa (sem diálogo)
+              </p>
+              <p className="text-[#444] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Para imprimir automaticamente sem confirmar a cada venda, abra o Chrome com o atalho abaixo e configure a impressora desejada como <strong className="text-[#666]">padrão no Windows</strong>.
+              </p>
+              <div className="flex gap-2">
+                <button type="button" onClick={baixarAtalhoKiosk}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors hover:brightness-110"
+                  style={{ background: ACCENT, color: '#070707', fontFamily: 'var(--font-dm-sans)' }}>
+                  <Download size={13} />
+                  Baixar atalho .bat
+                </button>
+                <button type="button"
+                  onClick={() => navigator.clipboard.writeText(`chrome --kiosk-printing "${window.location.origin}/bilheteria/${eventoId}"`)}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
+                  style={{ border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
+                  <Copy size={13} />
+                  Copiar comando
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Status do QZ Tray */}
+          <div className="rounded-2xl p-4 flex items-center justify-between gap-4"
+               style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full shrink-0" style={{
+                background: qzStatus === 'conectado' ? '#4ade80'
+                          : qzStatus === 'conectando' ? ACCENT
+                          : '#2a2a2a',
+              }} />
+              <div>
+                <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  QZ Tray — impressão silenciosa
+                </p>
+                <p className="text-[#444] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  {qzStatus === 'conectado'    && 'Conectado — zero cliques para imprimir'}
+                  {qzStatus === 'conectando'   && 'Conectando...'}
+                  {qzStatus === 'indisponivel' && 'Não detectado — instale e ative "Allow unsigned"'}
+                  {qzStatus === 'idle'         && 'Carregando...'}
+                </p>
+              </div>
+            </div>
+            {qzStatus === 'indisponivel' && (
+              <a
+                href="https://qz.io/download/"
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 text-xs underline"
+                style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+              >
+                Instalar
+              </a>
+            )}
+          </div>
+
+          {/* Dropdown de impressoras — só aparece quando QZ Tray está conectado */}
+          {qzStatus === 'conectado' && printerList.length > 0 && (
+            <div className="mt-3 flex flex-col gap-1.5">
+              <p className="text-[#555] text-[11px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Impressora
+              </p>
+              <select
+                value={printerSel}
+                onChange={e => setPrinterSel(e.target.value)}
+                className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
+                style={{
+                  background:  '#111',
+                  border:      `1px solid ${ACCENT}40`,
+                  fontFamily:  'var(--font-dm-sans)',
+                  colorScheme: 'dark',
+                }}
+              >
+                {printerList.map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Botão abrir caixa */}
+          <button type="button" onClick={salvarFormato}
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] transition-all hover:brightness-110 active:scale-[0.98]"
+            style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+            <ShoppingBag size={18} />
+            {setupAberto ? 'Salvar e voltar' : 'Abrir caixa'}
+          </button>
+
+        </div>
+      </div>
+    )
+  }
+
   // ── Tela de venda ─────────────────────────────────────────────────────────
   return (
     <div className="min-h-dvh bg-[#070707]">
@@ -760,21 +1178,48 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
             {eventoTitle} • {operadorName}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={abrirSegundaTela}
-          title="Abrir segunda tela para o cliente"
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
-          style={{
-            background:  '#0d0d0d',
-            border:      '1px solid #1e1e1e',
-            color:       '#555',
-            fontFamily:  'var(--font-dm-sans)',
-          }}
-        >
-          <Monitor size={13} />
-          Segunda tela
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={abrirSegundaTela}
+            title="Abrir segunda tela para o cliente"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
+            style={{
+              background:  '#0d0d0d',
+              border:      '1px solid #1e1e1e',
+              color:       '#555',
+              fontFamily:  'var(--font-dm-sans)',
+            }}
+          >
+            <Monitor size={13} />
+            Segunda tela
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSetupAberto(true); setFormatoSel(formato ?? 'a4') }}
+            title={`Configurar impressora${qzStatus === 'conectado' ? ' • QZ Tray ativo' : ''}`}
+            className="relative w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
+            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}
+          >
+            <Settings size={14} />
+            {qzStatus === 'conectado' && (
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-green-400" />
+            )}
+          </button>
+          <Link
+            href={`/dashboard/${eventoId}`}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
+            style={{
+              background:  '#0d0d0d',
+              border:      '1px solid #1e1e1e',
+              color:       '#555',
+              fontFamily:  'var(--font-dm-sans)',
+            }}
+          >
+            <ArrowLeft size={13} />
+            Voltar
+          </Link>
+        </div>
       </div>
 
       <div className="max-w-lg mx-auto px-5 py-6 flex flex-col gap-6">
@@ -964,7 +1409,10 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
               <span className="text-[#555] text-xs uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 Dados do comprador
               </span>
-              <span className="text-[#333] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>(opcional)</span>
+              {metodo === 'pix'
+                ? <span className="text-red-400 text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>(CPF obrigatório para PIX)</span>
+                : <span className="text-[#333] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>(opcional)</span>
+              }
             </div>
             {dadosAbertos
               ? <ChevronUp size={13} className="text-[#444]" />
@@ -992,9 +1440,14 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
                   type="text"
                   value={cpf}
                   onChange={e => setCpf(formatarCPF(e.target.value))}
-                  placeholder="CPF"
-                  className="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl pl-9 pr-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
-                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                  placeholder={metodo === 'pix' ? 'CPF (obrigatório para PIX)' : 'CPF'}
+                  className="w-full bg-[#0d0d0d] rounded-xl pl-9 pr-4 py-3 text-white text-sm outline-none placeholder:text-[#383838]"
+                  style={{
+                    fontFamily: 'var(--font-dm-sans)',
+                    border: metodo === 'pix' && cpf.replace(/\D/g, '').length !== 11
+                      ? '1px solid rgba(248,113,113,0.4)'
+                      : '1px solid #1e1e1e',
+                  }}
                 />
               </div>
 

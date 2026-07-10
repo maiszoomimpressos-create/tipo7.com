@@ -34,40 +34,40 @@ function EventCard({ evento, color }: { evento: EventoItem; color: string }) {
   return (
     <a
       href={`/evento/${evento.id}`}
-      className="group t7-event-card block"
+      className="group relative bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden hover:border-[#2a2a2a] transition-all duration-200"
     >
       {/* Thumbnail 16:9 */}
       <div
         className="relative w-full aspect-video flex items-center justify-center overflow-hidden"
-        style={{ background: `linear-gradient(135deg, var(--bg-raised) 0%, ${color}15 100%)` }}
+        style={{ background: `linear-gradient(135deg, #0d0d0d 0%, ${color}18 100%)` }}
       >
         {evento.banner_url
           ? <img src={evento.banner_url} alt={evento.title} className="w-full h-full object-cover" />
-          : <ImageIcon size={28} style={{ color: `${color}50` }} />
+          : <ImageIcon size={28} style={{ color: `${color}30` }} />
         }
         <div
           className="absolute bottom-0 left-0 right-0 h-[2px]"
-          style={{ background: `linear-gradient(90deg, transparent, ${color}70, transparent)` }}
+          style={{ background: `linear-gradient(90deg, transparent, ${color}80, transparent)` }}
         />
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/8 transition-all duration-200" />
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-all duration-200" />
       </div>
 
       {/* Informações */}
       <div className="p-4 flex flex-col gap-3">
         <h3
-          className="text-sm font-medium leading-snug line-clamp-2 group-hover:text-[#C9973A] transition-colors duration-200"
-          style={{ fontFamily: 'var(--font-outfit)', color: 'var(--text-1)' }}>
+          className="text-white text-sm font-medium leading-snug line-clamp-2 group-hover:text-[#E8B84B] transition-colors duration-200"
+          style={{ fontFamily: 'var(--font-outfit)' }}>
           {evento.title}
         </h3>
 
         <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1 text-[11px] flex-1 min-w-0"
-                style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-3)' }}>
+          <span className="flex items-center gap-1 text-[#555] text-[11px] flex-1 min-w-0"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}>
             <Calendar size={10} className="shrink-0" />
             {formatDate(evento.date_start)}
           </span>
-          <span className="flex items-center gap-1 text-[11px] flex-1 min-w-0 truncate"
-                style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-3)' }}>
+          <span className="flex items-center gap-1 text-[#555] text-[11px] flex-1 min-w-0 truncate"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}>
             <MapPin size={10} className="shrink-0" />
             {evento.city}
           </span>
@@ -77,9 +77,9 @@ function EventCard({ evento, color }: { evento: EventoItem; color: string }) {
         <div
           className="w-full py-2 rounded-xl text-center text-xs font-semibold"
           style={{
-            background: gratuito ? 'rgba(34,197,94,0.08)' : semPreco ? 'var(--bg-raised)' : `${color}10`,
-            border:     gratuito ? '1px solid rgba(34,197,94,0.20)' : semPreco ? '1px solid var(--border-light)' : `1px solid ${color}30`,
-            color:      gratuito ? '#16a34a' : semPreco ? 'var(--text-3)' : color,
+            background: gratuito ? 'rgba(34,197,94,0.08)'   : semPreco ? 'rgba(255,255,255,0.03)' : `${color}10`,
+            border:     gratuito ? '1px solid rgba(34,197,94,0.20)' : semPreco ? '1px solid rgba(255,255,255,0.06)' : `1px solid ${color}30`,
+            color:      gratuito ? '#4ade80'                : semPreco ? '#444'                   : color,
             fontFamily: 'var(--font-dm-sans)',
           }}>
           {formatPrice(evento.minPrice)}
@@ -122,23 +122,23 @@ export async function EventGrid() {
     <section className="px-4 pb-16 max-w-6xl mx-auto mt-10">
 
       {/* Divisor sutil */}
-      <div className="t7-divider mb-10" />
+      <div className="h-px bg-gradient-to-r from-transparent via-[#1e1e1e] to-transparent mb-10" />
 
       {/* Cabeçalho */}
       <div className="flex items-end justify-between mb-6">
         <div>
-          <h2 className="text-lg font-medium"
-              style={{ fontFamily: 'var(--font-outfit)', color: 'var(--text-1)' }}>
+          <h2 className="text-white text-lg font-medium"
+              style={{ fontFamily: 'var(--font-outfit)' }}>
             Próximos eventos
           </h2>
-          <p className="text-xs mt-0.5"
-             style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-2)' }}>
+          <p className="text-[#444] text-xs mt-0.5"
+             style={{ fontFamily: 'var(--font-dm-sans)' }}>
             Encontre experiências perto de você
           </p>
         </div>
         <a href="/eventos"
-          className="t7-hover-gold text-xs"
-          style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-3)' }}>
+          className="text-[#555] text-xs hover:text-[#E8B84B] transition-colors"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
           Ver todos →
         </a>
       </div>

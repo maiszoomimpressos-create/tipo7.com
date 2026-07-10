@@ -62,14 +62,14 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
   const roleLabel = role === 'super_admin' ? 'Super Admin' : role === 'admin' ? 'Admin' : 'Membro'
 
   return (
-    <aside className="w-52 min-h-dvh flex flex-col shrink-0 dk-scroll" style={{ background: 'var(--dk-bg)', borderRight: '1px solid var(--dk-border)' }}>
+    <aside className="w-52 min-h-dvh flex flex-col shrink-0" style={{ background: '#0a0a0a', borderRight: '1px solid #141414' }}>
 
       {/* Logo */}
-      <div className="px-5 py-5" style={{ borderBottom: '1px solid var(--dk-border)' }}>
+      <div className="px-5 py-5 border-b border-[#141414]">
         <Link href="/" className="hover:opacity-80 transition-opacity">
           <p className="text-lg font-black" style={{ fontFamily: 'var(--font-syne)', color: ACCENT }}>tipo7</p>
         </Link>
-        <p className="text-[10px] tracking-widest uppercase mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--dk-text-3)' }}>
+        <p className="text-[#444] text-[10px] tracking-widest uppercase mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
           Painel Admin
         </p>
       </div>
@@ -87,7 +87,7 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
               className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all"
               style={{
                 background: active ? `${ACCENT}12` : 'transparent',
-                color:      active ? ACCENT : 'var(--dk-text-2)',
+                color:      active ? ACCENT : '#555',
                 fontFamily: 'var(--font-dm-sans)',
                 fontWeight: active ? 600 : 400,
               }}
@@ -122,7 +122,7 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
             </button>
 
             {playersExpanded && (
-              <div className="mt-0.5 ml-3 flex flex-col gap-0.5 pl-3" style={{ borderLeft: '1px solid var(--dk-border)' }}>
+              <div className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
                 {PLAYERS_SUB.map(({ href, label, icon: Icon }) => {
                   const active = pathname.startsWith(href)
                   return (
@@ -132,7 +132,7 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
                       className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all"
                       style={{
                         background: active ? `${ACCENT}12` : 'transparent',
-                        color:      active ? ACCENT : 'var(--dk-text-2)',
+                        color:      active ? ACCENT : '#555',
                         fontFamily: 'var(--font-dm-sans)',
                         fontWeight: active ? 600 : 400,
                       }}
@@ -171,7 +171,7 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
             </button>
 
             {entExpanded && (
-              <div className="mt-0.5 ml-3 flex flex-col gap-0.5 pl-3" style={{ borderLeft: '1px solid var(--dk-border)' }}>
+              <div className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
                 {ENT_SUB.filter(item => canSee(item.perm)).map(({ href, label, icon: Icon }) => {
                   const active = href === '/admin/eventos'
                     ? pathname === href
@@ -183,7 +183,7 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
                       className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all"
                       style={{
                         background: active ? `${ACCENT}12` : 'transparent',
-                        color:      active ? ACCENT : 'var(--dk-text-2)',
+                        color:      active ? ACCENT : '#555',
                         fontFamily: 'var(--font-dm-sans)',
                         fontWeight: active ? 600 : 400,
                       }}
@@ -222,7 +222,7 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
             </button>
 
             {finExpanded && (
-              <div className="mt-0.5 ml-3 flex flex-col gap-0.5 pl-3" style={{ borderLeft: '1px solid var(--dk-border)' }}>
+              <div className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
                 {FIN_SUB.map(({ href, label, icon: Icon }) => {
                   const active = pathname === href
                   return (
@@ -232,7 +232,7 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
                       className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all"
                       style={{
                         background: active ? `${ACCENT}12` : 'transparent',
-                        color:      active ? ACCENT : 'var(--dk-text-2)',
+                        color:      active ? ACCENT : '#555',
                         fontFamily: 'var(--font-dm-sans)',
                         fontWeight: active ? 600 : 400,
                       }}
@@ -250,7 +250,7 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
       </nav>
 
       {/* Usuário */}
-      <div className="p-4" style={{ borderTop: '1px solid var(--dk-border)' }}>
+      <div className="p-4 border-t border-[#141414]">
         <div className="flex items-center gap-2.5">
           <div
             className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-[#070707] shrink-0"
@@ -259,10 +259,10 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
             {userName.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-medium truncate" style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--dk-text)' }}>
+            <p className="text-white text-xs font-medium truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
               {userName.split(' ')[0]}
             </p>
-            <p className="text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--dk-text-3)' }}>{roleLabel}</p>
+            <p className="text-[#444] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>{roleLabel}</p>
           </div>
         </div>
       </div>

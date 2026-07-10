@@ -102,16 +102,17 @@ export async function POST(req: NextRequest) {
 
   const newStatus = STATUS_MAP[paymentData.status ?? ''] ?? 'pending'
 
-  // Idempotência: insert na tabela de webhooks processados.
-  // Código 23505 = violação de chave única = já processado → ignora.
-  // Qualquer outro erro = tabela inexistente ou problema real → loga e continua processando.
+  // Idempotência: chave composta (payment_id + status) para garantir que cada
+  // transição de status seja processada exatamente uma vez.
+  // MP envia 2 webhooks para PIX: pending (criação) e approved (pagamento).
+  // Com chave só em payment_id, o webhook de approved seria bloqueado pelo pending.
   const { error: idempotencyError } = await admin
     .from('processed_webhooks')
-    .insert({ payment_id: String(paymentId), order_id: orderId })
+    .insert({ payment_id: String(paymentId), order_id: orderId, mp_status: newStatus })
 
   if (idempotencyError) {
     if ((idempotencyError as { code?: string }).code === '23505') {
-      console.log(`[webhook] payment ${paymentId} já processado, ignorando`)
+      console.log(`[webhook] payment ${paymentId} status=${newStatus} já processado, ignorando`)
       return NextResponse.json({ ok: true })
     }
     console.error('[webhook] erro na tabela processed_webhooks (continuando):', idempotencyError)

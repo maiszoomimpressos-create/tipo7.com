@@ -10,7 +10,9 @@ node_modules/
 web/node_modules/
 
 # Build
+.next/
 web/.next/
+out/
 web/out/
 web/build/
 

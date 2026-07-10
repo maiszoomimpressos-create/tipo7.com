@@ -25,7 +25,8 @@ import { getMpToken } from '@/lib/mpToken'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 export async function POST(req: NextRequest) {
-  if (!(await rateLimit(getIp(req), 'checkout-pix', 10, 60_000))) return tooManyRequests()
+  const isLocal = process.env.NODE_ENV === 'development'
+  if (!(await rateLimit(getIp(req), 'checkout-pix', isLocal ? 100 : 10, 60_000))) return tooManyRequests()
 
   try {
     const { eventoId, items } = await req.json() as {
@@ -177,6 +178,8 @@ export async function POST(req: NextRequest) {
         external_reference: orderId,
         application_fee:    applicationFee,
       },
+      // Idempotência: garante que tentativas repetidas não criam cobranças duplicadas
+      requestOptions: { idempotencyKey: orderId },
     })
 
     // QR code para exibir como imagem; qr_code é o código copia-e-cola

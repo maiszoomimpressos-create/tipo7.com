@@ -36,7 +36,8 @@ type MpInstallmentsResponse = Array<{
 }>
 
 export async function POST(req: NextRequest) {
-  if (!(await rateLimit(getIp(req), 'checkout-card', 5, 60_000))) return tooManyRequests()
+  const isLocal = process.env.NODE_ENV === 'development'
+  if (!(await rateLimit(getIp(req), 'checkout-card', isLocal ? 100 : 5, 60_000))) return tooManyRequests()
 
   try {
     const {
@@ -208,6 +209,8 @@ export async function POST(req: NextRequest) {
         external_reference: orderId,
         application_fee:    applicationFee,
       },
+      // Idempotência: garante que tentativas repetidas não criam cobranças duplicadas
+      requestOptions: { idempotencyKey: orderId },
     })
 
     const paymentStatus = result.status ?? 'rejected'

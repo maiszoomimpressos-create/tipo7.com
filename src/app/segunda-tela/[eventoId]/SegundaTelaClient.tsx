@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import QRCode from 'react-qr-code'
 import { CheckCircle2, Clock, MapPin, Calendar, Ticket as TicketIcon } from 'lucide-react'
 
@@ -150,25 +151,26 @@ export function SegundaTelaClient({ eventoId, eventoTitle, slides, eventosProxim
     return () => window.removeEventListener('storage', onStorage)
   }, [eventoId])
 
-  // BroadcastChannel — escuta mensagens em tempo real da bilheteria
+  // Supabase Realtime — escuta mensagens em tempo real da bilheteria (funciona entre dispositivos)
   useEffect(() => {
-    const canal = new BroadcastChannel(`tipo7-bilheteria-${eventoId}`)
-    canal.postMessage({ type: 'ready' })
-    canal.onmessage = (e: MessageEvent<Payload>) => {
-      const msg = e.data
-      if (msg.type === 'pix') {
-        setPixPayload(msg as PixPayload)
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`bilheteria-${eventoId}`)
+      .on('broadcast', { event: 'pix' }, ({ payload }) => {
+        setPixPayload(payload as PixPayload)
         setEstado('pix')
-      } else if (msg.type === 'aprovado') {
-        setAprovadoPayload(msg as AprovadoPayload)
+      })
+      .on('broadcast', { event: 'aprovado' }, ({ payload }) => {
+        setAprovadoPayload(payload as AprovadoPayload)
         setEstado('aprovado')
         setTimeout(() => { setEstado('idle'); setAprovadoPayload(null) }, 8000)
-      } else if (msg.type === 'cancelado') {
+      })
+      .on('broadcast', { event: 'cancelado' }, () => {
         setEstado('idle')
         setPixPayload(null)
-      }
-    }
-    return () => canal.close()
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [eventoId])
 
   // Countdown do PIX — retorna ao idle automaticamente quando expira

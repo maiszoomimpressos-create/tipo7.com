@@ -70,6 +70,10 @@ export default function PixPage() {
       if (d.status === 'rejected' || d.status === 'cancelled') {
         if (pollingRef.current) clearInterval(pollingRef.current)
       }
+      // Para o polling se o PIX expirou (evita chamadas desnecessárias)
+      if (d.expiresAt && new Date(d.expiresAt) < new Date()) {
+        if (pollingRef.current) clearInterval(pollingRef.current)
+      }
     } catch {
       setError('Erro de conexão.')
     } finally {
@@ -92,9 +96,10 @@ export default function PixPage() {
     setTimeout(() => setCopied(false), 2500)
   }
 
+  const isExpired   = !!data?.expiresAt && new Date(data.expiresAt) < new Date() && data?.status !== 'approved'
   const isApproved  = data?.status === 'approved'
   const isRejected  = data?.status === 'rejected' || data?.status === 'cancelled'
-  const isPending   = !isApproved && !isRejected
+  const isPending   = !isApproved && !isRejected && !isExpired
 
   return (
     <div className="min-h-screen bg-[#070707] flex flex-col items-center justify-center px-4 py-12">
@@ -148,6 +153,29 @@ export default function PixPage() {
             <div className="w-6 h-6">
               <Loader2 size={20} className="animate-spin text-[#E8B84B]" />
             </div>
+          </div>
+        )}
+
+        {/* PIX expirado */}
+        {isExpired && !loading && (
+          <div className="text-center py-10 flex flex-col items-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center">
+              <Clock size={32} className="text-yellow-400" />
+            </div>
+            <div>
+              <p className="text-white text-base font-semibold mb-1" style={{ fontFamily: 'var(--font-outfit)' }}>
+                PIX expirado
+              </p>
+              <p className="text-[#555] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                O tempo para pagamento encerrou. Volte ao evento e tente novamente.
+              </p>
+            </div>
+            <a
+              href="/"
+              className="mt-2 text-sm font-semibold px-5 py-2.5 rounded-xl"
+              style={{ background: '#E8B84B', color: '#070707', fontFamily: 'var(--font-dm-sans)' }}>
+              Voltar ao início
+            </a>
           </div>
         )}
 

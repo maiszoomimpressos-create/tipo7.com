@@ -26,7 +26,8 @@ async function checkPermissaoBilheteria(userId: string, eventoId: string) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await rateLimit(getIp(req), 'bilheteria-pix', 10, 60_000))) return tooManyRequests()
+  const isLocal = process.env.NODE_ENV === 'development'
+  if (!(await rateLimit(getIp(req), 'bilheteria-pix', isLocal ? 100 : 10, 60_000))) return tooManyRequests()
 
   const supabase = await createClient()
   const admin    = createServiceClient()
@@ -48,7 +49,6 @@ export async function POST(req: NextRequest) {
   if (!ok) return NextResponse.json({ error: 'Sem permissão para este evento' }, { status: 403 })
   if (!ownerId) return NextResponse.json({ error: 'Promotor não encontrado' }, { status: 404 })
 
-  // Token MP do promotor
   const mpToken = await getMpToken(ownerId, admin)
   if (!mpToken) return NextResponse.json({ error: 'Promotor não tem conta Mercado Pago conectada.' }, { status: 422 })
 
@@ -84,7 +84,9 @@ export async function POST(req: NextRequest) {
   try {
     const { data: eventoInfo } = await admin.from('events').select('title').eq('id', eventoId).single()
 
-    const dateOfExpiration = new Date(Date.now() + 5 * 60 * 1000).toISOString()
+    const dateOfExpiration = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+
+    const compradorCpf = (comprador?.cpf ?? '').replace(/\D/g, '')
 
     const result = await payment.create({
       body: {
@@ -93,11 +95,11 @@ export async function POST(req: NextRequest) {
         statement_descriptor: 'TIPO7.COM',
         payment_method_id:    'pix',
         date_of_expiration: dateOfExpiration,
-        // payer = cliente presencial (desconhecido na hora da cobrança)
-        // Usar e-mail genérico de bilheteria — CPF do promotor no payer causava
-        // detecção de autopagamento no MP e bloqueio do QR
         payer: {
           email: `bilheteria+${orderId.slice(0, 8)}@tipo7.com`,
+          ...(compradorCpf.length === 11 && {
+            identification: { type: 'CPF', number: compradorCpf },
+          }),
         },
         additional_info: {
           items: [{

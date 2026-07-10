@@ -8,7 +8,7 @@ import { Footer }        from '@/components/layout/Footer'
 
 export default function Home() {
   return (
-    <div className="min-h-dvh bg-[#070707] flex flex-col">
+    <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)' }}>
       <Header />
       <main className="flex-1">
         <Carousel />

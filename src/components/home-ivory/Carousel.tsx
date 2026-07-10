@@ -180,8 +180,8 @@ export function Carousel() {
     >
       {/* Título da seção */}
       <p
-        className="text-center text-[#555555] text-xs tracking-widest uppercase mb-4"
-        style={{ fontFamily: 'var(--font-dm-sans)' }}
+        className="text-center text-xs tracking-widest uppercase mb-4"
+        style={{ color: 'var(--text-3)', fontFamily: 'var(--font-dm-sans)' }}
       >
         {filtrado && city ? `Eventos em destaque em ${city}` : 'Eventos em destaque'}
       </p>
@@ -438,15 +438,15 @@ export function Carousel() {
             // Info do slot "Anuncie aqui"
             <>
               <h2
-                className="text-white text-xl md:text-2xl leading-tight"
-                style={{ fontFamily: 'var(--font-outfit)', fontWeight: 500 }}>
+                className="text-xl md:text-2xl leading-tight"
+                style={{ fontFamily: 'var(--font-outfit)', fontWeight: 500, color: 'var(--text-1)' }}>
                 Publique seu evento no{' '}
                 <span style={{ color: GOLD }}>Tipo7</span>
               </h2>
               <div className="flex flex-wrap items-center justify-center gap-4">
                 <span
-                  className="text-[#666] text-sm"
-                  style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  className="text-sm"
+                  style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-2)' }}>
                   Venda ingressos, gerencie equipes e divulgue para todo o Brasil
                 </span>
                 <a
@@ -462,16 +462,16 @@ export function Carousel() {
             // Info do evento ativo
             <>
               <h2
-                className="text-white text-xl md:text-2xl leading-tight tracking-wide"
-                style={{ fontFamily: 'var(--font-outfit)', fontWeight: 500 }}>
+                className="text-xl md:text-2xl leading-tight tracking-wide"
+                style={{ fontFamily: 'var(--font-outfit)', fontWeight: 500, color: 'var(--text-1)' }}>
                 {activeItem.data.title}
               </h2>
               <div className="flex flex-wrap items-center justify-center gap-4">
-                <span className="flex items-center gap-1.5 text-[#888] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <span className="flex items-center gap-1.5 text-sm" style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-2)' }}>
                   <MapPin size={13} style={{ color: ACCENT_COLORS[eventColorIndex(activeItem, current)] }} />
                   {activeItem.data.city} · {activeItem.data.state}
                 </span>
-                <span className="flex items-center gap-1.5 text-[#888] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <span className="flex items-center gap-1.5 text-sm" style={{ fontFamily: 'var(--font-dm-sans)', color: 'var(--text-2)' }}>
                   <Calendar size={13} style={{ color: ACCENT_COLORS[eventColorIndex(activeItem, current)] }} />
                   {formatDate(activeItem.data.date_start)}
                 </span>
@@ -498,9 +498,7 @@ export function Carousel() {
                   height:     '6px',
                   background: current === index
                     ? (item.type === 'anuncio' ? GOLD : ACCENT_COLORS[eventColorIndex(item, index)])
-                    : item.type === 'anuncio'
-                      ? `${GOLD}40`
-                      : 'rgba(255,255,255,0.2)',
+                    : 'rgba(0,0,0,0.15)',
                 }}
                 aria-label={`Ir para item ${index + 1}`}
               />
