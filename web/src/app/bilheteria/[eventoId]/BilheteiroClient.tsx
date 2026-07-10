@@ -93,10 +93,14 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const qzRef            = useRef<any>(null)
   const qzStatusRef      = useRef<QzStatus>('idle')   // ref para leitura dentro de callbacks
 
-  const [qzStatus, setQzStatus] = useState<QzStatus>('idle')
+  const [qzStatus,    setQzStatus]    = useState<QzStatus>('idle')
+  const [printerList, setPrinterList] = useState<string[]>([])
+  const [printerSel,  setPrinterSel]  = useState('')
+  const printerSelRef = useRef('')
 
-  // Mantém o ref sincronizado para leitura dentro de timeouts/promises
-  useEffect(() => { qzStatusRef.current = qzStatus }, [qzStatus])
+  // Mantém refs sincronizados para leitura dentro de timeouts/promises
+  useEffect(() => { qzStatusRef.current  = qzStatus  }, [qzStatus])
+  useEffect(() => { printerSelRef.current = printerSel }, [printerSel])
 
   const [formato,      setFormato]      = useState<PrintFormat | null>(null)
   const [setupAberto,  setSetupAberto]  = useState(false)
@@ -182,8 +186,29 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     }
   }, [])
 
+  // Quando QZ Tray conecta, busca lista de impressoras e restaura seleção salva
+  useEffect(() => {
+    if (qzStatus !== 'conectado' || !qzRef.current) return
+    const qz = qzRef.current
+    qz.printers.find()
+      .then((printers: string | string[]) => {
+        const list = Array.isArray(printers) ? printers : [printers]
+        setPrinterList(list)
+        const saved = localStorage.getItem(`tipo7-qz-printer-${eventoId}`)
+        if (saved && list.includes(saved)) {
+          setPrinterSel(saved)
+        } else {
+          qz.printers.getDefault()
+            .then((def: string) => { if (def) setPrinterSel(def) })
+            .catch(() => {})
+        }
+      })
+      .catch(() => {})
+  }, [qzStatus, eventoId])
+
   function salvarFormato() {
     localStorage.setItem(`tipo7-impressora-${eventoId}`, formatoSel)
+    if (printerSel) localStorage.setItem(`tipo7-qz-printer-${eventoId}`, printerSel)
     setFormato(formatoSel)
     setSetupAberto(false)
   }
@@ -249,7 +274,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           }))
 
           const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page{margin:0}body{margin:0;padding:0}</style></head><body>${cards.join('')}</body></html>`
-          const printer = await qzRef.current.printers.getDefault()
+          const printer = printerSelRef.current || (await qzRef.current.printers.getDefault())
           const config = qzRef.current.configs.create(printer)
           await qzRef.current.print(config, [{ type: 'html', format: 'plain', data: html }])
           handleNovaVenda()
@@ -978,12 +1003,21 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
               <Monitor size={13} />
               Segunda tela
             </button>
-            {setupAberto && (
+            {setupAberto ? (
               <button type="button" onClick={() => setSetupAberto(false)}
                 className="text-[#444] hover:text-white text-xs transition-colors"
                 style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 Cancelar
               </button>
+            ) : (
+              <Link
+                href={`/dashboard/${eventoId}`}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
+                style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
+              >
+                <ArrowLeft size={13} />
+                Voltar
+              </Link>
             )}
           </div>
         </div>
@@ -1086,6 +1120,30 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
               </a>
             )}
           </div>
+
+          {/* Dropdown de impressoras — só aparece quando QZ Tray está conectado */}
+          {qzStatus === 'conectado' && printerList.length > 0 && (
+            <div className="mt-3 flex flex-col gap-1.5">
+              <p className="text-[#555] text-[11px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Impressora
+              </p>
+              <select
+                value={printerSel}
+                onChange={e => setPrinterSel(e.target.value)}
+                className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
+                style={{
+                  background:  '#111',
+                  border:      `1px solid ${ACCENT}40`,
+                  fontFamily:  'var(--font-dm-sans)',
+                  colorScheme: 'dark',
+                }}
+              >
+                {printerList.map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Botão abrir caixa */}
           <button type="button" onClick={salvarFormato}
