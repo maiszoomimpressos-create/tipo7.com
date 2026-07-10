@@ -131,7 +131,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     return () => clearInterval(id)
   }, [etapa, pixData?.expiresAt])
 
-  // Confirmação do PIX — gera os ingressos e abre tela de dados do comprador
+  // Confirmação do PIX — gera os ingressos e vai direto para impressão
   const confirmarPix = useCallback(async (orderId: string) => {
     if (confirmando) return
     setConfirmando(true)
@@ -144,8 +144,26 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao confirmar pagamento')
-      setPendingTickets({ tickets: data.tickets, ticketName: data.ticketName })
-      setEtapa('dados')
+
+      // Salva dados do comprador silenciosamente (CPF já foi coletado antes do PIX)
+      if (nome || cpf || telefone || nascimento) {
+        fetch('/api/bilheteria/holders', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            orderId,
+            comprador: {
+              nome:       nome       || undefined,
+              cpf:        cpf.replace(/\D/g, '') || undefined,
+              telefone:   telefone.replace(/\D/g, '') || undefined,
+              nascimento: nascimento || undefined,
+            },
+          }),
+        }).catch(() => {})
+      }
+
+      setResultado({ tickets: data.tickets, ticketName: data.ticketName })
+      setEtapa('impressao')
       if (pollingRef.current) clearInterval(pollingRef.current)
       pixBroadcastRef.current = null
       const aprovMsg = { type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length }
@@ -157,7 +175,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     } finally {
       setConfirmando(false)
     }
-  }, [confirmando, eventoId])
+  }, [confirmando, eventoId, nome, cpf, telefone, nascimento])
 
   // Polling de status do PIX a cada 5s
   useEffect(() => {
