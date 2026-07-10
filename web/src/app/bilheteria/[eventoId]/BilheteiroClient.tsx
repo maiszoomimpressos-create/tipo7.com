@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { createClient as createSupabase } from '@/lib/supabase/client'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import {
   Ticket, User, Phone, CreditCard, Calendar, Printer, ChevronDown,
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
@@ -83,7 +85,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const printRef         = useRef<HTMLDivElement>(null)
   const dropdownRef      = useRef<HTMLDivElement>(null)
   const pollingRef       = useRef<ReturnType<typeof setInterval> | null>(null)
-  const canalRef         = useRef<BroadcastChannel | null>(null)
+  const realtimeRef      = useRef<RealtimeChannel | null>(null)
   const segundaRef       = useRef<Window | null>(null)
   const pixBroadcastRef  = useRef<object | null>(null)   // último payload PIX enviado
 
@@ -168,16 +170,15 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     if (metodo === 'pix') setDadosAbertos(true)
   }, [metodo])
 
-  // Cria o canal ao montar e responde ao ping 'ready' da segunda tela
+  // Cria o canal Realtime ao montar — permite comunicação entre dispositivos
   useEffect(() => {
-    const canal = new BroadcastChannel(`tipo7-bilheteria-${eventoId}`)
-    canalRef.current = canal
-    canal.onmessage = (e: MessageEvent<{ type: string }>) => {
-      if (e.data.type === 'ready' && pixBroadcastRef.current) {
-        canal.postMessage(pixBroadcastRef.current)
-      }
-    }
-    return () => { canal.close(); canalRef.current = null }
+    const supabase = createSupabase()
+    const channel = supabase.channel(`bilheteria-${eventoId}`, {
+      config: { broadcast: { self: false } },
+    })
+    channel.subscribe()
+    realtimeRef.current = channel
+    return () => { supabase.removeChannel(channel); realtimeRef.current = null }
   }, [eventoId])
 
   // Abre segunda tela no mesmo browser
@@ -250,7 +251,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       const aprovMsg = { type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length }
       localStorage.setItem(`tipo7-pix-${eventoId}`, JSON.stringify(aprovMsg))
       setTimeout(() => localStorage.removeItem(`tipo7-pix-${eventoId}`), 5500)
-      canalRef.current?.postMessage(aprovMsg)
+      realtimeRef.current?.send({ type: 'broadcast', event: 'aprovado', payload: aprovMsg })
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao confirmar pagamento')
     } finally {
@@ -343,7 +344,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
         }
         pixBroadcastRef.current = pixPayload
         localStorage.setItem(`tipo7-pix-${eventoId}`, JSON.stringify(pixPayload))
-        canalRef.current?.postMessage(pixPayload)
+        realtimeRef.current?.send({ type: 'broadcast', event: 'pix', payload: pixPayload })
       } catch (e: unknown) {
         setErr(e instanceof Error ? e.message : 'Erro ao gerar PIX')
       } finally {
@@ -410,7 +411,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     if (pollingRef.current) clearInterval(pollingRef.current)
     pixBroadcastRef.current = null
     localStorage.removeItem(`tipo7-pix-${eventoId}`)
-    canalRef.current?.postMessage({ type: 'cancelado' })
+    realtimeRef.current?.send({ type: 'broadcast', event: 'cancelado', payload: {} })
   }
 
   async function gerarNovoPix() {
@@ -422,7 +423,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     if (pollingRef.current) clearInterval(pollingRef.current)
     pixBroadcastRef.current = null
     localStorage.removeItem(`tipo7-pix-${eventoId}`)
-    canalRef.current?.postMessage({ type: 'cancelado' })
+    realtimeRef.current?.send({ type: 'broadcast', event: 'cancelado', payload: {} })
     await handleVender()
   }
 
