@@ -81,3 +81,8 @@ body {
 .prose-legal a  { color: var(--gold); text-decoration: underline; }
 .prose-legal strong { color: #ccc; font-weight: 600; }
 .prose-legal hr { border-color: #1a1a1a; margin: 2em 0; }
+
+/* ── Impressão ─────────────────────────────────────────────────────────────── */
+@media print {
+  .no-print { display: none !important; }
+}

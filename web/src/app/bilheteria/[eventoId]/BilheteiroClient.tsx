@@ -6,7 +6,7 @@ import {
   Ticket, User, Phone, CreditCard, Calendar, Printer, ChevronDown,
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
-  Clock, Monitor,
+  Clock, Monitor, Settings, Download, FileText, Thermometer, MonitorOff,
 } from 'lucide-react'
 import QRCode from 'react-qr-code'
 
@@ -14,6 +14,13 @@ const ACCENT = '#E8B84B'
 
 type MetodoPagamento = 'dinheiro' | 'pix' | 'cartao'
 type Etapa = 'venda' | 'pix' | 'dados' | 'impressao'
+type PrintFormat = 'a4' | 'termica80' | 'nenhuma'
+
+const PRINT_FORMATS: { value: PrintFormat; label: string; sub: string; Icon: React.ElementType }[] = [
+  { value: 'a4',       label: 'A4',          sub: 'Impressora comum',    Icon: FileText    },
+  { value: 'termica80', label: 'Térmica 80mm', sub: 'Impressora de cupom', Icon: Thermometer },
+  { value: 'nenhuma',  label: 'Sem impressão', sub: 'Somente tela',       Icon: MonitorOff  },
+]
 
 interface Ingresso {
   id:         string
@@ -80,7 +87,81 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const segundaRef       = useRef<Window | null>(null)
   const pixBroadcastRef  = useRef<object | null>(null)   // último payload PIX enviado
 
+  const [formato,      setFormato]      = useState<PrintFormat | null>(null)
+  const [setupAberto,  setSetupAberto]  = useState(false)
+  const [formatoSel,   setFormatoSel]   = useState<PrintFormat>('a4')
+
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
+
+  // Lê formato salvo ao montar
+  useEffect(() => {
+    const saved = localStorage.getItem(`tipo7-impressora-${eventoId}`) as PrintFormat | null
+    if (saved) { setFormato(saved); setFormatoSel(saved) }
+  }, [eventoId])
+
+  // Injeta CSS de impressão dinamicamente conforme o formato escolhido
+  useEffect(() => {
+    const prev = document.getElementById('tipo7-print-css')
+    if (prev) prev.remove()
+    if (!formato || formato === 'nenhuma') return
+    const s = document.createElement('style')
+    s.id = 'tipo7-print-css'
+    if (formato === 'termica80') {
+      s.textContent = `
+        @media print {
+          @page { size: 80mm auto; margin: 0; }
+          body { background: #fff !important; }
+          .ingresso-print {
+            width: 76mm !important; padding: 4mm 3mm !important;
+            border: none !important; border-radius: 0 !important;
+            background: #fff !important; color: #000 !important;
+            page-break-after: always; break-after: page;
+            box-shadow: none !important;
+          }
+          .ingresso-print * { color: #000 !important; }
+          .ingresso-print svg rect { fill: #000 !important; }
+        }
+      `
+    } else {
+      s.textContent = `
+        @media print {
+          @page { size: A4; margin: 15mm; }
+          body { background: #fff !important; }
+          .ingresso-print {
+            background: #fff !important; color: #000 !important;
+            border: 1px solid #ccc !important;
+            page-break-after: always; break-after: page;
+            box-shadow: none !important;
+          }
+          .ingresso-print * { color: #000 !important; }
+        }
+      `
+    }
+    document.head.appendChild(s)
+    return () => { document.getElementById('tipo7-print-css')?.remove() }
+  }, [formato])
+
+  function salvarFormato() {
+    localStorage.setItem(`tipo7-impressora-${eventoId}`, formatoSel)
+    setFormato(formatoSel)
+    setSetupAberto(false)
+  }
+
+  function baixarAtalhoKiosk() {
+    const url = `${window.location.origin}/bilheteria/${eventoId}`
+    const bat = [
+      '@echo off',
+      'echo Abrindo Tipo7 Bilheteria em modo kiosk...',
+      `start "" "chrome" --kiosk-printing "${url}"`,
+      'if errorlevel 1 start "" "msedge" --kiosk-printing "${url}"',
+    ].join('\r\n')
+    const blob = new Blob([bat], { type: 'text/plain' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `tipo7-bilheteria.bat`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
 
   // Abre dados do comprador automaticamente ao selecionar PIX (CPF obrigatório)
   useEffect(() => {
@@ -769,6 +850,111 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     )
   }
 
+  // ── Tela de setup de impressão ────────────────────────────────────────────
+  if (!formato || setupAberto) {
+    return (
+      <div className="min-h-dvh bg-[#070707] flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-[#111] flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+               style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}30` }}>
+            <Settings size={16} style={{ color: ACCENT }} />
+          </div>
+          <div className="flex-1">
+            <h1 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
+              Configurar impressão
+            </h1>
+            <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {eventoTitle} • escolha o formato antes de abrir o caixa
+            </p>
+          </div>
+          {setupAberto && (
+            <button type="button" onClick={() => setSetupAberto(false)}
+              className="text-[#444] hover:text-white text-xs transition-colors"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Cancelar
+            </button>
+          )}
+        </div>
+
+        <div className="max-w-md mx-auto w-full px-5 py-8 flex flex-col gap-8">
+
+          {/* Seleção de formato */}
+          <div className="flex flex-col gap-3">
+            <p className="text-[#555] text-xs uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Formato do papel
+            </p>
+            <div className="flex flex-col gap-2">
+              {PRINT_FORMATS.map(f => (
+                <button key={f.value} type="button" onClick={() => setFormatoSel(f.value)}
+                  className="flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all"
+                  style={{
+                    background: formatoSel === f.value ? `${ACCENT}10` : '#0d0d0d',
+                    border: `1px solid ${formatoSel === f.value ? ACCENT + '50' : '#1a1a1a'}`,
+                  }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                       style={{ background: formatoSel === f.value ? `${ACCENT}20` : '#111' }}>
+                    <f.Icon size={18} style={{ color: formatoSel === f.value ? ACCENT : '#444' }} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {f.label}
+                    </p>
+                    <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {f.sub}
+                    </p>
+                  </div>
+                  <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0"
+                       style={{ borderColor: formatoSel === f.value ? ACCENT : '#333',
+                                background:  formatoSel === f.value ? ACCENT : 'transparent' }}>
+                    {formatoSel === f.value && <div className="w-2 h-2 rounded-full bg-[#070707]" />}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Seção impressão silenciosa */}
+          {formatoSel !== 'nenhuma' && (
+            <div className="rounded-2xl p-4 flex flex-col gap-3"
+                 style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+              <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Impressão silenciosa (sem diálogo)
+              </p>
+              <p className="text-[#444] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Para imprimir automaticamente sem confirmar a cada venda, abra o Chrome com o atalho abaixo e configure a impressora desejada como <strong className="text-[#666]">padrão no Windows</strong>.
+              </p>
+              <div className="flex gap-2">
+                <button type="button" onClick={baixarAtalhoKiosk}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors hover:brightness-110"
+                  style={{ background: ACCENT, color: '#070707', fontFamily: 'var(--font-dm-sans)' }}>
+                  <Download size={13} />
+                  Baixar atalho .bat
+                </button>
+                <button type="button"
+                  onClick={() => navigator.clipboard.writeText(`chrome --kiosk-printing "${window.location.origin}/bilheteria/${eventoId}"`)}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
+                  style={{ border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
+                  <Copy size={13} />
+                  Copiar comando
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Botão abrir caixa */}
+          <button type="button" onClick={salvarFormato}
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] transition-all hover:brightness-110 active:scale-[0.98]"
+            style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+            <ShoppingBag size={18} />
+            {setupAberto ? 'Salvar e voltar' : 'Abrir caixa'}
+          </button>
+
+        </div>
+      </div>
+    )
+  }
+
   // ── Tela de venda ─────────────────────────────────────────────────────────
   return (
     <div className="min-h-dvh bg-[#070707]">
@@ -804,6 +990,15 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           >
             <Monitor size={13} />
             Segunda tela
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSetupAberto(true); setFormatoSel(formato ?? 'a4') }}
+            title="Configurar impressora"
+            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
+            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}
+          >
+            <Settings size={14} />
           </button>
           <Link
             href={`/dashboard/${eventoId}`}
