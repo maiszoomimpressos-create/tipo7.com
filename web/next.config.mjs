@@ -10,7 +10,7 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://cdn.qz.io",
+      "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.supabase.co https://picsum.photos https://fastly.picsum.photos",
       "font-src 'self'",

@@ -156,28 +156,26 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     return () => { document.getElementById('tipo7-print-css')?.remove() }
   }, [formato])
 
-  // Carrega QZ Tray (Java bridge para impressão silenciosa) e tenta conectar
+  // Carrega QZ Tray via npm e conecta via WebSocket local
   useEffect(() => {
-    function conectar() {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const qz = (window as any).qz
-      if (!qz) return
-      // Permite conexão não-assinada — o usuário deve ativar "Allow unsigned" no QZ Tray
-      qz.security.setCertificatePromise((resolve: (v: string) => void) => resolve(''))
-      qz.security.setSignaturePromise(() => (resolve: (v: string) => void) => resolve(''))
-      setQzStatus('conectando')
-      qz.websocket.connect({ retries: 2, delay: 1 })
-        .then(() => { qzRef.current = qz; setQzStatus('conectado') })
-        .catch(() => setQzStatus('indisponivel'))
+    async function conectar() {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mod = await import('qz-tray' as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const qz: any = mod.default ?? mod
+        qz.security.setCertificatePromise((resolve: (v: string) => void) => resolve(''))
+        qz.security.setSignaturePromise(() => (resolve: (v: string) => void) => resolve(''))
+        setQzStatus('conectando')
+        await qz.websocket.connect({ retries: 2, delay: 1 })
+        qzRef.current = qz
+        setQzStatus('conectado')
+      } catch {
+        setQzStatus('indisponivel')
+      }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if ((window as any).qz) { conectar(); return }
-    const script = document.createElement('script')
-    script.src = 'https://cdn.qz.io/qz-tray/qz-tray.js'
-    script.onload = conectar
-    script.onerror = () => setQzStatus('indisponivel')
-    document.head.appendChild(script)
+    conectar()
 
     return () => {
       if (qzRef.current?.websocket?.isActive?.()) {
