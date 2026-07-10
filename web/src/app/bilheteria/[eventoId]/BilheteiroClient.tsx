@@ -170,6 +170,14 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     if (metodo === 'pix') setDadosAbertos(true)
   }, [metodo])
 
+  // Imprime automaticamente ao chegar na tela de impressão (exceto "sem impressão")
+  useEffect(() => {
+    if (etapa === 'impressao' && resultado && formato && formato !== 'nenhuma') {
+      const t = setTimeout(() => window.print(), 600)
+      return () => clearTimeout(t)
+    }
+  }, [etapa, resultado, formato])
+
   // Cria o canal Realtime ao montar — permite comunicação entre dispositivos
   useEffect(() => {
     const supabase = createSupabase()
