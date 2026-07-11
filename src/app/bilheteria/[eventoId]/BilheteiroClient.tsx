@@ -97,7 +97,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const [printerList, setPrinterList] = useState<string[]>([])
   const [printerSel,  setPrinterSel]  = useState('')
   const printerSelRef = useRef('')
-  const [setupStep,   setSetupStep]   = useState<0|1|2>(0)
+  const [qzLoaded,    setQzLoaded]    = useState(false)
 
   // Mantém refs sincronizados para leitura dentro de timeouts/promises
   useEffect(() => { qzStatusRef.current  = qzStatus  }, [qzStatus])
@@ -180,10 +180,10 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   // Tenta conectar ao QZ Tray; reseta estado anterior se necessário
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function tentarConectar(qz: any) {
-    try { await qz.websocket.disconnect() } catch { /* já desconectado */ }
+    try { qz.websocket.disconnect() } catch { /* já desconectado */ }
     setQzStatus('conectando')
     try {
-      await qz.websocket.connect({ retries: 3, delay: 1 })
+      await qz.websocket.connect({ retries: 1, delay: 0 })
       qzRef.current = qz
       setQzStatus('conectado')
     } catch {
@@ -199,6 +199,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       const qz: any = (window as any).qz
       if (!qz) return
       configurarSeguranca(qz)
+      setQzLoaded(true)
       tentarConectar(qz)
     }
 
@@ -222,27 +223,22 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Polling: quando usuário baixou o .bat (setupStep=2), tenta reconectar a cada 2s
+  // Polling contínuo desde que qz-tray.js carregou — detecta QZ Tray assim que iniciar
   useEffect(() => {
-    if (setupStep < 2) return
+    if (!qzLoaded) return
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const qz: any = (window as any).qz
     if (!qz) return
 
-    // Tenta imediatamente na primeira vez
-    if (qzStatusRef.current !== 'conectado' && qzStatusRef.current !== 'conectando') {
-      tentarConectar(qz)
-    }
-
     const id = setInterval(() => {
       if (qzStatusRef.current === 'conectado' || qzStatusRef.current === 'conectando') return
       tentarConectar(qz)
-    }, 2000)
+    }, 1500)
 
     return () => clearInterval(id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setupStep])
+  }, [qzLoaded])
 
   // Quando QZ Tray conecta, busca lista de impressoras e restaura seleção salva
   useEffect(() => {
@@ -1152,20 +1148,19 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
               </>
             )}
 
-            {/* Aguardando após clicar */}
-            {qzStatus !== 'conectado' && setupStep >= 2 && (
+            {/* Conectando */}
+            {qzStatus === 'conectando' && (
               <div className="flex items-center gap-2">
                 <Loader2 size={13} className="animate-spin shrink-0" style={{ color: ACCENT }} />
                 <p className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Aguardando QZ Tray iniciar...
+                  Aguardando QZ Tray...
                 </p>
               </div>
             )}
 
-            {/* Botão de configuração */}
-            {qzStatus !== 'conectado' && setupStep < 2 && (
+            {/* Botão de configuração — sempre visível enquanto não conectado */}
+            {(qzStatus === 'idle' || qzStatus === 'indisponivel') && (
               <a href="/api/qz/setup" download="configurar-tipo7.bat"
-                onClick={() => setSetupStep(2)}
                 className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
                 style={{ background: ACCENT, color: '#000', fontFamily: 'var(--font-dm-sans)' }}>
                 <Download size={14} />

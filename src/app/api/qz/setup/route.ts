@@ -44,7 +44,7 @@ if "%QZEXE%"=="" (
     )
     "%TEMP%\\qz-inst.exe" /S
     echo        Aguardando instalacao terminar...
-    timeout /t 15 /nobreak >nul
+    timeout /t 10 /nobreak >nul
     del "%TEMP%\\qz-inst.exe" >nul 2>&1
     for %%P in (
         "%ProgramFiles%\\QZ Tray\\qz-tray.exe"
@@ -71,24 +71,24 @@ echo        Certificado gravado.
 :: ── PASSO 4: Reiniciar QZ Tray e testar ──────────────────────────────────
 echo  [4/4] Reiniciando QZ Tray e testando...
 taskkill /f /im qz-tray.exe >nul 2>&1
-timeout /t 2 /nobreak >nul
+timeout /t 1 /nobreak >nul
 start "" "%QZEXE%"
 echo        Aguardando QZ Tray iniciar...
-timeout /t 6 /nobreak >nul
+timeout /t 4 /nobreak >nul
 
 :: Teste 1: processo rodando?
 tasklist /fi "imagename eq qz-tray.exe" 2>nul | find /i "qz-tray.exe" >nul
 if errorlevel 1 (
     echo        Processo nao detectado, tentando novamente...
     start "" "%QZEXE%"
-    timeout /t 6 /nobreak >nul
+    timeout /t 4 /nobreak >nul
 )
 
 :: Teste 2: porta 8181 respondendo?
 netstat -an 2>nul | find ":8181" | find "LISTEN" >nul
 if errorlevel 1 (
     echo        Aguardando porta 8181...
-    timeout /t 5 /nobreak >nul
+    timeout /t 3 /nobreak >nul
     netstat -an 2>nul | find ":8181" | find "LISTEN" >nul
     if errorlevel 1 (
         echo        [AVISO] Porta 8181 ainda nao responde. QZ Tray pode demorar alguns segundos.
@@ -105,7 +105,7 @@ echo   Pronto! Volte ao navegador.
 echo   A pagina vai conectar automaticamente.
 echo  ================================================
 echo.
-timeout /t 5 /nobreak >nul
+timeout /t 2 /nobreak >nul
 `
 
 export async function GET() {
