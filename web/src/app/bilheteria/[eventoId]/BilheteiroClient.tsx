@@ -160,6 +160,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   // Configura certificado e assinatura — chamado uma vez quando o script carrega
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function configurarSeguranca(qz: any) {
+    qz.security.setSignatureAlgorithm('SHA512')
     qz.security.setCertificatePromise((resolve: (v: string) => void, reject: (e: unknown) => void) => {
       fetch('/api/qz/cert').then(r => r.text()).then(resolve).catch(reject)
     })
