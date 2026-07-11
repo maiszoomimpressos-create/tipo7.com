@@ -1146,64 +1146,28 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
 
             {/* Guia passo a passo — só aparece quando não conectado */}
             {(qzStatus === 'indisponivel') && (
-              <div className="border-t flex flex-col gap-0" style={{ borderColor: '#1a1a1a' }}>
-                {/* Passo 1 */}
-                <div className="flex items-start gap-3 px-4 py-3 border-b" style={{ borderColor: '#1a1a1a' }}>
-                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
-                        style={{ background: '#1a1a1a', color: ACCENT }}>1</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-[11px] font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Instale o QZ Tray
-                    </p>
-                    <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Programa gratuito para impressão silenciosa
-                    </p>
-                  </div>
-                  <a href="https://qz.io/download/" target="_blank" rel="noreferrer"
-                     className="shrink-0 text-[11px] px-3 py-1.5 rounded-lg font-semibold"
-                     style={{ background: ACCENT, color: '#000', fontFamily: 'var(--font-dm-sans)' }}>
-                    Baixar
+              <div className="border-t px-4 py-4 flex flex-col gap-3" style={{ borderColor: '#1a1a1a' }}>
+                <p className="text-[#555] text-[10px] leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Clique em <strong style={{ color: '#888' }}>Configurar tudo</strong> e execute o arquivo baixado.
+                  Ele instala o QZ Tray automaticamente e configura este computador.
+                  Depois clique em <strong style={{ color: '#888' }}>Recarregar</strong>.
+                </p>
+                <div className="flex gap-2">
+                  <a
+                    href="/api/qz/setup"
+                    download="configurar-tipo7.bat"
+                    className="flex-1 text-center text-sm font-semibold py-2.5 rounded-xl"
+                    style={{ background: ACCENT, color: '#000', fontFamily: 'var(--font-dm-sans)' }}
+                  >
+                    ⬇ Configurar tudo
                   </a>
-                </div>
-
-                {/* Passo 2 */}
-                <div className="flex items-start gap-3 px-4 py-3 border-b" style={{ borderColor: '#1a1a1a' }}>
-                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
-                        style={{ background: '#1a1a1a', color: ACCENT }}>2</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-[11px] font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Configure automaticamente
-                    </p>
-                    <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Baixe e execute este arquivo — ele faz tudo sozinho
-                    </p>
-                  </div>
-                  <a href="/api/qz/setup" download="configurar-tipo7.bat"
-                     className="shrink-0 text-[11px] px-3 py-1.5 rounded-lg font-semibold"
-                     style={{ background: '#1a1a1a', color: ACCENT, border: `1px solid ${ACCENT}40`, fontFamily: 'var(--font-dm-sans)' }}>
-                    Baixar .bat
-                  </a>
-                </div>
-
-                {/* Passo 3 */}
-                <div className="flex items-start gap-3 px-4 py-3">
-                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5"
-                        style={{ background: '#1a1a1a', color: ACCENT }}>3</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-[11px] font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Recarregue esta página
-                    </p>
-                    <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Status deve ficar verde — nunca mais pede confirmação
-                    </p>
-                  </div>
                   <button
                     type="button"
                     onClick={() => window.location.reload()}
-                    className="shrink-0 text-[11px] px-3 py-1.5 rounded-lg font-semibold"
+                    className="flex-1 text-sm font-semibold py-2.5 rounded-xl"
                     style={{ background: '#1a1a1a', color: '#4ade80', border: '1px solid #1f3a26', fontFamily: 'var(--font-dm-sans)' }}
                   >
-                    Recarregar
+                    ↺ Recarregar
                   </button>
                 </div>
               </div>
