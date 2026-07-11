@@ -1117,124 +1117,60 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
             </div>
           </div>
 
-          {/* Seção impressão silenciosa */}
-          {formatoSel !== 'nenhuma' && (
-            <div className="rounded-2xl p-4 flex flex-col gap-3"
-                 style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
-              <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Impressão silenciosa (sem diálogo)
-              </p>
-              <p className="text-[#444] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Para imprimir automaticamente sem confirmar a cada venda, abra o Chrome com o atalho abaixo e configure a impressora desejada como <strong className="text-[#666]">padrão no Windows</strong>.
-              </p>
-              <div className="flex gap-2">
-                <button type="button" onClick={baixarAtalhoKiosk}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors hover:brightness-110"
-                  style={{ background: ACCENT, color: '#070707', fontFamily: 'var(--font-dm-sans)' }}>
-                  <Download size={13} />
-                  Baixar atalho .bat
-                </button>
-                <button type="button"
-                  onClick={() => navigator.clipboard.writeText(`chrome --kiosk-printing "${window.location.origin}/bilheteria/${eventoId}"`)}
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
-                  style={{ border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
-                  <Copy size={13} />
-                  Copiar comando
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* QZ Tray — status ou guia de instalação */}
-          <div className="rounded-2xl flex flex-col gap-0"
+          {/* QZ Tray — cartão único de configuração */}
+          <div className="rounded-2xl p-4 flex flex-col gap-3"
                style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
 
-            {/* Cabeçalho com status */}
-            <div className="flex items-center justify-between gap-3 p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full shrink-0" style={{
-                  background: qzStatus === 'conectado' ? '#4ade80'
-                            : qzStatus === 'conectando' ? ACCENT
-                            : '#333',
-                }} />
-                <div>
-                  <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    QZ Tray — impressão silenciosa
-                  </p>
-                  <p className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    {qzStatus === 'conectado'                         && '✓ Conectado — impressão automática sem diálogos'}
-                    {qzStatus === 'conectando'                        && 'Conectando...'}
-                    {qzStatus === 'indisponivel' && setupStep < 2     && 'Não instalado — siga os passos abaixo'}
-                    {qzStatus === 'indisponivel' && setupStep >= 2    && 'Verificando instalação...'}
-                    {qzStatus === 'idle'                              && 'Carregando...'}
-                  </p>
-                </div>
-              </div>
-              {qzStatus === 'indisponivel' && setupStep === 0 && (
-                <button
-                  type="button"
-                  onClick={() => window.location.reload()}
-                  className="shrink-0 text-[11px] px-2.5 py-1 rounded-lg"
-                  style={{ background: '#1a1a1a', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
-                >
-                  Verificar
-                </button>
-              )}
+            {/* Status */}
+            <div className="flex items-center gap-2.5">
+              <div className="w-2 h-2 rounded-full shrink-0" style={{
+                background: qzStatus === 'conectado' ? '#4ade80'
+                          : qzStatus === 'conectando' ? ACCENT
+                          : '#333',
+              }} />
+              <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Impressão silenciosa (QZ Tray)
+              </p>
             </div>
 
-            {/* Configuração automática — aparece enquanto QZ Tray não está conectado */}
-            {(qzStatus === 'indisponivel' || (setupStep > 0 && qzStatus !== 'conectado')) && (
-              <div className="border-t px-4 py-4 flex flex-col gap-3" style={{ borderColor: '#1a1a1a' }}>
-                {setupStep === 0 ? (
-                  <>
-                    <p className="text-[#555] text-[11px] leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Baixe e execute o arquivo abaixo. Esta página detecta automaticamente quando pronto.
-                    </p>
-                    <a href="/api/qz/setup" download="configurar-tipo7.bat"
-                      onClick={() => setSetupStep(2)}
-                      className="block text-center text-sm font-semibold py-3 rounded-xl"
-                      style={{ background: ACCENT, color: '#000', fontFamily: 'var(--font-dm-sans)' }}>
-                      ⬇ Configurar impressão
-                    </a>
-                  </>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <Loader2 size={15} className="animate-spin shrink-0" style={{ color: ACCENT }} />
-                    <div>
-                      <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        Execute o arquivo baixado e aguarde
-                      </p>
-                      <p className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        Detectando QZ Tray automaticamente...
-                      </p>
-                    </div>
-                  </div>
+            {/* Conectado */}
+            {qzStatus === 'conectado' && (
+              <>
+                <p className="text-[#4ade80] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  ✓ Conectado — imprime sem diálogos
+                </p>
+                {printerList.length > 0 && (
+                  <select
+                    value={printerSel}
+                    onChange={e => setPrinterSel(e.target.value)}
+                    className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
+                    style={{ background: '#111', border: `1px solid ${ACCENT}40`, fontFamily: 'var(--font-dm-sans)', colorScheme: 'dark' }}
+                  >
+                    {printerList.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
                 )}
+              </>
+            )}
+
+            {/* Aguardando após clicar */}
+            {qzStatus !== 'conectado' && setupStep >= 2 && (
+              <div className="flex items-center gap-2">
+                <Loader2 size={13} className="animate-spin shrink-0" style={{ color: ACCENT }} />
+                <p className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Aguardando QZ Tray iniciar...
+                </p>
               </div>
             )}
 
-            {/* Dropdown de impressoras — só quando conectado */}
-            {qzStatus === 'conectado' && printerList.length > 0 && (
-              <div className="border-t px-4 py-3" style={{ borderColor: '#1a1a1a' }}>
-                <p className="text-[#555] text-[11px] uppercase tracking-wider mb-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Impressora
-                </p>
-                <select
-                  value={printerSel}
-                  onChange={e => setPrinterSel(e.target.value)}
-                  className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
-                  style={{
-                    background:  '#111',
-                    border:      `1px solid ${ACCENT}40`,
-                    fontFamily:  'var(--font-dm-sans)',
-                    colorScheme: 'dark',
-                  }}
-                >
-                  {printerList.map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
+            {/* Botão de configuração */}
+            {qzStatus !== 'conectado' && setupStep < 2 && (
+              <a href="/api/qz/setup" download="configurar-tipo7.bat"
+                onClick={() => setSetupStep(2)}
+                className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
+                style={{ background: ACCENT, color: '#000', fontFamily: 'var(--font-dm-sans)' }}>
+                <Download size={14} />
+                Baixar e configurar
+              </a>
             )}
           </div>
 
