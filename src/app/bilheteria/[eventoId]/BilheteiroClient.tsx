@@ -339,11 +339,20 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
 
           const cards = await Promise.all(tickets.map(async (tk: { id: string; slot_number: number; qr_token: string }) => {
             const qrUrl: string = await qrLib.toDataURL(tk.qr_token, { width: 200, margin: 1 })
+            const numStr = String(tk.slot_number).padStart(3, '0')
+            const totalStr = tickets.length > 1 ? ` / ${tickets.length}` : ''
             return `
               <div style="width:${pageW};padding:8mm;font-family:sans-serif;box-sizing:border-box;page-break-after:always">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5mm">
+                  <div style="color:#b8840a;font-size:9px;text-transform:uppercase;letter-spacing:1px">Tipo7.com</div>
+                  <div style="display:flex;align-items:baseline;gap:2px">
+                    <span style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:1px">Ingresso</span>
+                    <span style="font-size:22px;font-weight:900;letter-spacing:-1px;line-height:1">#${numStr}</span>
+                    ${tickets.length > 1 ? `<span style="font-size:9px;color:#888">${totalStr}</span>` : ''}
+                  </div>
+                </div>
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6mm">
                   <div style="flex:1">
-                    <div style="color:#b8840a;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">Tipo7.com</div>
                     <div style="font-size:14px;font-weight:700;margin-bottom:4px">${eventoTitle.replace(/</g, '&lt;')}</div>
                     ${dataFormatada ? `<div style="font-size:10px;color:#555">${dataFormatada}</div>` : ''}
                     ${eventoLocal ? `<div style="font-size:10px;color:#666">${eventoLocal.replace(/</g, '&lt;')}</div>` : ''}
@@ -353,9 +362,8 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
                 <hr style="border:none;border-top:1px dashed #ccc;margin:6px 0"/>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
                   <div><div style="font-size:8px;color:#888;text-transform:uppercase">Tipo</div><div style="font-size:11px;font-weight:600">${ticketName.replace(/</g, '&lt;')}</div></div>
-                  <div><div style="font-size:8px;color:#888;text-transform:uppercase">Ingresso</div><div style="font-size:11px;font-weight:600">#${tk.slot_number} de ${tickets.length}</div></div>
                   <div><div style="font-size:8px;color:#888;text-transform:uppercase">Portador</div><div style="font-size:11px;font-weight:600">${(nome || 'Consumidor').replace(/</g, '&lt;')}</div></div>
-                  ${cpf ? `<div><div style="font-size:8px;color:#888;text-transform:uppercase">CPF</div><div style="font-size:11px;font-weight:600">${cpf}</div></div>` : ''}
+                  ${cpf ? `<div style="grid-column:1/-1"><div style="font-size:8px;color:#888;text-transform:uppercase">CPF</div><div style="font-size:11px;font-weight:600">${cpf}</div></div>` : ''}
                 </div>
                 <div style="margin-top:7px;font-size:8px;color:#999;text-align:center">Ingresso válido — apresente o QR code na entrada • tipo7.com</div>
               </div>`
@@ -995,11 +1003,24 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
               className="ingresso-print rounded-2xl p-6 flex flex-col gap-4"
               style={{ border: `1px solid ${ACCENT}40`, background: '#0d0d0d' }}
             >
+              {/* Número do ingresso — destaque no topo */}
+              <div className="flex items-center justify-between">
+                <p className="text-[#E8B84B] text-xs font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Tipo7.com
+                </p>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-[#555] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>Ingresso</span>
+                  <span className="text-white text-2xl font-bold" style={{ fontFamily: 'var(--font-syne)', lineHeight: 1 }}>
+                    #{String(t.slot_number).padStart(3, '0')}
+                  </span>
+                  {resultado.tickets.length > 1 && (
+                    <span className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>/ {resultado.tickets.length}</span>
+                  )}
+                </div>
+              </div>
+
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[#E8B84B] text-xs font-bold uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Tipo7.com
-                  </p>
                   <h2 className="text-white text-lg font-bold leading-tight" style={{ fontFamily: 'var(--font-syne)' }}>
                     {eventoTitle}
                   </h2>
@@ -1023,15 +1044,11 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
                   <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>{resultado.ticketName}</p>
                 </div>
                 <div>
-                  <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Ingresso</p>
-                  <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>#{t.slot_number} de {resultado.tickets.length}</p>
-                </div>
-                <div>
                   <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Portador</p>
                   <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>{nome || 'Consumidor'}</p>
                 </div>
                 {cpf && (
-                  <div>
+                  <div className="col-span-2">
                     <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>CPF</p>
                     <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>{cpf}</p>
                   </div>
