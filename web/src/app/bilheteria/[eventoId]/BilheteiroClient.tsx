@@ -157,46 +157,59 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     return () => { document.getElementById('tipo7-print-css')?.remove() }
   }, [formato])
 
-  // Carrega qz-tray.js do nosso servidor (/public) e conecta com certificado assinado
+  // Configura certificado e assinatura — chamado uma vez quando o script carrega
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function configurarSeguranca(qz: any) {
+    qz.security.setCertificatePromise((resolve: (v: string) => void, reject: (e: unknown) => void) => {
+      fetch('/api/qz/cert').then(r => r.text()).then(resolve).catch(reject)
+    })
+    qz.security.setSignaturePromise((toSign: string) => {
+      return (resolve: (v: string) => void, reject: (e: unknown) => void) => {
+        fetch('/api/qz/sign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ request: toSign }),
+        })
+          .then(r => r.json())
+          .then(d => resolve(d.signature))
+          .catch(reject)
+      }
+    })
+  }
+
+  // Tenta conectar ao QZ Tray; reseta estado anterior se necessário
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function tentarConectar(qz: any) {
+    try { await qz.websocket.disconnect() } catch { /* já desconectado */ }
+    setQzStatus('conectando')
+    try {
+      await qz.websocket.connect({ retries: 3, delay: 1 })
+      qzRef.current = qz
+      setQzStatus('conectado')
+    } catch {
+      setQzStatus('indisponivel')
+    }
+  }
+
+  // Carrega qz-tray.js do nosso servidor (/public) e tenta conectar na carga inicial
   useEffect(() => {
-    function setupAndConnect() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function onScriptLoad() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const qz: any = (window as any).qz
       if (!qz) return
-
-      // Certificado público: QZ Tray usa para identificar o tipo7.com como site confiável
-      qz.security.setCertificatePromise((resolve: (v: string) => void, reject: (e: unknown) => void) => {
-        fetch('/api/qz/cert').then(r => r.text()).then(resolve).catch(reject)
-      })
-
-      // Assinatura: servidor assina com chave privada para provar identidade
-      qz.security.setSignaturePromise((toSign: string) => {
-        return (resolve: (v: string) => void, reject: (e: unknown) => void) => {
-          fetch('/api/qz/sign', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ request: toSign }),
-          })
-            .then(r => r.json())
-            .then(d => resolve(d.signature))
-            .catch(reject)
-        }
-      })
-
-      setQzStatus('conectando')
-      qz.websocket.connect({ retries: 2, delay: 1 })
-        .then(() => { qzRef.current = qz; setQzStatus('conectado') })
-        .catch(() => setQzStatus('indisponivel'))
+      configurarSeguranca(qz)
+      tentarConectar(qz)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if ((window as any).qz) { setupAndConnect(); return }
+    if ((window as any).qz) { onScriptLoad(); return }
 
     if (!document.getElementById('qz-tray-script')) {
       const script = document.createElement('script')
-      script.id  = 'qz-tray-script'
-      script.src = '/qz-tray.js'
-      script.onload  = setupAndConnect
+      script.id      = 'qz-tray-script'
+      script.src     = '/qz-tray.js'
+      script.onload  = onScriptLoad
       script.onerror = () => setQzStatus('indisponivel')
       document.head.appendChild(script)
     }
@@ -206,31 +219,29 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
         qzRef.current.websocket.disconnect().catch(() => {})
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Polling automático enquanto usuário está no passo 3 do wizard
+  // Polling: quando usuário baixou o .bat (setupStep=2), tenta reconectar a cada 2s
   useEffect(() => {
     if (setupStep < 2) return
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const qz: any = (window as any).qz
+    if (!qz) return
+
+    // Tenta imediatamente na primeira vez
+    if (qzStatusRef.current !== 'conectado' && qzStatusRef.current !== 'conectando') {
+      tentarConectar(qz)
+    }
+
     const id = setInterval(() => {
       if (qzStatusRef.current === 'conectado' || qzStatusRef.current === 'conectando') return
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const qz: any = (window as any).qz
-      if (!qz) return
-      qz.security.setCertificatePromise((resolve: (v: string) => void, reject: (e: unknown) => void) => {
-        fetch('/api/qz/cert').then(r => r.text()).then(resolve).catch(reject)
-      })
-      qz.security.setSignaturePromise((toSign: string) => {
-        return (resolve: (v: string) => void, reject: (e: unknown) => void) => {
-          fetch('/api/qz/sign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ request: toSign }) })
-            .then(r => r.json()).then(d => resolve(d.signature)).catch(reject)
-        }
-      })
-      setQzStatus('conectando')
-      qz.websocket.connect({ retries: 1, delay: 0 })
-        .then(() => { qzRef.current = qz; setQzStatus('conectado') })
-        .catch(() => setQzStatus('indisponivel'))
-    }, 4000)
+      tentarConectar(qz)
+    }, 2000)
+
     return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setupStep])
 
   // Quando QZ Tray conecta, busca lista de impressoras e restaura seleção salva
