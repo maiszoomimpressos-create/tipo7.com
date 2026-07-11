@@ -97,6 +97,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const [printerList, setPrinterList] = useState<string[]>([])
   const [printerSel,  setPrinterSel]  = useState('')
   const printerSelRef = useRef('')
+  const [setupStep,   setSetupStep]   = useState<0|1|2>(0)
 
   // Mantém refs sincronizados para leitura dentro de timeouts/promises
   useEffect(() => { qzStatusRef.current  = qzStatus  }, [qzStatus])
@@ -206,6 +207,31 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       }
     }
   }, [])
+
+  // Polling automático enquanto usuário está no passo 3 do wizard
+  useEffect(() => {
+    if (setupStep < 2) return
+    const id = setInterval(() => {
+      if (qzStatusRef.current === 'conectado' || qzStatusRef.current === 'conectando') return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const qz: any = (window as any).qz
+      if (!qz) return
+      qz.security.setCertificatePromise((resolve: (v: string) => void, reject: (e: unknown) => void) => {
+        fetch('/api/qz/cert').then(r => r.text()).then(resolve).catch(reject)
+      })
+      qz.security.setSignaturePromise((toSign: string) => {
+        return (resolve: (v: string) => void, reject: (e: unknown) => void) => {
+          fetch('/api/qz/sign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ request: toSign }) })
+            .then(r => r.json()).then(d => resolve(d.signature)).catch(reject)
+        }
+      })
+      setQzStatus('conectando')
+      qz.websocket.connect({ retries: 1, delay: 0 })
+        .then(() => { qzRef.current = qz; setQzStatus('conectado') })
+        .catch(() => setQzStatus('indisponivel'))
+    }, 4000)
+    return () => clearInterval(id)
+  }, [setupStep])
 
   // Quando QZ Tray conecta, busca lista de impressoras e restaura seleção salva
   useEffect(() => {
@@ -1125,14 +1151,15 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
                     QZ Tray — impressão silenciosa
                   </p>
                   <p className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    {qzStatus === 'conectado'    && '✓ Conectado — impressão automática sem diálogos'}
-                    {qzStatus === 'conectando'   && 'Conectando...'}
-                    {qzStatus === 'indisponivel' && 'Não instalado — siga os passos abaixo'}
-                    {qzStatus === 'idle'         && 'Carregando...'}
+                    {qzStatus === 'conectado'                         && '✓ Conectado — impressão automática sem diálogos'}
+                    {qzStatus === 'conectando'                        && 'Conectando...'}
+                    {qzStatus === 'indisponivel' && setupStep < 2     && 'Não instalado — siga os passos abaixo'}
+                    {qzStatus === 'indisponivel' && setupStep >= 2    && 'Verificando instalação...'}
+                    {qzStatus === 'idle'                              && 'Carregando...'}
                   </p>
                 </div>
               </div>
-              {qzStatus === 'indisponivel' && (
+              {qzStatus === 'indisponivel' && setupStep === 0 && (
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
@@ -1144,32 +1171,98 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
               )}
             </div>
 
-            {/* Guia passo a passo — só aparece quando não conectado */}
-            {(qzStatus === 'indisponivel') && (
-              <div className="border-t px-4 py-4 flex flex-col gap-3" style={{ borderColor: '#1a1a1a' }}>
-                <p className="text-[#555] text-[10px] leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Clique em <strong style={{ color: '#888' }}>Configurar tudo</strong> e execute o arquivo baixado.
-                  Ele instala o QZ Tray automaticamente e configura este computador.
-                  Depois clique em <strong style={{ color: '#888' }}>Recarregar</strong>.
-                </p>
-                <div className="flex gap-2">
-                  <a
-                    href="/api/qz/setup"
-                    download="configurar-tipo7.bat"
-                    className="flex-1 text-center text-sm font-semibold py-2.5 rounded-xl"
-                    style={{ background: ACCENT, color: '#000', fontFamily: 'var(--font-dm-sans)' }}
-                  >
-                    ⬇ Configurar tudo
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => window.location.reload()}
-                    className="flex-1 text-sm font-semibold py-2.5 rounded-xl"
-                    style={{ background: '#1a1a1a', color: '#4ade80', border: '1px solid #1f3a26', fontFamily: 'var(--font-dm-sans)' }}
-                  >
-                    ↺ Recarregar
-                  </button>
+            {/* Wizard passo a passo — aparece enquanto QZ Tray não está conectado */}
+            {(qzStatus === 'indisponivel' || (setupStep > 0 && qzStatus !== 'conectado')) && (
+              <div className="border-t px-4 py-4 flex flex-col gap-4" style={{ borderColor: '#1a1a1a' }}>
+
+                {/* Passo 1 — Baixar */}
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold mt-0.5"
+                    style={{ background: setupStep >= 1 ? '#4ade80' : '#1a1a1a', color: setupStep >= 1 ? '#000' : '#555' }}>
+                    {setupStep >= 1 ? '✓' : '1'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold"
+                      style={{ color: setupStep >= 1 ? '#4ade80' : '#fff', fontFamily: 'var(--font-dm-sans)' }}>
+                      Baixar o arquivo de configuração
+                    </p>
+                    {setupStep === 0 && (
+                      <a href="/api/qz/setup" download="configurar-tipo7.bat"
+                        onClick={() => setSetupStep(1)}
+                        className="mt-2 block text-center text-sm font-semibold py-2.5 rounded-xl"
+                        style={{ background: ACCENT, color: '#000', fontFamily: 'var(--font-dm-sans)' }}>
+                        ⬇ Baixar
+                      </a>
+                    )}
+                    {setupStep >= 1 && (
+                      <p className="text-[11px] mt-0.5" style={{ color: '#4ade80', fontFamily: 'var(--font-dm-sans)' }}>OK Feito</p>
+                    )}
+                  </div>
                 </div>
+
+                {/* Passo 2 — Executar */}
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold mt-0.5"
+                    style={{
+                      background: setupStep >= 2 ? '#4ade80' : '#1a1a1a',
+                      color: setupStep >= 2 ? '#000' : setupStep >= 1 ? '#fff' : '#333',
+                      border: setupStep === 1 ? '1px solid #333' : 'none',
+                    }}>
+                    {setupStep >= 2 ? '✓' : '2'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold"
+                      style={{ color: setupStep >= 2 ? '#4ade80' : setupStep >= 1 ? '#fff' : '#333', fontFamily: 'var(--font-dm-sans)' }}>
+                      Execute o arquivo baixado
+                    </p>
+                    {setupStep === 1 && (
+                      <>
+                        <p className="text-[#555] text-[11px] mt-0.5 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                          Abra Downloads, clique duas vezes em{' '}
+                          <strong style={{ color: '#888' }}>configurar-tipo7.bat</strong> e aguarde terminar.
+                        </p>
+                        <button type="button" onClick={() => setSetupStep(2)}
+                          className="mt-2 w-full text-sm font-semibold py-2.5 rounded-xl"
+                          style={{ background: '#1a1a1a', color: '#fff', border: '1px solid #333', fontFamily: 'var(--font-dm-sans)' }}>
+                          Já executei ✓
+                        </button>
+                      </>
+                    )}
+                    {setupStep >= 2 && (
+                      <p className="text-[11px] mt-0.5" style={{ color: '#4ade80', fontFamily: 'var(--font-dm-sans)' }}>OK Feito</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Passo 3 — Verificação automática */}
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold mt-0.5"
+                    style={{
+                      background: '#1a1a1a',
+                      color: setupStep >= 2 ? '#fff' : '#333',
+                      border: setupStep >= 2 ? '1px solid #333' : 'none',
+                    }}>
+                    3
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold"
+                      style={{ color: setupStep >= 2 ? '#fff' : '#333', fontFamily: 'var(--font-dm-sans)' }}>
+                      Verificando instalação automaticamente
+                    </p>
+                    {setupStep >= 2 && (
+                      <p className="text-[#555] text-[11px] mt-0.5 flex items-center gap-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        <Loader2 size={11} className="animate-spin shrink-0" />
+                        Aguardando QZ Tray iniciar...
+                      </p>
+                    )}
+                    {setupStep < 2 && (
+                      <p className="text-[11px] mt-0.5" style={{ color: '#333', fontFamily: 'var(--font-dm-sans)' }}>
+                        Ativo após o passo 2
+                      </p>
+                    )}
+                  </div>
+                </div>
+
               </div>
             )}
 
