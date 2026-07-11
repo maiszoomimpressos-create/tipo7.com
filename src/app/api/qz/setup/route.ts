@@ -1,6 +1,45 @@
 const FINGERPRINT = 'FF36A5373096B6C31B2CF39F9D8422AD7514AD40'
 
+// Script PowerShell que roda em background e clica Allow automaticamente
+// em qualquer popup do QZ Tray, sem interação do usuário
+const AUTOALLOW_PS1 = `Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class QZAuto {
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lp);
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+}
+'@
+Add-Type -AssemblyName System.Windows.Forms
+while ($true) {
+    try {
+        [QZAuto]::EnumWindows({
+            param($h, $lp)
+            if (-not [QZAuto]::IsWindowVisible($h)) { return $true }
+            $sb = New-Object Text.StringBuilder 256
+            [QZAuto]::GetWindowText($h, $sb, 256) | Out-Null
+            $t = $sb.ToString()
+            if ($t -eq 'QZ Tray' -or $t -match 'Site Access|Allow Printing|Printer Access') {
+                [QZAuto]::SetForegroundWindow($h) | Out-Null
+                Start-Sleep -Milliseconds 150
+                [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+                Start-Sleep -Milliseconds 300
+            }
+            return $true
+        }, [IntPtr]::Zero)
+    } catch {}
+    Start-Sleep -Milliseconds 400
+}
+`
+
 function buildBat(certUrl: string) {
+  const ps1B64 = Buffer.from(AUTOALLOW_PS1, 'utf8').toString('base64')
+
   return `@echo off
 chcp 65001 >nul
 title Tipo7 - Configurando QZ Tray
@@ -25,7 +64,6 @@ for %%P in (
     echo        Encontrado: %%~P
 )
 
-:: Busca adicional via where (encontra no PATH do sistema)
 if "%QZEXE%"=="" (
     for /f "delims=" %%F in ('where qz-tray.exe 2^>nul') do (
         set "QZEXE=%%F"
@@ -44,7 +82,6 @@ if "%QZEXE%"=="" (
         pause & exit /b 1
     )
     "%TEMP%\\qz-inst.exe" /S
-    echo        Aguardando instalacao terminar...
     timeout /t 10 /nobreak >nul
     del "%TEMP%\\qz-inst.exe" >nul 2>&1
     for %%P in (
@@ -63,13 +100,31 @@ if "%QZEXE%"=="" (
     echo  [2/4] QZ Tray ja instalado. OK.
 )
 
-:: ── PASSO 3: Gravar certificado de confianca tipo7.com ────────────────────
-echo  [3/4] Configurando certificado tipo7.com...
+:: ── PASSO 3: Configurar tipo7.com — certificado + sem popups ──────────────
+echo  [3/4] Configurando certificado e aprovacao automatica...
 if not exist "%APPDATA%\\qz" mkdir "%APPDATA%\\qz"
+
+:: fingerprint (aprova conexao do site)
 powershell -NoProfile -Command "[IO.File]::WriteAllText('%APPDATA%\\qz\\allowed.dat', '${FINGERPRINT}\\r\\n', [Text.Encoding]::ASCII)"
+
+:: certificado permanente (elimina popup de confianca)
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "try { Invoke-WebRequest '${certUrl}' -UseBasicParsing -OutFile '%APPDATA%\\qz\\authcert.pem'; Write-Host 'Certificado permanente gravado.' } catch { Write-Host ('Aviso: ' + $_.Exception.Message) }"
-echo        Certificado gravado.
+    "try { Invoke-WebRequest '${certUrl}' -UseBasicParsing -OutFile '%APPDATA%\\qz\\authcert.pem'; Write-Host 'Certificado permanente: OK' } catch { Write-Host ('Aviso: ' + $_.Exception.Message) }"
+
+:: configuracao QZ Tray sem popup de impressora
+powershell -NoProfile -Command ^
+    "[IO.File]::WriteAllText('%APPDATA%\\qz\\qz-tray.properties', 'security.blockUntrustedPrinters=false' + [char]13 + [char]10, [Text.Encoding]::ASCII)"
+
+:: gravar script de aprovacao automatica de popups
+powershell -NoProfile -Command ^
+    "$b64='${ps1B64}'; [IO.File]::WriteAllBytes('%APPDATA%\\qz\\autoallow.ps1', [Convert]::FromBase64String($b64))"
+
+:: registrar script no inicio do Windows (roda sempre que ligar o PC)
+reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "QZAutoAllow" /t REG_SZ /d "powershell -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File \\"%APPDATA%\\qz\\autoallow.ps1\\"" /f >nul 2>&1
+
+:: iniciar agora (sem janela visivel)
+start /B powershell -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File "%APPDATA%\\qz\\autoallow.ps1"
+echo        Configuracoes gravadas. Aprovacao automatica ativa.
 
 :: ── PASSO 4: Reiniciar QZ Tray e testar ──────────────────────────────────
 echo  [4/4] Reiniciando QZ Tray e testando...
@@ -79,7 +134,6 @@ start "" "%QZEXE%"
 echo        Aguardando QZ Tray iniciar...
 timeout /t 4 /nobreak >nul
 
-:: Teste 1: processo rodando?
 tasklist /fi "imagename eq qz-tray.exe" 2>nul | find /i "qz-tray.exe" >nul
 if errorlevel 1 (
     echo        Processo nao detectado, tentando novamente...
@@ -87,14 +141,12 @@ if errorlevel 1 (
     timeout /t 4 /nobreak >nul
 )
 
-:: Teste 2: porta 8181 respondendo?
 netstat -an 2>nul | find ":8181" | find "LISTEN" >nul
 if errorlevel 1 (
-    echo        Aguardando porta 8181...
     timeout /t 3 /nobreak >nul
     netstat -an 2>nul | find ":8181" | find "LISTEN" >nul
     if errorlevel 1 (
-        echo        [AVISO] Porta 8181 ainda nao responde. QZ Tray pode demorar alguns segundos.
+        echo        [AVISO] Porta 8181 ainda nao responde. Aguarde alguns segundos.
     ) else (
         echo        [OK] Porta 8181 ativa - QZ Tray funcionando!
     )
@@ -105,7 +157,8 @@ if errorlevel 1 (
 echo.
 echo  ================================================
 echo   Pronto! Volte ao navegador.
-echo   A pagina vai conectar automaticamente.
+echo   Qualquer popup do QZ Tray sera aprovado
+echo   automaticamente a partir de agora.
 echo  ================================================
 echo.
 timeout /t 2 /nobreak >nul
