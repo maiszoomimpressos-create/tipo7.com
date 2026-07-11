@@ -1171,98 +1171,34 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
               )}
             </div>
 
-            {/* Wizard passo a passo — aparece enquanto QZ Tray não está conectado */}
+            {/* Configuração automática — aparece enquanto QZ Tray não está conectado */}
             {(qzStatus === 'indisponivel' || (setupStep > 0 && qzStatus !== 'conectado')) && (
-              <div className="border-t px-4 py-4 flex flex-col gap-4" style={{ borderColor: '#1a1a1a' }}>
-
-                {/* Passo 1 — Baixar */}
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold mt-0.5"
-                    style={{ background: setupStep >= 1 ? '#4ade80' : '#1a1a1a', color: setupStep >= 1 ? '#000' : '#555' }}>
-                    {setupStep >= 1 ? '✓' : '1'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold"
-                      style={{ color: setupStep >= 1 ? '#4ade80' : '#fff', fontFamily: 'var(--font-dm-sans)' }}>
-                      Baixar o arquivo de configuração
+              <div className="border-t px-4 py-4 flex flex-col gap-3" style={{ borderColor: '#1a1a1a' }}>
+                {setupStep === 0 ? (
+                  <>
+                    <p className="text-[#555] text-[11px] leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Baixe e execute o arquivo abaixo. Esta página detecta automaticamente quando pronto.
                     </p>
-                    {setupStep === 0 && (
-                      <a href="/api/qz/setup" download="configurar-tipo7.bat"
-                        onClick={() => setSetupStep(1)}
-                        className="mt-2 block text-center text-sm font-semibold py-2.5 rounded-xl"
-                        style={{ background: ACCENT, color: '#000', fontFamily: 'var(--font-dm-sans)' }}>
-                        ⬇ Baixar
-                      </a>
-                    )}
-                    {setupStep >= 1 && (
-                      <p className="text-[11px] mt-0.5" style={{ color: '#4ade80', fontFamily: 'var(--font-dm-sans)' }}>OK Feito</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Passo 2 — Executar */}
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold mt-0.5"
-                    style={{
-                      background: setupStep >= 2 ? '#4ade80' : '#1a1a1a',
-                      color: setupStep >= 2 ? '#000' : setupStep >= 1 ? '#fff' : '#333',
-                      border: setupStep === 1 ? '1px solid #333' : 'none',
-                    }}>
-                    {setupStep >= 2 ? '✓' : '2'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold"
-                      style={{ color: setupStep >= 2 ? '#4ade80' : setupStep >= 1 ? '#fff' : '#333', fontFamily: 'var(--font-dm-sans)' }}>
-                      Execute o arquivo baixado
-                    </p>
-                    {setupStep === 1 && (
-                      <>
-                        <p className="text-[#555] text-[11px] mt-0.5 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                          Abra Downloads, clique duas vezes em{' '}
-                          <strong style={{ color: '#888' }}>configurar-tipo7.bat</strong> e aguarde terminar.
-                        </p>
-                        <button type="button" onClick={() => setSetupStep(2)}
-                          className="mt-2 w-full text-sm font-semibold py-2.5 rounded-xl"
-                          style={{ background: '#1a1a1a', color: '#fff', border: '1px solid #333', fontFamily: 'var(--font-dm-sans)' }}>
-                          Já executei ✓
-                        </button>
-                      </>
-                    )}
-                    {setupStep >= 2 && (
-                      <p className="text-[11px] mt-0.5" style={{ color: '#4ade80', fontFamily: 'var(--font-dm-sans)' }}>OK Feito</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Passo 3 — Verificação automática */}
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold mt-0.5"
-                    style={{
-                      background: '#1a1a1a',
-                      color: setupStep >= 2 ? '#fff' : '#333',
-                      border: setupStep >= 2 ? '1px solid #333' : 'none',
-                    }}>
-                    3
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold"
-                      style={{ color: setupStep >= 2 ? '#fff' : '#333', fontFamily: 'var(--font-dm-sans)' }}>
-                      Verificando instalação automaticamente
-                    </p>
-                    {setupStep >= 2 && (
-                      <p className="text-[#555] text-[11px] mt-0.5 flex items-center gap-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        <Loader2 size={11} className="animate-spin shrink-0" />
-                        Aguardando QZ Tray iniciar...
+                    <a href="/api/qz/setup" download="configurar-tipo7.bat"
+                      onClick={() => setSetupStep(2)}
+                      className="block text-center text-sm font-semibold py-3 rounded-xl"
+                      style={{ background: ACCENT, color: '#000', fontFamily: 'var(--font-dm-sans)' }}>
+                      ⬇ Configurar impressão
+                    </a>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <Loader2 size={15} className="animate-spin shrink-0" style={{ color: ACCENT }} />
+                    <div>
+                      <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        Execute o arquivo baixado e aguarde
                       </p>
-                    )}
-                    {setupStep < 2 && (
-                      <p className="text-[11px] mt-0.5" style={{ color: '#333', fontFamily: 'var(--font-dm-sans)' }}>
-                        Ativo após o passo 2
+                      <p className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        Detectando QZ Tray automaticamente...
                       </p>
-                    )}
+                    </div>
                   </div>
-                </div>
-
+                )}
               </div>
             )}
 
