@@ -364,7 +364,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page{margin:0}body{margin:0;padding:0}</style></head><body>${cards.join('')}</body></html>`
           const printer = printerSelRef.current || (await qzRef.current.printers.getDefault())
           const config = qzRef.current.configs.create(printer)
-          await qzRef.current.print(config, [{ type: 'html', format: 'plain', data: html }])
+          qzRef.current.print(config, [{ type: 'html', format: 'plain', data: html }]).catch(() => {})
           handleNovaVenda()
           return
         } catch (e) {
