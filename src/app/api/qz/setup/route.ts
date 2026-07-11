@@ -1,6 +1,7 @@
 const FINGERPRINT = 'FF36A5373096B6C31B2CF39F9D8422AD7514AD40'
 
-const BAT = `@echo off
+function buildBat(certUrl: string) {
+  return `@echo off
 chcp 65001 >nul
 title Tipo7 - Configurando QZ Tray
 echo.
@@ -37,7 +38,7 @@ if "%QZEXE%"=="" (
     echo        Nao encontrado. Baixando e instalando...
     echo  [2/4] Instalando QZ Tray ^(aguarde^)...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "try { $r = Invoke-WebRequest 'https://api.github.com/repos/qzind/tray/releases/latest' -UseBasicParsing | ConvertFrom-Json; $u = ($r.assets | Where-Object { $_.name -like '*.exe' } | Select-Object -First 1).browser_download_url; Write-Host ('Baixando: ' + $u); Invoke-WebRequest $u -OutFile \"$env:TEMP\\qz-inst.exe\" -UseBasicParsing; Write-Host 'Download concluido.' } catch { Write-Host ('Erro: ' + $_.Exception.Message) }"
+        "try { $r = Invoke-WebRequest 'https://api.github.com/repos/qzind/tray/releases/latest' -UseBasicParsing | ConvertFrom-Json; $u = ($r.assets | Where-Object { $_.name -like '*.exe' } | Select-Object -First 1).browser_download_url; Write-Host ('Baixando: ' + $u); Invoke-WebRequest $u -OutFile \\"$env:TEMP\\\\qz-inst.exe\\" -UseBasicParsing; Write-Host 'Download concluido.' } catch { Write-Host ('Erro: ' + $_.Exception.Message) }"
     if not exist "%TEMP%\\qz-inst.exe" (
         echo  [ERRO] Download falhou. Acesse qz.io/download e instale manualmente.
         pause & exit /b 1
@@ -65,7 +66,9 @@ if "%QZEXE%"=="" (
 :: ── PASSO 3: Gravar certificado de confianca tipo7.com ────────────────────
 echo  [3/4] Configurando certificado tipo7.com...
 if not exist "%APPDATA%\\qz" mkdir "%APPDATA%\\qz"
-powershell -NoProfile -Command "[IO.File]::WriteAllText('%APPDATA%\\qz\\allowed.dat', '${FINGERPRINT}\r\n', [Text.Encoding]::ASCII)"
+powershell -NoProfile -Command "[IO.File]::WriteAllText('%APPDATA%\\qz\\allowed.dat', '${FINGERPRINT}\\r\\n', [Text.Encoding]::ASCII)"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "try { Invoke-WebRequest '${certUrl}' -UseBasicParsing -OutFile '%APPDATA%\\qz\\authcert.pem'; Write-Host 'Certificado permanente gravado.' } catch { Write-Host ('Aviso: ' + $_.Exception.Message) }"
 echo        Certificado gravado.
 
 :: ── PASSO 4: Reiniciar QZ Tray e testar ──────────────────────────────────
@@ -107,9 +110,12 @@ echo  ================================================
 echo.
 timeout /t 2 /nobreak >nul
 `
+}
 
-export async function GET() {
-  return new Response(BAT, {
+export async function GET(req: Request) {
+  const origin = new URL(req.url).origin
+  const bat = buildBat(`${origin}/api/qz/cert`)
+  return new Response(bat, {
     headers: {
       'Content-Type': 'application/octet-stream',
       'Content-Disposition': 'attachment; filename="configurar-tipo7.bat"',

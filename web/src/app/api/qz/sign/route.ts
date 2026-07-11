@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     }
 
     const privateKey = Buffer.from(pkB64, 'base64').toString('utf-8')
-    const sign = createSign('SHA512')
+    const sign = createSign('SHA1')
     sign.update(request)
     const signature = sign.sign(privateKey, 'base64')
 
