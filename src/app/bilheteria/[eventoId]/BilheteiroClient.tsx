@@ -98,6 +98,8 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const [printerSel,  setPrinterSel]  = useState('')
   const printerSelRef = useRef('')
   const [qzLoaded,    setQzLoaded]    = useState(false)
+  const [autorizandoImpressora, setAutorizandoImpressora] = useState(false)
+  const [erroAutorizacao,       setErroAutorizacao]       = useState<string | null>(null)
 
   // Mantém refs sincronizados para leitura dentro de timeouts/promises
   useEffect(() => { qzStatusRef.current  = qzStatus  }, [qzStatus])
@@ -261,7 +263,38 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       .catch(() => {})
   }, [qzStatus, eventoId])
 
-  function salvarFormato() {
+  async function salvarFormato() {
+    const authKey = `tipo7-qz-auth-${printerSel}`
+    const precisaAutorizar =
+      qzStatus === 'conectado' &&
+      qzRef.current &&
+      formatoSel !== 'nenhuma' &&
+      printerSel &&
+      !localStorage.getItem(authKey)
+
+    if (precisaAutorizar) {
+      setAutorizandoImpressora(true)
+      setErroAutorizacao(null)
+      try {
+        const config = qzRef.current.configs.create(printerSel)
+        await qzRef.current.print(config, [{
+          type: 'html', format: 'plain',
+          data: '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="margin:0"></body></html>',
+        }])
+        localStorage.setItem(authKey, '1')
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : ''
+        if (msg.toLowerCase().includes('block') || msg.toLowerCase().includes('denied') || msg.toLowerCase().includes('cancel')) {
+          setErroAutorizacao('Impressão bloqueada. Aprove no popup do QZ Tray para continuar.')
+          setAutorizandoImpressora(false)
+          return
+        }
+        // Qualquer outro erro (ex: impressora offline): continua mesmo assim
+      } finally {
+        setAutorizandoImpressora(false)
+      }
+    }
+
     localStorage.setItem(`tipo7-impressora-${eventoId}`, formatoSel)
     if (printerSel) localStorage.setItem(`tipo7-qz-printer-${eventoId}`, printerSel)
     setFormato(formatoSel)
@@ -1146,6 +1179,11 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
                     {printerList.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 )}
+                {printerSel && !localStorage.getItem(`tipo7-qz-auth-${printerSel}`) && (
+                  <p className="text-[#555] text-[11px] leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Ao abrir o caixa, o QZ Tray pedirá autorização para esta impressora uma única vez.
+                  </p>
+                )}
               </>
             )}
 
@@ -1171,11 +1209,28 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           </div>
 
           {/* Botão abrir caixa */}
-          <button type="button" onClick={salvarFormato}
-            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] transition-all hover:brightness-110 active:scale-[0.98]"
+          {erroAutorizacao && (
+            <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10">
+              <AlertTriangle size={14} className="shrink-0" />
+              {erroAutorizacao}
+            </div>
+          )}
+
+          {autorizandoImpressora && (
+            <div className="flex items-center gap-2 text-[#E8B84B] text-sm py-3 px-4 rounded-xl"
+                 style={{ background: '#E8B84B10', border: '1px solid #E8B84B20' }}>
+              <Loader2 size={14} className="animate-spin shrink-0" />
+              Aprove no popup do QZ Tray para continuar...
+            </div>
+          )}
+
+          <button type="button" onClick={salvarFormato} disabled={autorizandoImpressora}
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
             style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-            <ShoppingBag size={18} />
-            {setupAberto ? 'Salvar e voltar' : 'Abrir caixa'}
+            {autorizandoImpressora
+              ? <><Loader2 size={18} className="animate-spin" /> Autorizando impressora...</>
+              : <><ShoppingBag size={18} /> {setupAberto ? 'Salvar e voltar' : 'Abrir caixa'}</>
+            }
           </button>
 
         </div>
