@@ -179,13 +179,16 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     })
   }
 
-  // Tenta conectar ao QZ Tray; reseta estado anterior se necessário
+  // Tenta conectar ao QZ Tray; só desconecta se houver conexão ativa
+  // (chamar disconnect sem conexão corrompe estado interno do qz-tray.js)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function tentarConectar(qz: any) {
-    try { qz.websocket.disconnect() } catch { /* já desconectado */ }
+    if (qz.websocket.isActive()) {
+      try { await qz.websocket.disconnect() } catch {}
+    }
     setQzStatus('conectando')
     try {
-      await qz.websocket.connect({ retries: 1, delay: 0 })
+      await qz.websocket.connect({ retries: 0 })
       qzRef.current = qz
       setQzStatus('conectado')
     } catch {
