@@ -25,7 +25,7 @@ export async function GET() {
     headers: {
       'Content-Type': 'application/x-pem-file',
       'Content-Disposition': 'attachment; filename="tipo7-qztray.pem"',
-      'Cache-Control': 'public, max-age=86400',
+      'Cache-Control': 'no-store',
     },
   })
 }
