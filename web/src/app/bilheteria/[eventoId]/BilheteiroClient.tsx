@@ -124,6 +124,15 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
 
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
 
+  // Modo kiosk: ?kiosk=1 na URL desabilita QZ Tray completamente (sem popup)
+  const modoKiosk = typeof window !== 'undefined' && (
+    new URLSearchParams(window.location.search).get('kiosk') === '1' ||
+    localStorage.getItem('tipo7-kiosk') === '1'
+  )
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('kiosk') === '1') {
+    localStorage.setItem('tipo7-kiosk', '1')
+  }
+
   // Lê formato salvo ao montar
   useEffect(() => {
     const saved = localStorage.getItem(`tipo7-impressora-${eventoId}`) as PrintFormat | null
@@ -227,7 +236,9 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   }
 
   // Carrega qz-tray.js do nosso servidor (/public) e tenta conectar na carga inicial
+  // Em modo kiosk (?kiosk=1) não carrega QZ Tray para evitar popup "Action Required"
   useEffect(() => {
+    if (modoKiosk) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function onScriptLoad() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -260,7 +271,7 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
 
   // Polling contínuo desde que qz-tray.js carregou — detecta QZ Tray assim que iniciar
   useEffect(() => {
-    if (!qzLoaded) return
+    if (!qzLoaded || modoKiosk) return
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const qz: any = (window as any).qz
@@ -303,7 +314,7 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   }
 
   function baixarAtalhoKiosk() {
-    const url = `${window.location.origin}/bilheteria/${eventoId}`
+    const url = `${window.location.origin}/bilheteria/${eventoId}?kiosk=1`
     const bat = `@echo off
 chcp 65001 >nul
 title Tipo7 - Bilheteria
