@@ -76,7 +76,7 @@ while ($true) {
             $sb = New-Object Text.StringBuilder 256
             [WinH]::GetWindowText($h, $sb, 256) | Out-Null
             $t = $sb.ToString()
-            if ($t -eq 'QZ Tray' -or $t -match 'Site Access|Allow Print|Printer Access') {
+            if ($t -eq 'QZ Tray' -or $t -match 'Action Required|Site Access|Allow Print|Printer Access|Untrusted') {
                 Invoke-Allow -hWnd $h
                 Start-Sleep -Milliseconds 500
             }
