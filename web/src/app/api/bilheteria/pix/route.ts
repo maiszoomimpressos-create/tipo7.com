@@ -34,10 +34,11 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  const { eventoId, ticketId, quantidade, comprador } = await req.json() as {
+  const { eventoId, ticketId, quantidade, caixaId, comprador } = await req.json() as {
     eventoId:   string
     ticketId:   string
     quantidade: number
+    caixaId?:   string
     comprador?: { nome?: string; cpf?: string }
   }
 
@@ -134,6 +135,7 @@ export async function POST(req: NextRequest) {
       pix_qr_code_base64: qrCodeBase64,
       pix_expires_at:     expiresAt,
       payment_method:     'pix',
+      caixa_id:           caixaId ?? null,
     }).eq('id', orderId)
 
     return NextResponse.json({ orderId, qrCode, qrCodeBase64, expiresAt, total })

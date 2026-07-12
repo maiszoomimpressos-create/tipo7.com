@@ -40,7 +40,7 @@ function Invoke-Allow {
                 try {
                     $tp = $chk.GetCurrentPattern(
                         [System.Windows.Automation.TogglePattern]::Pattern)
-                    if ($tp.Current.ToggleState -ne `
+                    if ($tp.Current.ToggleState -ne \`
                         [System.Windows.Automation.ToggleState]::On) { $tp.Toggle() }
                 } catch {}
             }

@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
     eventoId:         string
     ticketId:         string
     quantidade:       number
+    caixaId?:         string
     metodoPagamento?: string
     comprador: {
       nome:           string
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const { eventoId, ticketId, quantidade, metodoPagamento, comprador } = body
+  const { eventoId, ticketId, quantidade, caixaId, metodoPagamento, comprador } = body
 
   if (!eventoId || !ticketId || !quantidade) {
     return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 })
@@ -108,12 +109,13 @@ export async function POST(req: NextRequest) {
 
   const orderId = resultado.order_id as string
 
-  // Marca pedido como aprovado (pagamento presencial)
+  // Marca pedido como aprovado (pagamento presencial) e vincula ao caixa
   await admin
     .from('orders')
     .update({
       status:         'approved',
       payment_method: metodoPagamento ?? 'dinheiro',
+      caixa_id:       caixaId ?? null,
       updated_at:     new Date().toISOString(),
     })
     .eq('id', orderId)

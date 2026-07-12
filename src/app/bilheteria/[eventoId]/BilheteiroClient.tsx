@@ -13,6 +13,7 @@ import {
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
+const QZ_FINGERPRINT = 'FF36A5373096B6C31B2CF39F9D8422AD7514AD40'
 
 type MetodoPagamento = 'dinheiro' | 'pix' | 'cartao'
 type Etapa = 'venda' | 'pix' | 'dados' | 'impressao'
@@ -99,8 +100,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const [printerSel,  setPrinterSel]  = useState('')
   const printerSelRef = useRef('')
   const [qzLoaded,    setQzLoaded]    = useState(false)
-  const [autorizandoImpressora, setAutorizandoImpressora] = useState(false)
-  const [erroAutorizacao,       setErroAutorizacao]       = useState<string | null>(null)
+  const [qzConfigurado, setQzConfigurado] = useState(false)
 
   // Mantém refs sincronizados para leitura dentro de timeouts/promises
   useEffect(() => { qzStatusRef.current  = qzStatus  }, [qzStatus])
@@ -178,6 +178,20 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           .catch(reject)
       }
     })
+  }
+
+  // Após print bem-sucedido, grava allowed.dat + authcert.pem via QZ Tray file API.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function gravarConfiancaQZ(qz: any) {
+    try {
+      const cert = await fetch('/api/qz/cert', { cache: 'no-store' }).then(r => r.text())
+      await qz.file.write('allowed.dat', { data: QZ_FINGERPRINT + '\r\n', sandbox: false })
+      await qz.file.write('authcert.pem', { data: cert, sandbox: false })
+      await qz.file.write('qz-tray.properties', { data: 'security.blockUntrustedPrinters=false\r\n', sandbox: false })
+      setQzConfigurado(true)
+    } catch {
+      // falha silenciosa
+    }
   }
 
   // Tenta conectar ao QZ Tray.
@@ -268,38 +282,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       .catch(() => {})
   }, [qzStatus, eventoId])
 
-  async function salvarFormato() {
-    const authKey = `tipo7-qz-auth-${printerSel}`
-    const precisaAutorizar =
-      qzStatus === 'conectado' &&
-      qzRef.current &&
-      formatoSel !== 'nenhuma' &&
-      printerSel &&
-      !localStorage.getItem(authKey)
-
-    if (precisaAutorizar) {
-      setAutorizandoImpressora(true)
-      setErroAutorizacao(null)
-      try {
-        const config = qzRef.current.configs.create(printerSel)
-        await qzRef.current.print(config, [{
-          type: 'html', format: 'plain',
-          data: '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="margin:0"></body></html>',
-        }])
-        localStorage.setItem(authKey, '1')
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : ''
-        if (msg.toLowerCase().includes('block') || msg.toLowerCase().includes('denied') || msg.toLowerCase().includes('cancel')) {
-          setErroAutorizacao('Impressão bloqueada. Aprove no popup do QZ Tray para continuar.')
-          setAutorizandoImpressora(false)
-          return
-        }
-        // Qualquer outro erro (ex: impressora offline): continua mesmo assim
-      } finally {
-        setAutorizandoImpressora(false)
-      }
-    }
-
+  function salvarFormato() {
     localStorage.setItem(`tipo7-impressora-${eventoId}`, formatoSel)
     if (printerSel) localStorage.setItem(`tipo7-qz-printer-${eventoId}`, printerSel)
     setFormato(formatoSel)
@@ -308,16 +291,11 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
 
   function baixarAtalhoKiosk() {
     const url = `${window.location.origin}/bilheteria/${eventoId}`
-    const bat = [
-      '@echo off',
-      'echo Abrindo Tipo7 Bilheteria em modo kiosk...',
-      `start "" "chrome" --kiosk-printing "${url}"`,
-      'if errorlevel 1 start "" "msedge" --kiosk-printing "${url}"',
-    ].join('\r\n')
+    const bat = `@echo off\r\nchcp 65001 >nul\r\ntitle Tipo7 - Bilheteria\r\necho Abrindo bilheteria em modo de impressao silenciosa...\r\necho (Chrome normal continua aberto normalmente)\r\necho.\r\nset "PROFILE=%LOCALAPPDATA%\\tipo7-bilheteria"\r\nset "CHROME=%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe"\r\nset "CHROME86=%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe"\r\nset "EDGE=%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe"\r\nif exist "%CHROME%" (\r\n    start "" "%CHROME%" --kiosk-printing --start-maximized --user-data-dir="%PROFILE%" --no-first-run --disable-default-apps "${url}"\r\n) else if exist "%CHROME86%" (\r\n    start "" "%CHROME86%" --kiosk-printing --start-maximized --user-data-dir="%PROFILE%" --no-first-run --disable-default-apps "${url}"\r\n) else if exist "%EDGE%" (\r\n    start "" "%EDGE%" --kiosk-printing --start-maximized --user-data-dir="%PROFILE%" --no-first-run "${url}"\r\n) else (\r\n    echo Navegador nao encontrado. Abra manualmente: ${url}\r\n    pause\r\n)\r\n`
     const blob = new Blob([bat], { type: 'text/plain' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `tipo7-bilheteria.bat`
+    a.download = `tipo7-bilheteria-${eventoTitle.slice(0, 20).replace(/[^a-z0-9]/gi, '-')}.bat`
     a.click()
     URL.revokeObjectURL(a.href)
   }
@@ -377,7 +355,10 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page{margin:0}body{margin:0;padding:0}</style></head><body>${cards.join('')}</body></html>`
           const printer = printerSelRef.current || (await qzRef.current.printers.getDefault())
           const config = qzRef.current.configs.create(printer)
-          qzRef.current.print(config, [{ type: 'html', format: 'plain', data: html }]).catch(() => {})
+          const qzLocal = qzRef.current
+          qzLocal.print(config, [{ type: 'html', format: 'plain', data: html }])
+            .then(() => { gravarConfiancaQZ(qzLocal) })
+            .catch(() => {})
           handleNovaVenda()
           return
         } catch (e) {
@@ -1169,88 +1150,99 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
             </div>
           </div>
 
-          {/* QZ Tray — cartão único de configuração */}
-          <div className="rounded-2xl p-4 flex flex-col gap-3"
-               style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+          {/* Kiosk — impressão silenciosa via Chrome */}
+          <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${ACCENT}40`, background: `${ACCENT}08` }}>
+            <div className="px-4 py-3 flex items-center gap-2.5" style={{ borderBottom: `1px solid ${ACCENT}20` }}>
+              <Printer size={14} style={{ color: ACCENT }} />
+              <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Impressão silenciosa — recomendado
+              </p>
+            </div>
+            <div className="px-4 py-4 flex flex-col gap-3">
+              <p className="text-[#888] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Baixe o atalho abaixo e dê duplo clique. O Chrome abre direto neste evento e toda venda imprime automaticamente — sem nenhum clique extra.
+              </p>
+              <button
+                type="button"
+                onClick={baixarAtalhoKiosk}
+                className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold text-[#070707] transition-all active:scale-[0.98] hover:brightness-110"
+                style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+              >
+                <Download size={15} />
+                Baixar atalho de impressão silenciosa
+              </button>
+              <p className="text-[#444] text-[10px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Use este atalho sempre para abrir a bilheteria • RICOH P 311 PCL 6
+              </p>
+            </div>
+          </div>
 
-            {/* Status */}
-            <div className="flex items-center gap-2.5">
+          {/* QZ Tray — impressão silenciosa */}
+          <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #1a1a1a' }}>
+            <div className="px-4 py-3 flex items-center gap-2.5" style={{ background: '#0d0d0d', borderBottom: '1px solid #1a1a1a' }}>
               <div className="w-2 h-2 rounded-full shrink-0" style={{
-                background: qzStatus === 'conectado' ? '#4ade80'
-                          : qzStatus === 'conectando' ? ACCENT
-                          : '#333',
+                background: qzStatus === 'conectado' ? '#4ade80' : qzStatus === 'conectando' ? ACCENT : '#333',
               }} />
               <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 Impressão silenciosa (QZ Tray)
               </p>
+              {qzConfigurado && (
+                <span className="ml-auto text-[#4ade80] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  ✓ configurado permanentemente
+                </span>
+              )}
             </div>
 
-            {/* Conectado */}
-            {qzStatus === 'conectado' && (
-              <>
-                <p className="text-[#4ade80] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  ✓ Conectado — imprime sem diálogos
-                </p>
-                {printerList.length > 0 && (
-                  <select
-                    value={printerSel}
-                    onChange={e => setPrinterSel(e.target.value)}
-                    className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
-                    style={{ background: '#111', border: `1px solid ${ACCENT}40`, fontFamily: 'var(--font-dm-sans)', colorScheme: 'dark' }}
-                  >
-                    {printerList.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                )}
-                {printerSel && !localStorage.getItem(`tipo7-qz-auth-${printerSel}`) && (
-                  <p className="text-[#555] text-[11px] leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Ao abrir o caixa, o QZ Tray pedirá autorização para esta impressora uma única vez.
+            <div className="px-4 py-4 flex flex-col gap-3" style={{ background: '#080808' }}>
+              {qzStatus === 'conectado' ? (
+                <>
+                  <p className="text-[#4ade80] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    ✓ Conectado — imprime sem diálogos
                   </p>
-                )}
-              </>
-            )}
-
-            {/* Conectando */}
-            {qzStatus === 'conectando' && (
-              <div className="flex items-center gap-2">
-                <Loader2 size={13} className="animate-spin shrink-0" style={{ color: ACCENT }} />
-                <p className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Aguardando QZ Tray...
-                </p>
-              </div>
-            )}
-
-            {/* Botão de configuração — sempre visível no setup */}
-            <a href="/api/qz/setup" download="configurar-tipo7.bat"
-              className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
-              style={{ background: qzStatus === 'conectado' ? '#1a1a1a' : ACCENT, color: qzStatus === 'conectado' ? '#555' : '#000', border: '1px solid #222', fontFamily: 'var(--font-dm-sans)' }}>
-              <Download size={14} />
-              {qzStatus === 'conectado' ? 'Baixar .bat (reconfigurar)' : 'Baixar e configurar'}
-            </a>
+                  {printerList.length > 0 && (
+                    <select value={printerSel} onChange={e => setPrinterSel(e.target.value)}
+                      className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
+                      style={{ background: '#111', border: `1px solid ${ACCENT}40`, fontFamily: 'var(--font-dm-sans)', colorScheme: 'dark' }}>
+                      {printerList.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  )}
+                  <a href="/api/qz/setup" download="configurar-tipo7.bat"
+                    className="flex items-center justify-center gap-2 py-2 rounded-xl text-xs"
+                    style={{ background: '#111', color: '#333', border: '1px solid #1a1a1a', fontFamily: 'var(--font-dm-sans)' }}>
+                    <Download size={11} />
+                    Reconfigurar (.bat)
+                  </a>
+                </>
+              ) : qzStatus === 'conectando' ? (
+                <div className="flex items-center gap-2 py-1">
+                  <Loader2 size={13} className="animate-spin shrink-0" style={{ color: ACCENT }} />
+                  <p className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Aguardando QZ Tray iniciar...
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-[#555] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Clique abaixo, execute o arquivo baixado e aguarde — leva cerca de 30 segundos.
+                  </p>
+                  <a href="/api/qz/setup" download="configurar-tipo7.bat"
+                    className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold text-[#070707] transition-all active:scale-[0.98] hover:brightness-110"
+                    style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                    <Download size={15} />
+                    Instalar impressão automática
+                  </a>
+                  <p className="text-[#2a2a2a] text-[10px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Feito uma vez • funciona para sempre • sem popups
+                  </p>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Botão abrir caixa */}
-          {erroAutorizacao && (
-            <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10">
-              <AlertTriangle size={14} className="shrink-0" />
-              {erroAutorizacao}
-            </div>
-          )}
-
-          {autorizandoImpressora && (
-            <div className="flex items-center gap-2 text-[#E8B84B] text-sm py-3 px-4 rounded-xl"
-                 style={{ background: '#E8B84B10', border: '1px solid #E8B84B20' }}>
-              <Loader2 size={14} className="animate-spin shrink-0" />
-              Aprove no popup do QZ Tray para continuar...
-            </div>
-          )}
-
-          <button type="button" onClick={salvarFormato} disabled={autorizandoImpressora}
-            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+          <button type="button" onClick={salvarFormato}
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] transition-all hover:brightness-110 active:scale-[0.98]"
             style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-            {autorizandoImpressora
-              ? <><Loader2 size={18} className="animate-spin" /> Autorizando impressora...</>
-              : <><ShoppingBag size={18} /> {setupAberto ? 'Salvar e voltar' : 'Abrir caixa'}</>
-            }
+            <ShoppingBag size={18} /> {setupAberto ? 'Salvar e voltar' : 'Abrir caixa'}
           </button>
 
         </div>

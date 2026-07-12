@@ -30,6 +30,15 @@ export async function POST(req: NextRequest) {
 
     const admin = createServiceClient()
 
+    // Bloqueia se promotor pausou vendas online para abrir caixas
+    const { data: eventoFlag } = await admin
+      .from('events')
+      .select('vendas_online_pausadas')
+      .eq('id', eventoId)
+      .single()
+    if (eventoFlag?.vendas_online_pausadas)
+      return NextResponse.json({ error: 'Vendas temporariamente pausadas. Tente novamente em instantes.' }, { status: 503 })
+
     // Busca ingressos no banco para validar preços
     const ticketIds = items.map(i => i.ticketId)
     const { data: tickets, error: ticketsError } = await admin

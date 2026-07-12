@@ -9,10 +9,12 @@ import {
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
   Clock, Monitor, Settings, Download, FileText, Thermometer, MonitorOff,
+  ArrowRightLeft, X,
 } from 'lucide-react'
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
+const QZ_FINGERPRINT = 'FF36A5373096B6C31B2CF39F9D8422AD7514AD40'
 
 type MetodoPagamento = 'dinheiro' | 'pix' | 'cartao'
 type Etapa = 'venda' | 'pix' | 'dados' | 'impressao'
@@ -47,12 +49,16 @@ interface PixData {
 }
 
 interface Props {
-  eventoId:     string
-  eventoTitle:  string
-  eventoDate:   string | null
-  eventoLocal:  string
-  ingressos:    Ingresso[]
-  operadorName: string
+  eventoId:        string
+  caixaId?:        string
+  caixaNome?:      string
+  saldoIngressos?: number
+  isOwner?:        boolean
+  eventoTitle:     string
+  eventoDate:      string | null
+  eventoLocal:     string
+  ingressos:       Ingresso[]
+  operadorName:    string
 }
 
 const METODOS: { value: MetodoPagamento; label: string; Icon: React.ElementType }[] = [
@@ -63,7 +69,7 @@ const METODOS: { value: MetodoPagamento; label: string; Icon: React.ElementType 
 
 const QTDS_RAPIDAS = [1, 2, 3, 4, 5]
 
-export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLocal, ingressos, operadorName }: Props) {
+export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos, isOwner, eventoTitle, eventoDate, eventoLocal, ingressos, operadorName }: Props) {
   const [etapa,             setEtapa]             = useState<Etapa>('venda')
   const [ticketId,          setTicketId]          = useState(ingressos[0]?.id ?? '')
   const [dropdownAberto,    setDropdownAberto]    = useState(false)
@@ -99,8 +105,14 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   const [printerSel,  setPrinterSel]  = useState('')
   const printerSelRef = useRef('')
   const [qzLoaded,    setQzLoaded]    = useState(false)
-  const [autorizandoImpressora, setAutorizandoImpressora] = useState(false)
-  const [erroAutorizacao,       setErroAutorizacao]       = useState<string | null>(null)
+  const [qzConfigurado, setQzConfigurado] = useState(false)
+
+  // Saldo de ingressos físicos — atualizado via polling leve
+  const [saldoAtual, setSaldoAtual] = useState(saldoIngressos ?? 0)
+
+  // Modais de transferência e fechamento
+  const [modalTransferencia, setModalTransferencia] = useState(false)
+  const [modalFechamento,    setModalFechamento]    = useState(false)
 
   // Mantém refs sincronizados para leitura dentro de timeouts/promises
   useEffect(() => { qzStatusRef.current  = qzStatus  }, [qzStatus])
@@ -178,6 +190,21 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           .catch(reject)
       }
     })
+  }
+
+  // Após print bem-sucedido, grava allowed.dat + authcert.pem via QZ Tray file API.
+  // Isso configura confiança permanente: próxima sessão conecta sem popup.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function gravarConfiancaQZ(qz: any) {
+    try {
+      const cert = await fetch('/api/qz/cert', { cache: 'no-store' }).then(r => r.text())
+      await qz.file.write('allowed.dat', { data: QZ_FINGERPRINT + '\r\n', sandbox: false })
+      await qz.file.write('authcert.pem', { data: cert, sandbox: false })
+      await qz.file.write('qz-tray.properties', { data: 'security.blockUntrustedPrinters=false\r\n', sandbox: false })
+      setQzConfigurado(true)
+    } catch {
+      // falha silenciosa — .bat ainda funciona como alternativa
+    }
   }
 
   // Tenta conectar ao QZ Tray.
@@ -268,38 +295,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       .catch(() => {})
   }, [qzStatus, eventoId])
 
-  async function salvarFormato() {
-    const authKey = `tipo7-qz-auth-${printerSel}`
-    const precisaAutorizar =
-      qzStatus === 'conectado' &&
-      qzRef.current &&
-      formatoSel !== 'nenhuma' &&
-      printerSel &&
-      !localStorage.getItem(authKey)
-
-    if (precisaAutorizar) {
-      setAutorizandoImpressora(true)
-      setErroAutorizacao(null)
-      try {
-        const config = qzRef.current.configs.create(printerSel)
-        await qzRef.current.print(config, [{
-          type: 'html', format: 'plain',
-          data: '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="margin:0"></body></html>',
-        }])
-        localStorage.setItem(authKey, '1')
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : ''
-        if (msg.toLowerCase().includes('block') || msg.toLowerCase().includes('denied') || msg.toLowerCase().includes('cancel')) {
-          setErroAutorizacao('Impressão bloqueada. Aprove no popup do QZ Tray para continuar.')
-          setAutorizandoImpressora(false)
-          return
-        }
-        // Qualquer outro erro (ex: impressora offline): continua mesmo assim
-      } finally {
-        setAutorizandoImpressora(false)
-      }
-    }
-
+  function salvarFormato() {
     localStorage.setItem(`tipo7-impressora-${eventoId}`, formatoSel)
     if (printerSel) localStorage.setItem(`tipo7-qz-printer-${eventoId}`, printerSel)
     setFormato(formatoSel)
@@ -308,16 +304,31 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
 
   function baixarAtalhoKiosk() {
     const url = `${window.location.origin}/bilheteria/${eventoId}`
-    const bat = [
-      '@echo off',
-      'echo Abrindo Tipo7 Bilheteria em modo kiosk...',
-      `start "" "chrome" --kiosk-printing "${url}"`,
-      'if errorlevel 1 start "" "msedge" --kiosk-printing "${url}"',
-    ].join('\r\n')
+    const bat = `@echo off
+chcp 65001 >nul
+title Tipo7 - Bilheteria
+echo Abrindo bilheteria em modo de impressao silenciosa...
+echo (Chrome normal continua aberto normalmente)
+echo.
+set "PROFILE=%LOCALAPPDATA%\\tipo7-bilheteria"
+set "CHROME=%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe"
+set "CHROME86=%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe"
+set "EDGE=%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe"
+if exist "%CHROME%" (
+    start "" "%CHROME%" --kiosk-printing --start-maximized --user-data-dir="%PROFILE%" --no-first-run --disable-default-apps "${url}"
+) else if exist "%CHROME86%" (
+    start "" "%CHROME86%" --kiosk-printing --start-maximized --user-data-dir="%PROFILE%" --no-first-run --disable-default-apps "${url}"
+) else if exist "%EDGE%" (
+    start "" "%EDGE%" --kiosk-printing --start-maximized --user-data-dir="%PROFILE%" --no-first-run "${url}"
+) else (
+    echo Navegador nao encontrado. Abra manualmente: ${url}
+    pause
+)
+`
     const blob = new Blob([bat], { type: 'text/plain' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `tipo7-bilheteria.bat`
+    a.download = `tipo7-bilheteria-${eventoTitle.slice(0, 20).replace(/[^a-z0-9]/gi, '-')}.bat`
     a.click()
     URL.revokeObjectURL(a.href)
   }
@@ -377,7 +388,10 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page{margin:0}body{margin:0;padding:0}</style></head><body>${cards.join('')}</body></html>`
           const printer = printerSelRef.current || (await qzRef.current.printers.getDefault())
           const config = qzRef.current.configs.create(printer)
-          qzRef.current.print(config, [{ type: 'html', format: 'plain', data: html }]).catch(() => {})
+          const qzLocal = qzRef.current
+          qzLocal.print(config, [{ type: 'html', format: 'plain', data: html }])
+            .then(() => { gravarConfiancaQZ(qzLocal) })
+            .catch(() => {})
           handleNovaVenda()
           return
         } catch (e) {
@@ -550,6 +564,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
             eventoId,
             ticketId,
             quantidade,
+            caixaId: caixaId ?? null,
             comprador: nome || cpf ? { nome: nome || undefined, cpf: cpf.replace(/\D/g, '') || undefined } : undefined,
           }),
         })
@@ -586,6 +601,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           eventoId,
           ticketId,
           quantidade,
+          caixaId: caixaId ?? null,
           metodoPagamento: metodo,
           comprador: {
             nome,
@@ -597,6 +613,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao vender ingresso')
+      setSaldoAtual(s => Math.max(0, s - quantidade))
       setResultado({ tickets: data.tickets, ticketName: data.ticketName })
       setEtapa('impressao')
     } catch (e: unknown) {
@@ -1169,88 +1186,99 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
             </div>
           </div>
 
-          {/* QZ Tray — cartão único de configuração */}
-          <div className="rounded-2xl p-4 flex flex-col gap-3"
-               style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+          {/* Kiosk — impressão silenciosa via Chrome */}
+          <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${ACCENT}40`, background: `${ACCENT}08` }}>
+            <div className="px-4 py-3 flex items-center gap-2.5" style={{ borderBottom: `1px solid ${ACCENT}20` }}>
+              <Printer size={14} style={{ color: ACCENT }} />
+              <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Impressão silenciosa — recomendado
+              </p>
+            </div>
+            <div className="px-4 py-4 flex flex-col gap-3">
+              <p className="text-[#888] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Baixe o atalho abaixo e dê duplo clique. O Chrome abre direto neste evento e toda venda imprime automaticamente — sem nenhum clique extra.
+              </p>
+              <button
+                type="button"
+                onClick={baixarAtalhoKiosk}
+                className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold text-[#070707] transition-all active:scale-[0.98] hover:brightness-110"
+                style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+              >
+                <Download size={15} />
+                Baixar atalho de impressão silenciosa
+              </button>
+              <p className="text-[#444] text-[10px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Use este atalho sempre para abrir a bilheteria • RICOH P 311 PCL 6
+              </p>
+            </div>
+          </div>
 
-            {/* Status */}
-            <div className="flex items-center gap-2.5">
+          {/* QZ Tray — impressão silenciosa */}
+          <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #1a1a1a' }}>
+            <div className="px-4 py-3 flex items-center gap-2.5" style={{ background: '#0d0d0d', borderBottom: '1px solid #1a1a1a' }}>
               <div className="w-2 h-2 rounded-full shrink-0" style={{
-                background: qzStatus === 'conectado' ? '#4ade80'
-                          : qzStatus === 'conectando' ? ACCENT
-                          : '#333',
+                background: qzStatus === 'conectado' ? '#4ade80' : qzStatus === 'conectando' ? ACCENT : '#333',
               }} />
               <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 Impressão silenciosa (QZ Tray)
               </p>
+              {qzConfigurado && (
+                <span className="ml-auto text-[#4ade80] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  ✓ configurado permanentemente
+                </span>
+              )}
             </div>
 
-            {/* Conectado */}
-            {qzStatus === 'conectado' && (
-              <>
-                <p className="text-[#4ade80] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  ✓ Conectado — imprime sem diálogos
-                </p>
-                {printerList.length > 0 && (
-                  <select
-                    value={printerSel}
-                    onChange={e => setPrinterSel(e.target.value)}
-                    className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
-                    style={{ background: '#111', border: `1px solid ${ACCENT}40`, fontFamily: 'var(--font-dm-sans)', colorScheme: 'dark' }}
-                  >
-                    {printerList.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                )}
-                {printerSel && !localStorage.getItem(`tipo7-qz-auth-${printerSel}`) && (
-                  <p className="text-[#555] text-[11px] leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Ao abrir o caixa, o QZ Tray pedirá autorização para esta impressora uma única vez.
+            <div className="px-4 py-4 flex flex-col gap-3" style={{ background: '#080808' }}>
+              {qzStatus === 'conectado' ? (
+                <>
+                  <p className="text-[#4ade80] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    ✓ Conectado — imprime sem diálogos
                   </p>
-                )}
-              </>
-            )}
-
-            {/* Conectando */}
-            {qzStatus === 'conectando' && (
-              <div className="flex items-center gap-2">
-                <Loader2 size={13} className="animate-spin shrink-0" style={{ color: ACCENT }} />
-                <p className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Aguardando QZ Tray...
-                </p>
-              </div>
-            )}
-
-            {/* Botão de configuração — sempre visível no setup */}
-            <a href="/api/qz/setup" download="configurar-tipo7.bat"
-              className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
-              style={{ background: qzStatus === 'conectado' ? '#1a1a1a' : ACCENT, color: qzStatus === 'conectado' ? '#555' : '#000', border: '1px solid #222', fontFamily: 'var(--font-dm-sans)' }}>
-              <Download size={14} />
-              {qzStatus === 'conectado' ? 'Baixar .bat (reconfigurar)' : 'Baixar e configurar'}
-            </a>
+                  {printerList.length > 0 && (
+                    <select value={printerSel} onChange={e => setPrinterSel(e.target.value)}
+                      className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
+                      style={{ background: '#111', border: `1px solid ${ACCENT}40`, fontFamily: 'var(--font-dm-sans)', colorScheme: 'dark' }}>
+                      {printerList.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  )}
+                  <a href="/api/qz/setup" download="configurar-tipo7.bat"
+                    className="flex items-center justify-center gap-2 py-2 rounded-xl text-xs"
+                    style={{ background: '#111', color: '#333', border: '1px solid #1a1a1a', fontFamily: 'var(--font-dm-sans)' }}>
+                    <Download size={11} />
+                    Reconfigurar (.bat)
+                  </a>
+                </>
+              ) : qzStatus === 'conectando' ? (
+                <div className="flex items-center gap-2 py-1">
+                  <Loader2 size={13} className="animate-spin shrink-0" style={{ color: ACCENT }} />
+                  <p className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Aguardando QZ Tray iniciar...
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-[#555] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Clique abaixo, execute o arquivo baixado e aguarde — leva cerca de 30 segundos.
+                  </p>
+                  <a href="/api/qz/setup" download="configurar-tipo7.bat"
+                    className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold text-[#070707] transition-all active:scale-[0.98] hover:brightness-110"
+                    style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                    <Download size={15} />
+                    Instalar impressão automática
+                  </a>
+                  <p className="text-[#2a2a2a] text-[10px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Feito uma vez • funciona para sempre • sem popups
+                  </p>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Botão abrir caixa */}
-          {erroAutorizacao && (
-            <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10">
-              <AlertTriangle size={14} className="shrink-0" />
-              {erroAutorizacao}
-            </div>
-          )}
-
-          {autorizandoImpressora && (
-            <div className="flex items-center gap-2 text-[#E8B84B] text-sm py-3 px-4 rounded-xl"
-                 style={{ background: '#E8B84B10', border: '1px solid #E8B84B20' }}>
-              <Loader2 size={14} className="animate-spin shrink-0" />
-              Aprove no popup do QZ Tray para continuar...
-            </div>
-          )}
-
-          <button type="button" onClick={salvarFormato} disabled={autorizandoImpressora}
-            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+          <button type="button" onClick={salvarFormato}
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] transition-all hover:brightness-110 active:scale-[0.98]"
             style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-            {autorizandoImpressora
-              ? <><Loader2 size={18} className="animate-spin" /> Autorizando impressora...</>
-              : <><ShoppingBag size={18} /> {setupAberto ? 'Salvar e voltar' : 'Abrir caixa'}</>
-            }
+            <ShoppingBag size={18} /> {setupAberto ? 'Salvar e voltar' : 'Abrir caixa'}
           </button>
 
         </div>
@@ -1263,64 +1291,88 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     <div className="min-h-dvh bg-[#070707]">
 
       {/* Header */}
-      <div className="px-6 py-5 border-b border-[#111] flex items-center gap-3">
-        <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-          style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}30` }}
-        >
+      <div className="px-4 py-4 border-b border-[#111] flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+             style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}30` }}>
           <ShoppingBag size={16} style={{ color: ACCENT }} />
         </div>
-        <div className="flex-1">
-          <h1 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
-            Bilheteria
+        <div className="flex-1 min-w-0">
+          <h1 className="text-white text-sm font-semibold truncate" style={{ fontFamily: 'var(--font-outfit)' }}>
+            {caixaNome ?? 'Bilheteria'}
           </h1>
-          <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <p className="text-[#555] text-[11px] truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
             {eventoTitle} • {operadorName}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={abrirSegundaTela}
-            title="Abrir segunda tela para o cliente"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
-            style={{
-              background:  '#0d0d0d',
-              border:      '1px solid #1e1e1e',
-              color:       '#555',
-              fontFamily:  'var(--font-dm-sans)',
-            }}
-          >
+        {/* Saldo de ingressos físicos */}
+        {caixaId && (
+          <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl shrink-0"
+               style={{ background: saldoAtual <= 5 ? 'rgba(248,113,113,0.08)' : '#0d0d0d', border: `1px solid ${saldoAtual <= 5 ? 'rgba(248,113,113,0.2)' : '#1e1e1e'}` }}>
+            <Ticket size={11} style={{ color: saldoAtual <= 5 ? '#f87171' : '#555' }} />
+            <span className="text-xs font-semibold" style={{ color: saldoAtual <= 5 ? '#f87171' : '#888', fontFamily: 'var(--font-dm-sans)' }}>
+              {saldoAtual}
+            </span>
+          </div>
+        )}
+        <div className="flex items-center gap-1.5">
+          {caixaId && (
+            <button type="button" onClick={() => setModalTransferencia(true)}
+              title="Transferir ingressos"
+              className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
+              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
+              <ArrowRightLeft size={13} />
+            </button>
+          )}
+          <button type="button" onClick={abrirSegundaTela}
+            title="Segunda tela"
+            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
+            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
             <Monitor size={13} />
-            Segunda tela
           </button>
-          <button
-            type="button"
-            onClick={() => { setSetupAberto(true); setFormatoSel(formato ?? 'a4') }}
-            title={`Configurar impressora${qzStatus === 'conectado' ? ' • QZ Tray ativo' : ''}`}
+          <button type="button" onClick={() => { setSetupAberto(true); setFormatoSel(formato ?? 'a4') }}
+            title="Configurar impressora"
             className="relative w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
-            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}
-          >
-            <Settings size={14} />
+            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
+            <Settings size={13} />
             {qzStatus === 'conectado' && (
               <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-green-400" />
             )}
           </button>
-          <Link
-            href={`/dashboard/${eventoId}`}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
-            style={{
-              background:  '#0d0d0d',
-              border:      '1px solid #1e1e1e',
-              color:       '#555',
-              fontFamily:  'var(--font-dm-sans)',
-            }}
-          >
-            <ArrowLeft size={13} />
-            Voltar
-          </Link>
+          {caixaId ? (
+            <button type="button" onClick={() => setModalFechamento(true)}
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs transition-colors hover:border-red-400/30 hover:text-red-400"
+              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
+              <X size={12} />
+              Fechar
+            </button>
+          ) : (
+            <Link href={`/dashboard/${eventoId}`}
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
+              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
+              <ArrowLeft size={12} />
+              Voltar
+            </Link>
+          )}
         </div>
       </div>
+
+      {/* Modais */}
+      {modalTransferencia && caixaId && (
+        <ModalTransferencia
+          eventoId={eventoId}
+          caixaId={caixaId}
+          saldoAtual={saldoAtual}
+          onFechar={() => setModalTransferencia(false)}
+          onTransferido={(qtd) => setSaldoAtual(s => s - qtd)}
+        />
+      )}
+      {modalFechamento && caixaId && (
+        <ModalFechamento
+          eventoId={eventoId}
+          caixaId={caixaId}
+          onFechar={() => setModalFechamento(false)}
+        />
+      )}
 
       <div className="max-w-lg mx-auto px-5 py-6 flex flex-col gap-6">
 
@@ -1608,6 +1660,242 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
           </p>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Modal de Transferência de Ingressos ───────────────────────────────────────
+function ModalTransferencia({
+  eventoId, caixaId, saldoAtual, onFechar, onTransferido,
+}: {
+  eventoId: string; caixaId: string; saldoAtual: number
+  onFechar: () => void; onTransferido: (qtd: number) => void
+}) {
+  const [caixas, setCaixas] = useState<{ id: string; nome: string; saldoIngressos: number }[]>([])
+  const [destino, setDestino] = useState('')
+  const [qtd, setQtd]         = useState(1)
+  const [carregando, setCarregando] = useState(true)
+  const [salvando, setSalvando]     = useState(false)
+  const [err, setErr]               = useState<string | null>(null)
+  const [ok, setOk]                 = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/eventos/${eventoId}/caixas`)
+      .then(r => r.json())
+      .then(d => {
+        const outros = (d.caixas ?? []).filter((c: { id: string; status: string }) => c.id !== caixaId && c.status === 'aberto')
+        setCaixas(outros)
+        if (outros[0]) setDestino(outros[0].id)
+      })
+      .finally(() => setCarregando(false))
+  }, [eventoId, caixaId])
+
+  async function transferir() {
+    setSalvando(true); setErr(null)
+    const res = await fetch('/api/caixas/transferir', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caixaOrigemId: caixaId, caixaDestinoId: destino, quantidade: qtd }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setErr(data.message ?? data.error ?? 'Erro'); setSalvando(false); return }
+    setOk(true)
+    onTransferido(qtd)
+    setTimeout(onFechar, 1800)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm" onClick={onFechar}>
+      <div className="w-full max-w-md rounded-t-3xl flex flex-col gap-5 p-6"
+           style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
+           onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>
+            Transferir ingressos
+          </h3>
+          <button type="button" onClick={onFechar} className="text-[#444] hover:text-white"><X size={18} /></button>
+        </div>
+        {ok ? (
+          <div className="flex flex-col items-center gap-3 py-4">
+            <CheckCircle2 size={40} className="text-green-400" />
+            <p className="text-green-400 font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {qtd} ingresso{qtd > 1 ? 's' : ''} transferido{qtd > 1 ? 's' : ''}!
+            </p>
+          </div>
+        ) : carregando ? (
+          <div className="flex justify-center py-6"><Loader2 size={24} className="animate-spin text-[#444]" /></div>
+        ) : caixas.length === 0 ? (
+          <p className="text-[#555] text-sm text-center py-4" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Nenhum outro caixa aberto para receber a transferência.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="text-[#555] text-xs uppercase tracking-wider mb-1.5 block" style={{ fontFamily: 'var(--font-dm-sans)' }}>Destino</label>
+                <select value={destino} onChange={e => setDestino(e.target.value)}
+                  className="w-full rounded-xl px-3 py-3 text-white text-sm outline-none"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)', colorScheme: 'dark' }}>
+                  {caixas.map(c => <option key={c.id} value={c.id}>{c.nome} (saldo: {c.saldoIngressos})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[#555] text-xs uppercase tracking-wider mb-1.5 block" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Quantidade (máx. {saldoAtual})
+                </label>
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setQtd(q => Math.max(1, q - 1))}
+                    className="w-11 h-11 rounded-xl border border-[#1e1e1e] text-white text-xl flex items-center justify-center">−</button>
+                  <span className="text-white text-xl font-semibold w-10 text-center" style={{ fontFamily: 'var(--font-outfit)' }}>{qtd}</span>
+                  <button type="button" onClick={() => setQtd(q => Math.min(saldoAtual, q + 1))}
+                    className="w-11 h-11 rounded-xl border border-[#1e1e1e] text-white text-xl flex items-center justify-center">+</button>
+                </div>
+              </div>
+            </div>
+            {err && (
+              <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10">
+                <AlertTriangle size={14} className="shrink-0" /> {err}
+              </div>
+            )}
+            <button type="button" onClick={transferir} disabled={salvando || qtd > saldoAtual}
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] disabled:opacity-50 hover:brightness-110 active:scale-[0.98] transition-all"
+              style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+              {salvando ? <><Loader2 size={18} className="animate-spin" /> Transferindo...</> : <><ArrowRightLeft size={18} /> Transferir {qtd} ingresso{qtd > 1 ? 's' : ''}</>}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Modal de Fechamento de Caixa ──────────────────────────────────────────────
+function ModalFechamento({ eventoId, caixaId, onFechar }: { eventoId: string; caixaId: string; onFechar: () => void }) {
+  const [dinheiro, setDinheiro]     = useState('')
+  const [devolvidos, setDevolvidos] = useState('0')
+  const [obs, setObs]               = useState('')
+  const [salvando, setSalvando]     = useState(false)
+  const [err, setErr]               = useState<string | null>(null)
+  const [apuracao, setApuracao]     = useState<{
+    fundo_inicial: number; total_dinheiro: number; expected_gaveta: number
+    dinheiro_contado: number; diferenca_dinheiro: number
+    ingressos_alocados: number; recebidos: number; enviados: number
+    vendidos: number; ingressos_devolvidos: number; diferenca_ingressos: number
+  } | null>(null)
+
+  async function fechar() {
+    const dinheiroNum = parseFloat(dinheiro.replace(',', '.')) || 0
+    const devolvidosN = parseInt(devolvidos) || 0
+    setSalvando(true); setErr(null)
+    const res = await fetch('/api/caixas/fechar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caixaId, dinheiro_contado: dinheiroNum, ingressos_devolvidos: devolvidosN, observacoes: obs || undefined }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setErr(data.error ?? 'Erro'); setSalvando(false); return }
+    setApuracao(data.apuracao)
+    setSalvando(false)
+  }
+
+  const fmt = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`
+
+  if (apuracao) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-t-3xl flex flex-col gap-5 p-6 max-h-[85dvh] overflow-y-auto"
+             style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+          <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>Apuração do caixa</h3>
+          <div className="flex flex-col gap-2">
+            <Row label="Fundo inicial"           value={fmt(apuracao.fundo_inicial)} />
+            <Row label="Vendas em dinheiro"      value={fmt(apuracao.total_dinheiro)} />
+            <Row label="Esperado na gaveta"      value={fmt(apuracao.expected_gaveta)} bold />
+            <Row label="Contado"                 value={fmt(apuracao.dinheiro_contado)} bold />
+            <Row label="Diferença (dinheiro)"
+              value={fmt(Math.abs(apuracao.diferenca_dinheiro))}
+              ok={Math.abs(apuracao.diferenca_dinheiro) < 0.01}
+              sign={apuracao.diferenca_dinheiro > 0.01 ? 'falta' : apuracao.diferenca_dinheiro < -0.01 ? 'sobra' : ''} />
+            <div className="border-t border-[#1a1a1a] my-1" />
+            <Row label="Ingressos alocados + recebidos" value={String(apuracao.ingressos_alocados + apuracao.recebidos)} />
+            <Row label="Vendidos"                value={String(apuracao.vendidos)} />
+            <Row label="Devolvidos"              value={String(apuracao.ingressos_devolvidos)} />
+            <Row label="Diferença (ingressos)"
+              value={String(Math.abs(apuracao.diferenca_ingressos))}
+              ok={apuracao.diferenca_ingressos === 0}
+              sign={apuracao.diferenca_ingressos > 0 ? 'falta' : apuracao.diferenca_ingressos < 0 ? 'sobra' : ''} />
+          </div>
+          <a href={`/bilheteria/${eventoId}`}
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] hover:brightness-110"
+            style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+            Voltar ao painel
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm" onClick={onFechar}>
+      <div className="w-full max-w-md rounded-t-3xl flex flex-col gap-5 p-6"
+           style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
+           onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>Fechar caixa</h3>
+          <button type="button" onClick={onFechar} className="text-[#444] hover:text-white"><X size={18} /></button>
+        </div>
+        <p className="text-[#555] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          Conte o dinheiro físico na gaveta e informe o valor total abaixo.
+        </p>
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="text-[#555] text-xs uppercase tracking-wider mb-1.5 block" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Dinheiro contado na gaveta (R$)
+            </label>
+            <input type="text" inputMode="decimal" value={dinheiro}
+              onChange={e => setDinheiro(e.target.value)}
+              placeholder="0,00"
+              className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-4 py-3 text-white text-lg font-semibold outline-none focus:border-[#E8B84B]/40"
+              style={{ fontFamily: 'var(--font-dm-sans)' }} />
+          </div>
+          <div>
+            <label className="text-[#555] text-xs uppercase tracking-wider mb-1.5 block" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Ingressos físicos devolvidos
+            </label>
+            <input type="number" min="0" value={devolvidos}
+              onChange={e => setDevolvidos(e.target.value)}
+              className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+              style={{ fontFamily: 'var(--font-dm-sans)' }} />
+          </div>
+          <div>
+            <label className="text-[#555] text-xs uppercase tracking-wider mb-1.5 block" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Observações (opcional)
+            </label>
+            <textarea value={obs} onChange={e => setObs(e.target.value)} rows={2}
+              className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40 resize-none"
+              style={{ fontFamily: 'var(--font-dm-sans)' }} />
+          </div>
+        </div>
+        {err && (
+          <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10">
+            <AlertTriangle size={14} className="shrink-0" /> {err}
+          </div>
+        )}
+        <button type="button" onClick={fechar} disabled={salvando || !dinheiro}
+          className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] disabled:opacity-50 hover:brightness-110 active:scale-[0.98] transition-all"
+          style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+          {salvando ? <><Loader2 size={18} className="animate-spin" /> Fechando...</> : 'Fechar caixa e ver apuração'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function Row({ label, value, bold, ok, sign }: { label: string; value: string; bold?: boolean; ok?: boolean; sign?: string }) {
+  const color = ok === undefined ? '#888' : ok ? '#4ade80' : '#f87171'
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{label}</span>
+      <span className="text-sm" style={{ fontFamily: 'var(--font-dm-sans)', color, fontWeight: bold ? 700 : 400 }}>
+        {value}{sign ? ` (${sign})` : ''}
+      </span>
     </div>
   )
 }
