@@ -92,6 +92,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const qzRef            = useRef<any>(null)
   const qzStatusRef      = useRef<QzStatus>('idle')   // ref para leitura dentro de callbacks
+  const qzConectandoRef  = useRef(false)               // mutex síncrono — evita tentarConectar concorrente
 
   const [qzStatus,    setQzStatus]    = useState<QzStatus>('idle')
   const [printerList, setPrinterList] = useState<string[]>([])
@@ -179,13 +180,13 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
     })
   }
 
-  // Tenta conectar ao QZ Tray; só desconecta se houver conexão ativa
-  // (chamar disconnect sem conexão corrompe estado interno do qz-tray.js)
+  // Tenta conectar ao QZ Tray.
+  // qzConectandoRef é mutex síncrono: previne chamadas concorrentes do polling
+  // antes de o React re-renderizar e atualizar qzStatusRef via useEffect.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function tentarConectar(qz: any) {
-    if (qz.websocket.isActive()) {
-      try { await qz.websocket.disconnect() } catch {}
-    }
+    if (qzConectandoRef.current || qz.websocket.isActive()) return
+    qzConectandoRef.current = true
     setQzStatus('conectando')
     try {
       await qz.websocket.connect({ retries: 0 })
@@ -193,6 +194,8 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
       setQzStatus('conectado')
     } catch {
       setQzStatus('indisponivel')
+    } finally {
+      qzConectandoRef.current = false
     }
   }
 
