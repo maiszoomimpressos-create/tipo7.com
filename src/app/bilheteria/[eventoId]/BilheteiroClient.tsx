@@ -1219,15 +1219,13 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
               </div>
             )}
 
-            {/* Botão de configuração — sempre visível enquanto não conectado */}
-            {(qzStatus === 'idle' || qzStatus === 'indisponivel') && (
-              <a href="/api/qz/setup" download="configurar-tipo7.bat"
-                className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
-                style={{ background: ACCENT, color: '#000', fontFamily: 'var(--font-dm-sans)' }}>
-                <Download size={14} />
-                Baixar e configurar
-              </a>
-            )}
+            {/* Botão de configuração — sempre visível no setup */}
+            <a href="/api/qz/setup" download="configurar-tipo7.bat"
+              className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
+              style={{ background: qzStatus === 'conectado' ? '#1a1a1a' : ACCENT, color: qzStatus === 'conectado' ? '#555' : '#000', border: '1px solid #222', fontFamily: 'var(--font-dm-sans)' }}>
+              <Download size={14} />
+              {qzStatus === 'conectado' ? 'Baixar .bat (reconfigurar)' : 'Baixar e configurar'}
+            </a>
           </div>
 
           {/* Botão abrir caixa */}
