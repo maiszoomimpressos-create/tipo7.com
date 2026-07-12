@@ -9,17 +9,16 @@ import {
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
   Clock, Monitor, Settings, Download, FileText, Thermometer, MonitorOff,
-  ArrowRightLeft, X,
+  ArrowRightLeft, X, Calculator,
 } from 'lucide-react'
+import { CalculadoraDinheiro } from './CalculadoraDinheiro'
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
-const QZ_FINGERPRINT = 'FF36A5373096B6C31B2CF39F9D8422AD7514AD40'
 
 type MetodoPagamento = 'dinheiro' | 'pix' | 'cartao'
 type Etapa = 'venda' | 'pix' | 'dados' | 'impressao'
 type PrintFormat = 'a4' | 'termica80' | 'nenhuma'
-type QzStatus = 'idle' | 'conectando' | 'conectado' | 'indisponivel'
 
 const PRINT_FORMATS: { value: PrintFormat; label: string; sub: string; Icon: React.ElementType }[] = [
   { value: 'a4',       label: 'A4',          sub: 'Impressora comum',    Icon: FileText    },
@@ -95,43 +94,20 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   const realtimeRef      = useRef<RealtimeChannel | null>(null)
   const segundaRef       = useRef<Window | null>(null)
   const pixBroadcastRef  = useRef<object | null>(null)   // último payload PIX enviado
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const qzRef            = useRef<any>(null)
-  const qzStatusRef      = useRef<QzStatus>('idle')   // ref para leitura dentro de callbacks
-  const qzConectandoRef  = useRef(false)               // mutex síncrono — evita tentarConectar concorrente
-
-  const [qzStatus,    setQzStatus]    = useState<QzStatus>('idle')
-  const [printerList, setPrinterList] = useState<string[]>([])
-  const [printerSel,  setPrinterSel]  = useState('')
-  const printerSelRef = useRef('')
-  const [qzLoaded,    setQzLoaded]    = useState(false)
-  const [qzConfigurado, setQzConfigurado] = useState(false)
 
   // Saldo de ingressos físicos — atualizado via polling leve
   const [saldoAtual, setSaldoAtual] = useState(saldoIngressos ?? 0)
 
-  // Modais de transferência e fechamento
+  // Modais de transferência, fechamento e calculadora
   const [modalTransferencia, setModalTransferencia] = useState(false)
   const [modalFechamento,    setModalFechamento]    = useState(false)
-
-  // Mantém refs sincronizados para leitura dentro de timeouts/promises
-  useEffect(() => { qzStatusRef.current  = qzStatus  }, [qzStatus])
-  useEffect(() => { printerSelRef.current = printerSel }, [printerSel])
+  const [modalCalculadora,   setModalCalculadora]   = useState(false)
 
   const [formato,      setFormato]      = useState<PrintFormat | null>(null)
   const [setupAberto,  setSetupAberto]  = useState(false)
   const [formatoSel,   setFormatoSel]   = useState<PrintFormat>('a4')
 
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
-
-  // Modo kiosk: ?kiosk=1 na URL desabilita QZ Tray completamente (sem popup)
-  const modoKiosk = typeof window !== 'undefined' && (
-    new URLSearchParams(window.location.search).get('kiosk') === '1' ||
-    localStorage.getItem('tipo7-kiosk') === '1'
-  )
-  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('kiosk') === '1') {
-    localStorage.setItem('tipo7-kiosk', '1')
-  }
 
   // Lê formato salvo ao montar
   useEffect(() => {
@@ -181,134 +157,8 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
     return () => { document.getElementById('tipo7-print-css')?.remove() }
   }, [formato])
 
-  // Configura certificado e assinatura — chamado uma vez quando o script carrega
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function configurarSeguranca(qz: any) {
-    qz.security.setCertificatePromise((resolve: (v: string) => void, reject: (e: unknown) => void) => {
-      fetch('/api/qz/cert', { cache: 'no-store' }).then(r => r.text()).then(resolve).catch(reject)
-    })
-    qz.security.setSignaturePromise((toSign: string) => {
-      return (resolve: (v: string) => void, reject: (e: unknown) => void) => {
-        fetch('/api/qz/sign', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ request: toSign }),
-        })
-          .then(r => r.json())
-          .then(d => resolve(d.signature))
-          .catch(reject)
-      }
-    })
-  }
-
-  // Após print bem-sucedido, grava allowed.dat + authcert.pem via QZ Tray file API.
-  // Isso configura confiança permanente: próxima sessão conecta sem popup.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async function gravarConfiancaQZ(qz: any) {
-    try {
-      const cert = await fetch('/api/qz/cert', { cache: 'no-store' }).then(r => r.text())
-      await qz.file.write('allowed.dat', { data: QZ_FINGERPRINT + '\r\n', sandbox: false })
-      await qz.file.write('authcert.pem', { data: cert, sandbox: false })
-      await qz.file.write('qz-tray.properties', { data: 'security.blockUntrustedPrinters=false\r\n', sandbox: false })
-      setQzConfigurado(true)
-    } catch {
-      // falha silenciosa — .bat ainda funciona como alternativa
-    }
-  }
-
-  // Tenta conectar ao QZ Tray.
-  // qzConectandoRef é mutex síncrono: previne chamadas concorrentes do polling
-  // antes de o React re-renderizar e atualizar qzStatusRef via useEffect.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async function tentarConectar(qz: any) {
-    if (qzConectandoRef.current || qz.websocket.isActive()) return
-    qzConectandoRef.current = true
-    setQzStatus('conectando')
-    try {
-      await qz.websocket.connect({ retries: 0 })
-      qzRef.current = qz
-      setQzStatus('conectado')
-    } catch {
-      setQzStatus('indisponivel')
-    } finally {
-      qzConectandoRef.current = false
-    }
-  }
-
-  // Carrega qz-tray.js do nosso servidor (/public) e tenta conectar na carga inicial
-  // Em modo kiosk (?kiosk=1) não carrega QZ Tray para evitar popup "Action Required"
-  useEffect(() => {
-    if (modoKiosk) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function onScriptLoad() {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const qz: any = (window as any).qz
-      if (!qz) return
-      configurarSeguranca(qz)
-      setQzLoaded(true)
-      tentarConectar(qz)
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if ((window as any).qz) { onScriptLoad(); return }
-
-    if (!document.getElementById('qz-tray-script')) {
-      const script = document.createElement('script')
-      script.id      = 'qz-tray-script'
-      script.src     = '/qz-tray.js'
-      script.onload  = onScriptLoad
-      script.onerror = () => setQzStatus('indisponivel')
-      document.head.appendChild(script)
-    }
-
-    return () => {
-      if (qzRef.current?.websocket?.isActive?.()) {
-        qzRef.current.websocket.disconnect().catch(() => {})
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Polling contínuo desde que qz-tray.js carregou — detecta QZ Tray assim que iniciar
-  useEffect(() => {
-    if (!qzLoaded || modoKiosk) return
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const qz: any = (window as any).qz
-    if (!qz) return
-
-    const id = setInterval(() => {
-      if (qzStatusRef.current === 'conectado' || qzStatusRef.current === 'conectando') return
-      tentarConectar(qz)
-    }, 1500)
-
-    return () => clearInterval(id)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qzLoaded])
-
-  // Quando QZ Tray conecta, busca lista de impressoras e restaura seleção salva
-  useEffect(() => {
-    if (qzStatus !== 'conectado' || !qzRef.current) return
-    const qz = qzRef.current
-    qz.printers.find()
-      .then((printers: string | string[]) => {
-        const list = Array.isArray(printers) ? printers : [printers]
-        setPrinterList(list)
-        const saved = localStorage.getItem(`tipo7-qz-printer-${eventoId}`)
-        if (saved && list.includes(saved)) {
-          setPrinterSel(saved)
-        } else {
-          qz.printers.getDefault()
-            .then((def: string) => { if (def) setPrinterSel(def) })
-            .catch(() => {})
-        }
-      })
-      .catch(() => {})
-  }, [qzStatus, eventoId])
-
   function salvarFormato() {
     localStorage.setItem(`tipo7-impressora-${eventoId}`, formatoSel)
-    if (printerSel) localStorage.setItem(`tipo7-qz-printer-${eventoId}`, printerSel)
     setFormato(formatoSel)
     setSetupAberto(false)
   }
@@ -349,68 +199,11 @@ if exist "%CHROME%" (
     if (metodo === 'pix') setDadosAbertos(true)
   }, [metodo])
 
-  // Imprime automaticamente ao chegar na tela de impressão — QZ Tray (silencioso) ou window.print()
-  // qzStatus NÃO está nas deps: o timer não pode ser cancelado por mudança de status do QZ Tray.
-  // Usamos qzStatusRef para ler o status atual no momento em que o timer dispara.
+  // Imprime automaticamente ao chegar na tela de impressão
   useEffect(() => {
     if (etapa !== 'impressao' || !resultado || !formato || formato === 'nenhuma') return
 
-    const t = setTimeout(async () => {
-      // Tenta QZ Tray (impressão silenciosa sem diálogo)
-      if (qzStatusRef.current === 'conectado' && qzRef.current) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const qrLib = await import('qrcode' as any)
-          const { tickets, ticketName } = resultado
-          const pageW = formato === 'termica80' ? '76mm' : '185mm'
-
-          const cards = await Promise.all(tickets.map(async (tk: { id: string; slot_number: number; qr_token: string }) => {
-            const qrUrl: string = await qrLib.toDataURL(tk.qr_token, { width: 200, margin: 1 })
-            const numStr = String(tk.slot_number).padStart(3, '0')
-            const totalStr = tickets.length > 1 ? ` / ${tickets.length}` : ''
-            return `
-              <div style="width:${pageW};padding:8mm;font-family:sans-serif;box-sizing:border-box;page-break-after:always">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5mm">
-                  <div style="color:#b8840a;font-size:9px;text-transform:uppercase;letter-spacing:1px">Tipo7.com</div>
-                  <div style="display:flex;align-items:baseline;gap:2px">
-                    <span style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:1px">Ingresso</span>
-                    <span style="font-size:22px;font-weight:900;letter-spacing:-1px;line-height:1">#${numStr}</span>
-                    ${tickets.length > 1 ? `<span style="font-size:9px;color:#888">${totalStr}</span>` : ''}
-                  </div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6mm">
-                  <div style="flex:1">
-                    <div style="font-size:14px;font-weight:700;margin-bottom:4px">${eventoTitle.replace(/</g, '&lt;')}</div>
-                    ${dataFormatada ? `<div style="font-size:10px;color:#555">${dataFormatada}</div>` : ''}
-                    ${eventoLocal ? `<div style="font-size:10px;color:#666">${eventoLocal.replace(/</g, '&lt;')}</div>` : ''}
-                  </div>
-                  <img src="${qrUrl}" style="width:85px;height:85px;flex-shrink:0"/>
-                </div>
-                <hr style="border:none;border-top:1px dashed #ccc;margin:6px 0"/>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
-                  <div><div style="font-size:8px;color:#888;text-transform:uppercase">Tipo</div><div style="font-size:11px;font-weight:600">${ticketName.replace(/</g, '&lt;')}</div></div>
-                  <div><div style="font-size:8px;color:#888;text-transform:uppercase">Portador</div><div style="font-size:11px;font-weight:600">${(nome || 'Consumidor').replace(/</g, '&lt;')}</div></div>
-                  ${cpf ? `<div style="grid-column:1/-1"><div style="font-size:8px;color:#888;text-transform:uppercase">CPF</div><div style="font-size:11px;font-weight:600">${cpf}</div></div>` : ''}
-                </div>
-                <div style="margin-top:7px;font-size:8px;color:#999;text-align:center">Ingresso válido — apresente o QR code na entrada • tipo7.com</div>
-              </div>`
-          }))
-
-          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page{margin:0}body{margin:0;padding:0}</style></head><body>${cards.join('')}</body></html>`
-          const printer = printerSelRef.current || (await qzRef.current.printers.getDefault())
-          const config = qzRef.current.configs.create(printer)
-          const qzLocal = qzRef.current
-          qzLocal.print(config, [{ type: 'html', format: 'plain', data: html }])
-            .then(() => { gravarConfiancaQZ(qzLocal) })
-            .catch(() => {})
-          handleNovaVenda()
-          return
-        } catch (e) {
-          console.warn('QZ Tray falhou, usando window.print():', e)
-        }
-      }
-
-      // Fallback: diálogo padrão do navegador
+    const t = setTimeout(() => {
       window.print()
       handleNovaVenda()
     }, 600)
@@ -1197,94 +990,15 @@ if exist "%CHROME%" (
             </div>
           </div>
 
-          {/* Kiosk — impressão silenciosa via Chrome */}
-          <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${ACCENT}40`, background: `${ACCENT}08` }}>
-            <div className="px-4 py-3 flex items-center gap-2.5" style={{ borderBottom: `1px solid ${ACCENT}20` }}>
-              <Printer size={14} style={{ color: ACCENT }} />
-              <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Impressão silenciosa — recomendado
-              </p>
-            </div>
-            <div className="px-4 py-4 flex flex-col gap-3">
-              <p className="text-[#888] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Baixe o atalho abaixo e dê duplo clique. O Chrome abre direto neste evento e toda venda imprime automaticamente — sem nenhum clique extra.
-              </p>
-              <button
-                type="button"
-                onClick={baixarAtalhoKiosk}
-                className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold text-[#070707] transition-all active:scale-[0.98] hover:brightness-110"
-                style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-              >
-                <Download size={15} />
-                Baixar atalho de impressão silenciosa
-              </button>
-              <p className="text-[#444] text-[10px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Use este atalho sempre para abrir a bilheteria • RICOH P 311 PCL 6
-              </p>
-            </div>
-          </div>
-
-          {/* QZ Tray — impressão silenciosa */}
-          <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #1a1a1a' }}>
-            <div className="px-4 py-3 flex items-center gap-2.5" style={{ background: '#0d0d0d', borderBottom: '1px solid #1a1a1a' }}>
-              <div className="w-2 h-2 rounded-full shrink-0" style={{
-                background: qzStatus === 'conectado' ? '#4ade80' : qzStatus === 'conectando' ? ACCENT : '#333',
-              }} />
-              <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Impressão silenciosa (QZ Tray)
-              </p>
-              {qzConfigurado && (
-                <span className="ml-auto text-[#4ade80] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  ✓ configurado permanentemente
-                </span>
-              )}
-            </div>
-
-            <div className="px-4 py-4 flex flex-col gap-3" style={{ background: '#080808' }}>
-              {qzStatus === 'conectado' ? (
-                <>
-                  <p className="text-[#4ade80] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    ✓ Conectado — imprime sem diálogos
-                  </p>
-                  {printerList.length > 0 && (
-                    <select value={printerSel} onChange={e => setPrinterSel(e.target.value)}
-                      className="w-full rounded-xl px-3 py-2.5 text-white text-sm outline-none"
-                      style={{ background: '#111', border: `1px solid ${ACCENT}40`, fontFamily: 'var(--font-dm-sans)', colorScheme: 'dark' }}>
-                      {printerList.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                  )}
-                  <a href="/api/qz/setup" download="configurar-tipo7.bat"
-                    className="flex items-center justify-center gap-2 py-2 rounded-xl text-xs"
-                    style={{ background: '#111', color: '#333', border: '1px solid #1a1a1a', fontFamily: 'var(--font-dm-sans)' }}>
-                    <Download size={11} />
-                    Reconfigurar (.bat)
-                  </a>
-                </>
-              ) : qzStatus === 'conectando' ? (
-                <div className="flex items-center gap-2 py-1">
-                  <Loader2 size={13} className="animate-spin shrink-0" style={{ color: ACCENT }} />
-                  <p className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Aguardando QZ Tray iniciar...
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <p className="text-[#555] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Clique abaixo, execute o arquivo baixado e aguarde — leva cerca de 30 segundos.
-                  </p>
-                  <a href="/api/qz/setup" download="configurar-tipo7.bat"
-                    className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold text-[#070707] transition-all active:scale-[0.98] hover:brightness-110"
-                    style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-                    <Download size={15} />
-                    Instalar impressão automática
-                  </a>
-                  <p className="text-[#2a2a2a] text-[10px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Feito uma vez • funciona para sempre • sem popups
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={baixarAtalhoKiosk}
+            className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
+            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#888', fontFamily: 'var(--font-dm-sans)' }}
+          >
+            <Download size={14} />
+            Baixar atalho de impressão silenciosa
+          </button>
 
           <button type="button" onClick={salvarFormato}
             className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] transition-all hover:brightness-110 active:scale-[0.98]"
@@ -1326,6 +1040,12 @@ if exist "%CHROME%" (
           </div>
         )}
         <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => setModalCalculadora(true)}
+            title="Calculadora de dinheiro"
+            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
+            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
+            <Calculator size={13} />
+          </button>
           {caixaId && (
             <button type="button" onClick={() => setModalTransferencia(true)}
               title="Transferir ingressos"
@@ -1342,12 +1062,9 @@ if exist "%CHROME%" (
           </button>
           <button type="button" onClick={() => { setSetupAberto(true); setFormatoSel(formato ?? 'a4') }}
             title="Configurar impressora"
-            className="relative w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
+            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
             style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
             <Settings size={13} />
-            {qzStatus === 'conectado' && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-green-400" />
-            )}
           </button>
           {caixaId ? (
             <button type="button" onClick={() => setModalFechamento(true)}
@@ -1368,6 +1085,12 @@ if exist "%CHROME%" (
       </div>
 
       {/* Modais */}
+      {modalCalculadora && (
+        <CalculadoraDinheiro
+          label="Calculadora de caixa"
+          onClose={() => setModalCalculadora(false)}
+        />
+      )}
       {modalTransferencia && caixaId && (
         <ModalTransferencia
           eventoId={eventoId}

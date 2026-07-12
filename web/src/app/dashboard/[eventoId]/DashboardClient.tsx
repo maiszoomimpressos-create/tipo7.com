@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import {
   ArrowLeft, Download, TrendingUp, Ticket, CheckCircle2,
-  Percent, Search, ChevronUp, ChevronDown,
+  Percent, Search, ChevronUp, ChevronDown, Store,
 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
@@ -259,15 +259,25 @@ export function DashboardClient({ data }: Props) {
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => exportarCSV(compradores, evento.title)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-[#070707] shrink-0 hover:brightness-110 transition-all"
-          style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-        >
-          <Download size={14} />
-          Exportar CSV
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/bilheteria/${evento.id}`}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold shrink-0 hover:brightness-110 transition-all"
+            style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}
+          >
+            <Store size={14} />
+            Bilheteria
+          </a>
+          <button
+            type="button"
+            onClick={() => exportarCSV(compradores, evento.title)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-[#070707] shrink-0 hover:brightness-110 transition-all"
+            style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+          >
+            <Download size={14} />
+            Exportar CSV
+          </button>
+        </div>
       </div>
 
       {/* ── Cards de resumo ────────────────────────────────────────────────── */}

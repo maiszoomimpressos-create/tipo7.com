@@ -4,9 +4,11 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
   Plus, Trash2, ArrowLeft, Loader2, AlertTriangle, CheckCircle2,
-  ShoppingBag, ArrowRightLeft, Lock, Unlock, Users, TrendingUp,
+  ShoppingBag, Lock, Unlock, Users, TrendingUp,
   Banknote, Smartphone, CreditCard, RefreshCw, ChevronRight,
+  Calculator,
 } from 'lucide-react'
+import { CalculadoraDinheiro } from './CalculadoraDinheiro'
 
 const ACCENT = '#E8B84B'
 
@@ -49,6 +51,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
   const [salvando, setSalvando]   = useState(false)
   const [err, setErr]             = useState<string | null>(null)
   const [pausando, setPausando]   = useState(false)
+  const [calcAberto, setCalcAberto] = useState<{ idx: number; label: string } | null>(null)
 
   const carregarCaixas = useCallback(async () => {
     const res  = await fetch(`/api/eventos/${eventoId}/caixas`)
@@ -153,6 +156,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
   // ── Fase: configurando caixas ─────────────────────────────────────────────
   if (fase === 'configurando') {
     return (
+      <>
       <div className="min-h-dvh bg-[#070707] flex flex-col">
         <Header eventoTitle={eventoTitle} eventoId={eventoId} />
 
@@ -220,14 +224,18 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[#555] text-[10px] uppercase tracking-wider block mb-1.5"
-                           style={{ fontFamily: 'var(--font-dm-sans)' }}>Troco inicial (R$)</label>
-                    <input
-                      type="number" min="0" step="0.01"
-                      value={cfg.fundo_inicial}
-                      onChange={e => updateConfig(i, 'fundo_inicial', parseFloat(e.target.value) || 0)}
-                      className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-3 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40"
-                      style={{ fontFamily: 'var(--font-dm-sans)' }}
-                    />
+                           style={{ fontFamily: 'var(--font-dm-sans)' }}>Troco inicial</label>
+                    <button type="button"
+                      onClick={() => setCalcAberto({ idx: i, label: cfg.nome })}
+                      className="w-full flex items-center justify-between bg-[#111] border border-[#1e1e1e] rounded-xl px-3 py-2.5 text-sm transition-colors hover:border-[#E8B84B]/40"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      <span style={{ color: cfg.fundo_inicial > 0 ? '#fff' : '#444' }}>
+                        {cfg.fundo_inicial > 0
+                          ? `R$ ${cfg.fundo_inicial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                          : 'R$ 0,00'}
+                      </span>
+                      <Calculator size={13} style={{ color: ACCENT }} />
+                    </button>
                   </div>
                   <div>
                     <label className="text-[#555] text-[10px] uppercase tracking-wider block mb-1.5"
@@ -273,6 +281,16 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
 
         </div>
       </div>
+
+      {calcAberto !== null && (
+        <CalculadoraDinheiro
+          label={`Troco inicial — ${calcAberto.label}`}
+          valor={configs[calcAberto.idx]?.fundo_inicial ?? 0}
+          onChange={v => updateConfig(calcAberto.idx, 'fundo_inicial', v)}
+          onClose={() => setCalcAberto(null)}
+        />
+      )}
+      </>
     )
   }
 
@@ -458,4 +476,3 @@ function Header({ eventoTitle, eventoId, onRefresh }: { eventoTitle: string; eve
   )
 }
 
-function _ArrowRightLeftPlaceholder() { return <ArrowRightLeft size={0} /> }

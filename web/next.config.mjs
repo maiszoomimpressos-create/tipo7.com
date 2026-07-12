@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 
+const isDev = process.env.NODE_ENV === 'development'
+
 const securityHeaders = [
   { key: 'X-Frame-Options',            value: 'DENY' },
   { key: 'X-Content-Type-Options',     value: 'nosniff' },
@@ -10,7 +12,10 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com",
+      // Em dev, React precisa de 'unsafe-eval' para reconstruir callstacks
+      isDev
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com"
+        : "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.supabase.co https://picsum.photos https://fastly.picsum.photos",
       "font-src 'self'",
@@ -27,8 +32,8 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
+  turbopack: {
+    root: import.meta.dirname,
   },
   async headers() {
     return [
