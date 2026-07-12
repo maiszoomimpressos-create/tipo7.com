@@ -163,7 +163,7 @@ export function BilheteiroClient({ eventoId, eventoTitle, eventoDate, eventoLoca
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function configurarSeguranca(qz: any) {
     qz.security.setCertificatePromise((resolve: (v: string) => void, reject: (e: unknown) => void) => {
-      fetch('/api/qz/cert').then(r => r.text()).then(resolve).catch(reject)
+      fetch('/api/qz/cert', { cache: 'no-store' }).then(r => r.text()).then(resolve).catch(reject)
     })
     qz.security.setSignaturePromise((toSign: string) => {
       return (resolve: (v: string) => void, reject: (e: unknown) => void) => {
