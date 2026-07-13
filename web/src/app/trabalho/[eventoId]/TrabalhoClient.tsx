@@ -80,20 +80,21 @@ interface Ingresso {
 }
 
 interface Props {
-  eventoId:     string
-  eventoTitle:  string
-  eventoDate:   string | null
-  eventoLocal:  string
-  eventoBanner: string | null
-  cargoNome:    string
-  permissoes:   string[]
-  ingressos:    Ingresso[]
-  isOwner:      boolean
+  eventoId:       string
+  eventoTitle:    string
+  eventoDate:     string | null
+  eventoLocal:    string
+  eventoBanner:   string | null
+  cargoNome:      string
+  permissoes:     string[]
+  ingressos:      Ingresso[]
+  isOwner:        boolean
+  caixaDesignado: { id: string; nome: string } | null
 }
 
 export function TrabalhoClient({
   eventoId, eventoTitle, eventoDate, eventoLocal, eventoBanner,
-  cargoNome, permissoes, ingressos, isOwner,
+  cargoNome, permissoes, ingressos, isOwner, caixaDesignado,
 }: Props) {
   const acessos = buildAcessos(eventoId, permissoes, isOwner)
 
@@ -162,6 +163,33 @@ export function TrabalhoClient({
           </div>
         </div>
       </div>
+
+      {/* Caixa designado */}
+      {caixaDesignado && (
+        <a
+          href={`/bilheteria/${eventoId}/caixa/${caixaDesignado.id}`}
+          className="flex items-center justify-between px-4 py-4 rounded-2xl transition-all hover:brightness-110 active:scale-[0.98]"
+          style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}35` }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: `${ACCENT}15` }}
+            >
+              <ShoppingCart size={18} style={{ color: ACCENT }} />
+            </div>
+            <div>
+              <p className="text-[#888] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Seu caixa designado
+              </p>
+              <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                {caixaDesignado.nome}
+              </p>
+            </div>
+          </div>
+          <ChevronRight size={16} style={{ color: ACCENT + '80' }} />
+        </a>
+      )}
 
       {/* Sua função */}
       <div

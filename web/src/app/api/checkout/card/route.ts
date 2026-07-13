@@ -73,6 +73,15 @@ export async function POST(req: NextRequest) {
 
     const admin = createServiceClient()
 
+    // Guarda de gateway: verifica se o evento usa PagBank antes de buscar ingressos
+    const { data: eventoGateway } = await admin
+      .from('events')
+      .select('payment_gateway')
+      .eq('id', eventoId)
+      .single()
+    if (eventoGateway?.payment_gateway === 'pagbank')
+      return NextResponse.json({ error: 'Use /api/checkout/pagbank-card para este evento' }, { status: 400 })
+
     const ticketIds = items.map(i => i.ticketId)
     const [{ data: tickets }, { data: evento }] = await Promise.all([
       admin.from('event_tickets').select('id, name, price, quantity').in('id', ticketIds).eq('event_id', eventoId),

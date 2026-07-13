@@ -9,7 +9,14 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { eventoId, caixas, transferencia_requer_senha } = body as {
     eventoId: string
-    caixas: { nome: string; fundo_inicial: number; ingressos_alocados: number; operador_id?: string }[]
+    caixas: {
+      nome:               string
+      fundo_inicial:      number
+      ingressos_alocados: number
+      operadorId?:        string
+      funcaoId?:          string | null
+      nomeOperador?:      string
+    }[]
     transferencia_requer_senha: boolean
   }
 
@@ -34,10 +41,11 @@ export async function POST(req: NextRequest) {
   if (org?.owner_id !== user.id)
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
 
-  // Abre os caixas e retoma vendas online em uma transação
+  // Cria os caixas
   const inserts = caixas.map(c => ({
     evento_id:          eventoId,
-    operador_id:        c.operador_id ?? null,
+    operador_id:        c.operadorId ?? null,
+    nome_operador:      c.nomeOperador ?? null,
     nome:               c.nome,
     fundo_inicial:      c.fundo_inicial,
     ingressos_alocados: c.ingressos_alocados,
@@ -50,7 +58,20 @@ export async function POST(req: NextRequest) {
     .select()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Atualiza config do evento: retoma vendas + flag de transferência
+  // Cria convites de equipe para operadores cadastrados
+  for (const c of caixas) {
+    if (c.operadorId && c.funcaoId) {
+      await admin.from('event_staff').upsert({
+        event_id:          eventoId,
+        user_id:           c.operadorId,
+        event_position_id: c.funcaoId,
+        status:            'pending',
+        invited_by:        user.id,
+      }, { onConflict: 'event_id,user_id' })
+    }
+  }
+
+  // Retoma vendas + atualiza flag de transferência
   await admin
     .from('events')
     .update({ vendas_online_pausadas: false, transferencia_requer_senha })

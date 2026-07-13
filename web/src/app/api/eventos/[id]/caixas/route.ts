@@ -64,7 +64,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
     return {
       ...c,
-      operadorName: (c.profiles as { full_name: string } | null)?.full_name ?? null,
+      operadorName: (c.profiles as { full_name: string } | null)?.full_name ?? (c as { nome_operador?: string }).nome_operador ?? null,
       saldoIngressos: c.ingressos_alocados + recebidos - enviados - vendidos,
       vendidos, recebidos, enviados,
       totalDinheiro, totalPix, totalCartao,

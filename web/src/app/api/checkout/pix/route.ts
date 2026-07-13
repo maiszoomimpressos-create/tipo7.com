@@ -50,11 +50,15 @@ export async function POST(req: NextRequest) {
     // Bloqueia se promotor pausou vendas online para abrir caixas
     const { data: eventoFlag } = await admin
       .from('events')
-      .select('vendas_online_pausadas')
+      .select('vendas_online_pausadas, payment_gateway')
       .eq('id', eventoId)
       .single()
     if (eventoFlag?.vendas_online_pausadas)
       return NextResponse.json({ error: 'Vendas temporariamente pausadas. Tente novamente em instantes.' }, { status: 503 })
+
+    // Guarda de gateway: redireciona para o endpoint correto se o evento usar PagBank
+    if (eventoFlag?.payment_gateway === 'pagbank')
+      return NextResponse.json({ error: 'Use /api/checkout/pagbank-pix para este evento' }, { status: 400 })
 
     // Busca ingressos e dados do evento em paralelo para validar preços
     const ticketIds = items.map(i => i.ticketId)

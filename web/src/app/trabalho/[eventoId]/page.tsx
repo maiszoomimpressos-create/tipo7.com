@@ -63,6 +63,15 @@ export default async function TrabalhoPage({ params }: Props) {
     ? ['validar_ingresso', 'vender_ingresso', 'ver_lista_convidados', 'ver_relatorios', 'gerenciar_checkin', 'gerenciar_equipe']
     : (cargo?.event_position_permissions ?? []).map(p => p.permission)
 
+  // Busca caixa designado para este usuário
+  const { data: caixaDesignado } = await admin
+    .from('caixas')
+    .select('id, nome')
+    .eq('evento_id', eventoId)
+    .eq('operador_id', user.id)
+    .eq('status', 'aberto')
+    .maybeSingle()
+
   // Busca tipos de ingresso do evento
   const { data: tickets } = await admin
     .from('event_tickets')
@@ -121,6 +130,7 @@ export default async function TrabalhoPage({ params }: Props) {
         permissoes={permissoes}
         ingressos={ingressos}
         isOwner={isOwner}
+        caixaDesignado={caixaDesignado ? { id: caixaDesignado.id, nome: caixaDesignado.nome } : null}
       />
     </div>
   )

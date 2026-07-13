@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createServiceClient } from '@/lib/supabase/server'
-import { sendTicketEmail } from '@/lib/email'
-import { gerarQrToken } from '@/lib/qrToken'
 import { getMpToken } from '@/lib/mpToken'
+import { issueTickets } from '@/lib/issueTickets'
 import { createHmac } from 'crypto'
 
 const STATUS_MAP: Record<string, string> = {
@@ -128,70 +127,7 @@ export async function POST(req: NextRequest) {
     .eq('id', orderId)
 
   if (newStatus === 'approved') {
-    const { data: items } = await admin
-      .from('order_items')
-      .select('id, quantity, event_tickets(name)')
-      .eq('order_id', orderId)
-
-    if (items && items.length > 0) {
-      const ticketRows = items.flatMap(item =>
-        Array.from({ length: item.quantity }, (_, i) => ({
-          order_id:      orderId,
-          order_item_id: item.id,
-          slot_number:   i + 1,
-          qr_token:      gerarQrToken(),
-        }))
-      )
-
-      await admin
-        .from('tickets')
-        .upsert(ticketRows, { onConflict: 'order_item_id,slot_number', ignoreDuplicates: true })
-
-      const { data: generatedTickets } = await admin
-        .from('tickets')
-        .select('order_item_id, slot_number, qr_token')
-        .eq('order_id', orderId)
-
-      const { data: order } = await admin
-        .from('orders')
-        .select(`
-          user_id,
-          events (title, date_start, venue_name, city, state, banner_url),
-          profiles:user_id (full_name)
-        `)
-        .eq('id', orderId)
-        .single()
-
-      if (order && generatedTickets && process.env.RESEND_API_KEY) {
-        const { data: { user } } = await admin.auth.admin.getUserById(order.user_id)
-
-        if (user?.email) {
-          const rawEvent   = order.events   as unknown as { title: string; date_start: string | null; venue_name: string | null; city: string | null; state: string | null; banner_url: string | null } | null
-          const rawProfile = order.profiles as unknown as { full_name: string | null } | null
-          const event      = Array.isArray(rawEvent)   ? rawEvent[0]   : rawEvent
-          const profile    = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile
-          const buyerName  = profile?.full_name ?? 'Cliente'
-
-          const ticketEmailList = generatedTickets.map(t => {
-            const item       = items.find(i => i.id === t.order_item_id)
-            const rawTicket  = item?.event_tickets as unknown
-            const ticketData = Array.isArray(rawTicket) ? rawTicket[0] as { name: string } : rawTicket as { name: string } | null
-            return {
-              ticket_name: ticketData?.name ?? 'Ingresso',
-              slot_number: t.slot_number,
-              qr_token:    t.qr_token,
-            }
-          })
-
-          await sendTicketEmail({
-            to:        user.email,
-            buyerName,
-            event:     event ?? { title: 'Evento', date_start: null, venue_name: null, city: null, state: null, banner_url: null },
-            tickets:   ticketEmailList,
-          }).catch(err => console.error('[email] falha ao enviar:', err))
-        }
-      }
-    }
+    await issueTickets(orderId, admin)
   }
 
   return NextResponse.json({ ok: true })

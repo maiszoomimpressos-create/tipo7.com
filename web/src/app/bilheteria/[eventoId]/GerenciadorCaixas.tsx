@@ -16,7 +16,16 @@ interface CaixaConfig {
   nome:               string
   fundo_inicial:      number
   ingressos_alocados: number
-  operador_id?:       string
+  tipoOperador:       'nenhum' | 'cadastrado' | 'sem_cadastro'
+  operadorId:         string | null
+  operadorNome:       string | null
+  nomeOperadorLivre:  string
+}
+
+interface MembroEquipe {
+  userId: string
+  nome:   string | null
+  cargo:  string | null
 }
 
 interface CaixaAberto {
@@ -46,12 +55,28 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
   const [requerSenha, setRequerSenha] = useState(false)
   const [caixas, setCaixas]       = useState<CaixaAberto[]>([])
   const [configs, setConfigs]     = useState<CaixaConfig[]>([
-    { nome: 'Caixa A', fundo_inicial: 0, ingressos_alocados: 0 },
+    { nome: 'Caixa A', fundo_inicial: 0, ingressos_alocados: 0, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '' },
   ])
-  const [salvando, setSalvando]   = useState(false)
-  const [err, setErr]             = useState<string | null>(null)
-  const [pausando, setPausando]   = useState(false)
-  const [calcAberto, setCalcAberto] = useState<{ idx: number; label: string } | null>(null)
+  const [equipe, setEquipe]             = useState<MembroEquipe[]>([])
+  const [salvando, setSalvando]         = useState(false)
+  const [err, setErr]                   = useState<string | null>(null)
+  const [pausando, setPausando]         = useState(false)
+  const [calcAberto, setCalcAberto]     = useState<{ idx: number; label: string } | null>(null)
+
+  useEffect(() => {
+    fetch(`/api/eventos/${eventoId}/equipe`)
+      .then(r => r.ok ? r.json() : { staff: [] })
+      .then(d => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const membros: MembroEquipe[] = (d.staff ?? []).filter((s: any) => s.status === 'active').map((s: any) => ({
+          userId: s.user_id,
+          nome:   (Array.isArray(s.profiles) ? s.profiles[0] : s.profiles)?.full_name ?? s.email ?? null,
+          cargo:  (Array.isArray(s.event_positions) ? s.event_positions[0] : s.event_positions)?.name ?? null,
+        }))
+        setEquipe(membros)
+      })
+      .catch(() => {})
+  }, [eventoId])
 
   const carregarCaixas = useCallback(async () => {
     const res  = await fetch(`/api/eventos/${eventoId}/caixas`)
@@ -79,14 +104,18 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
 
   function addCaixa() {
     const letra = String.fromCharCode(65 + configs.length)
-    setConfigs(c => [...c, { nome: `Caixa ${letra}`, fundo_inicial: 0, ingressos_alocados: 0 }])
+    setConfigs(c => [...c, {
+      nome: `Caixa ${letra}`, fundo_inicial: 0, ingressos_alocados: 0,
+      tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '',
+    }])
   }
 
   function removeCaixa(i: number) {
     setConfigs(c => c.filter((_, idx) => idx !== i))
   }
 
-  function updateConfig(i: number, field: keyof CaixaConfig, value: string | number) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function updateConfig(i: number, field: string, value: any) {
     setConfigs(c => c.map((cfg, idx) => idx === i ? { ...cfg, [field]: value } : cfg))
   }
 
@@ -94,11 +123,23 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
     for (const c of configs) {
       if (!c.nome.trim()) { setErr('Preencha o nome de todos os caixas.'); return }
       if (c.ingressos_alocados < 0) { setErr('Quantidade de ingressos não pode ser negativa.'); return }
+      if (c.tipoOperador === 'cadastrado' && !c.operadorId) {
+        setErr(`Caixa "${c.nome}": selecione o operador.`); return
+      }
     }
     setSalvando(true); setErr(null)
+    const caixasPayload = configs.map(c => ({
+      nome:               c.nome,
+      fundo_inicial:      c.fundo_inicial,
+      ingressos_alocados: c.ingressos_alocados,
+      ...(c.tipoOperador === 'cadastrado' && c.operadorId ? { operadorId: c.operadorId } : {}),
+      ...(c.tipoOperador === 'sem_cadastro' && c.nomeOperadorLivre.trim()
+        ? { nomeOperador: c.nomeOperadorLivre.trim() }
+        : {}),
+    }))
     const res = await fetch('/api/caixas/abrir', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventoId, caixas: configs, transferencia_requer_senha: requerSenha }),
+      body: JSON.stringify({ eventoId, caixas: caixasPayload, transferencia_requer_senha: requerSenha }),
     })
     const data = await res.json()
     if (!res.ok) { setErr(data.error ?? 'Erro ao abrir caixas'); setSalvando(false); return }
@@ -249,6 +290,84 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
                     />
                   </div>
                 </div>
+
+                {/* Seção operador */}
+                <div className="border-t border-[#1a1a1a] pt-3">
+                  <label className="text-[#555] text-[10px] uppercase tracking-wider block mb-2"
+                         style={{ fontFamily: 'var(--font-dm-sans)' }}>Operador</label>
+
+                  {/* Toggle tipo */}
+                  <div className="flex gap-1.5 mb-3">
+                    {(['nenhum', 'cadastrado', 'sem_cadastro'] as const).map(tipo => (
+                      <button key={tipo} type="button"
+                        onClick={() => updateConfig(i, 'tipoOperador', tipo)}
+                        className="flex-1 py-1.5 rounded-xl text-[11px] font-medium transition-colors"
+                        style={{
+                          background: cfg.tipoOperador === tipo ? `${ACCENT}20` : '#111',
+                          border:     `1px solid ${cfg.tipoOperador === tipo ? ACCENT + '50' : '#1e1e1e'}`,
+                          color:      cfg.tipoOperador === tipo ? ACCENT : '#555',
+                          fontFamily: 'var(--font-dm-sans)',
+                        }}>
+                        {tipo === 'nenhum' ? 'Nenhum' : tipo === 'cadastrado' ? 'Com cadastro' : 'Sem cadastro'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {cfg.tipoOperador === 'cadastrado' && (
+                    equipe.length > 0 ? (
+                      <div className="flex flex-col gap-1.5">
+                        {equipe.map(m => {
+                          const selecionado = cfg.operadorId === m.userId
+                          return (
+                            <button key={m.userId} type="button"
+                              onClick={() => {
+                                updateConfig(i, 'operadorId',   selecionado ? null : m.userId)
+                                updateConfig(i, 'operadorNome', selecionado ? null : m.nome)
+                              }}
+                              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-colors"
+                              style={{
+                                background: selecionado ? `${ACCENT}15` : '#111',
+                                border:     `1px solid ${selecionado ? ACCENT + '40' : '#1e1e1e'}`,
+                              }}>
+                              <div>
+                                <p className="text-sm font-medium" style={{ color: selecionado ? ACCENT : '#ddd', fontFamily: 'var(--font-dm-sans)' }}>
+                                  {m.nome ?? '—'}
+                                </p>
+                                {m.cargo && (
+                                  <p className="text-[11px] mt-0.5" style={{ color: selecionado ? ACCENT + 'aa' : '#555', fontFamily: 'var(--font-dm-sans)' }}>
+                                    {m.cargo}
+                                  </p>
+                                )}
+                              </div>
+                              {selecionado && (
+                                <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                                     style={{ background: ACCENT }}>
+                                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                                    <path d="M1.5 4L3.5 6L6.5 2" stroke="#070707" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                  </svg>
+                                </div>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        Nenhum membro confirmou presença ainda. Convide pessoas em Gestão da Equipe.
+                      </p>
+                    )
+                  )}
+
+                  {cfg.tipoOperador === 'sem_cadastro' && (
+                    <input
+                      value={cfg.nomeOperadorLivre}
+                      onChange={e => updateConfig(i, 'nomeOperadorLivre', e.target.value)}
+                      placeholder="Nome do operador"
+                      className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#333]"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}
+                    />
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -367,7 +486,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
                   {abertos.length} caixa{abertos.length > 1 ? 's' : ''} aberto{abertos.length > 1 ? 's' : ''}
                 </span>
               </p>
-              <button type="button" onClick={() => { setFase('configurando'); setConfigs([{ nome: 'Caixa ' + String.fromCharCode(65 + caixas.length), fundo_inicial: 0, ingressos_alocados: 0 }]) }}
+              <button type="button" onClick={() => { setFase('configurando'); setConfigs([{ nome: 'Caixa ' + String.fromCharCode(65 + caixas.length), fundo_inicial: 0, ingressos_alocados: 0, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '' }]) }}
                 className="flex items-center gap-1 text-[11px] px-3 py-1.5 rounded-xl"
                 style={{ background: '#111', border: `1px solid ${ACCENT}30`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
                 <Plus size={11} /> Novo caixa
