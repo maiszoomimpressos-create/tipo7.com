@@ -14,8 +14,6 @@
 // O webhook /api/webhooks/mercadopago atualiza o status do pedido quando
 // o MP confirmar o pagamento.
 //
-// ATENÇÃO: Use sempre o token de produção (APP_USR-...) no Vercel.
-// Token errado causa "Unauthorized use of live credentials" no MP.
 // ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
