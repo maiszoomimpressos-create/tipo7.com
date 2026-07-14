@@ -41,6 +41,41 @@ export async function POST(req: NextRequest) {
   if (org?.owner_id !== user.id)
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
 
+  // Valida nomes únicos dentro do lote
+  const nomesLote = caixas.map(c => c.nome.trim())
+  if (new Set(nomesLote).size !== nomesLote.length)
+    return NextResponse.json({ error: 'Cada caixa deve ter um nome único.' }, { status: 400 })
+
+  // Valida conflito de nome com caixas já abertas
+  const { data: caixasExistentes } = await admin
+    .from('caixas')
+    .select('nome')
+    .eq('evento_id', eventoId)
+    .eq('status', 'aberto')
+  const nomesAbertos = new Set((caixasExistentes ?? []).map((c: { nome: string }) => c.nome))
+  for (const nome of nomesLote) {
+    if (nomesAbertos.has(nome))
+      return NextResponse.json({ error: `Já existe um caixa aberto chamado "${nome}". Escolha um nome diferente.` }, { status: 400 })
+  }
+
+  // Valida operadores únicos (ninguém pode operar 2 caixas ao mesmo tempo)
+  const operadoresLote = caixas.filter(c => c.operadorId).map(c => c.operadorId!)
+  if (new Set(operadoresLote).size !== operadoresLote.length)
+    return NextResponse.json({ error: 'Um operador não pode operar dois caixas ao mesmo tempo.' }, { status: 400 })
+
+  if (operadoresLote.length > 0) {
+    const { data: caixasComOp } = await admin
+      .from('caixas')
+      .select('nome, operador_id')
+      .eq('evento_id', eventoId)
+      .eq('status', 'aberto')
+      .in('operador_id', operadoresLote)
+    if ((caixasComOp ?? []).length > 0) {
+      const conflito = (caixasComOp as { nome: string }[])[0]
+      return NextResponse.json({ error: `Um dos operadores já está operando o caixa "${conflito.nome}".` }, { status: 400 })
+    }
+  }
+
   // Cria os caixas
   const inserts = caixas.map(c => ({
     evento_id:          eventoId,

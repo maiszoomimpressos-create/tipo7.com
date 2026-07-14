@@ -32,15 +32,24 @@ export async function GET(_req: NextRequest, { params }: Params) {
     .eq('evento_id', eventoId)
     .order('created_at')
 
-  // Busca nomes dos operadores por ID (operador_id → auth.users → profiles)
+  // Busca nomes, código T7 e email dos operadores
   const operadorIds = [...new Set((caixas ?? []).map(c => c.operador_id).filter(Boolean))]
-  const nomeMap: Record<string, string> = {}
+  const nomeMap:  Record<string, string> = {}
+  const emailMap: Record<string, string> = {}
+  const codeMap:  Record<string, string> = {}
   if (operadorIds.length > 0) {
     const { data: perfis } = await admin
       .from('profiles')
-      .select('id, full_name')
+      .select('id, full_name, user_code')
       .in('id', operadorIds)
-    for (const p of perfis ?? []) nomeMap[p.id] = p.full_name ?? ''
+    for (const p of perfis ?? []) {
+      nomeMap[p.id]  = p.full_name  ?? ''
+      codeMap[p.id]  = p.user_code  ?? ''
+    }
+    const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
+    for (const u of users) {
+      if (operadorIds.includes(u.id)) emailMap[u.id] = u.email ?? ''
+    }
   }
 
   const result = await Promise.all((caixas ?? []).map(async (c) => {
@@ -75,7 +84,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
     return {
       ...c,
-      operadorName: (c.operador_id ? nomeMap[c.operador_id] : null) ?? (c as { nome_operador?: string }).nome_operador ?? null,
+      operadorId:    c.operador_id ?? null,
+      operadorName:  (c.operador_id ? nomeMap[c.operador_id] : null) ?? (c as { nome_operador?: string }).nome_operador ?? null,
+      operadorEmail: c.operador_id ? (emailMap[c.operador_id] ?? null) : null,
+      operadorCode:  c.operador_id ? (codeMap[c.operador_id]  ?? null) : null,
       saldoIngressos: c.ingressos_alocados + recebidos - enviados - vendidos,
       vendidos, recebidos, enviados,
       totalDinheiro, totalPix, totalCartao,

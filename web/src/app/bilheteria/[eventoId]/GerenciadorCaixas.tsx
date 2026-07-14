@@ -34,7 +34,10 @@ interface CaixaAberto {
   id:                 string
   nome:               string
   status:             'aberto' | 'fechado'
+  operadorId:         string | null
   operadorName:       string | null
+  operadorEmail:      string | null
+  operadorCode:       string | null
   fundo_inicial:      number
   ingressos_alocados: number
   saldoIngressos:     number
@@ -113,12 +116,27 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
     setFase('configurando')
   }
 
+  function nomeCaixaUnico(existentes: string[]) {
+    const set = new Set(existentes)
+    for (let i = 0; i < 26; i++) {
+      const candidato = `Caixa ${String.fromCharCode(65 + i)}`
+      if (!set.has(candidato)) return candidato
+    }
+    return `Caixa ${existentes.length + 1}`
+  }
+
   function addCaixa() {
-    const letra = String.fromCharCode(65 + configs.length)
+    const existentes = [...caixas.map(c => c.nome), ...configs.map(c => c.nome)]
     setConfigs(c => [...c, {
-      nome: `Caixa ${letra}`, fundo_inicial: 0, ingressos_alocados: 0,
+      nome: nomeCaixaUnico(existentes), fundo_inicial: 0, ingressos_alocados: 0,
       tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '',
     }])
+  }
+
+  function iniciarNovoCaixa() {
+    const nome = nomeCaixaUnico(caixas.map(c => c.nome))
+    setFase('configurando')
+    setConfigs([{ nome, fundo_inicial: 0, ingressos_alocados: 0, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '' }])
   }
 
   function removeCaixa(i: number) {
@@ -136,6 +154,30 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
       if (c.ingressos_alocados < 0) { setErr('Quantidade de ingressos não pode ser negativa.'); return }
       if (c.tipoOperador === 'cadastrado' && !c.operadorId) {
         setErr(`Caixa "${c.nome}": selecione o operador.`); return
+      }
+    }
+    // Nomes únicos no lote
+    const nomesLote = configs.map(c => c.nome.trim())
+    if (new Set(nomesLote).size !== nomesLote.length) {
+      setErr('Cada caixa deve ter um nome único.'); return
+    }
+    // Conflito com caixas já abertos
+    const nomesAbertos = new Set(caixas.filter(c => c.status === 'aberto').map(c => c.nome))
+    for (const nome of nomesLote) {
+      if (nomesAbertos.has(nome)) {
+        setErr(`Já existe um caixa aberto chamado "${nome}". Escolha um nome diferente.`); return
+      }
+    }
+    // Operadores únicos no lote
+    const opsLote = configs.filter(c => c.operadorId).map(c => c.operadorId!)
+    if (new Set(opsLote).size !== opsLote.length) {
+      setErr('Um operador não pode operar dois caixas ao mesmo tempo.'); return
+    }
+    // Conflito de operador com caixas já abertos
+    const opsAbertos = new Map(caixas.filter(c => c.status === 'aberto' && c.operadorId).map(c => [c.operadorId!, c.nome]))
+    for (const opId of opsLote) {
+      if (opsAbertos.has(opId)) {
+        setErr(`Este operador já está no caixa "${opsAbertos.get(opId)}".`); return
       }
     }
     setSalvando(true); setErr(null)
@@ -505,7 +547,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
                   {abertos.length} caixa{abertos.length > 1 ? 's' : ''} aberto{abertos.length > 1 ? 's' : ''}
                 </span>
               </p>
-              <button type="button" onClick={() => { setFase('configurando'); setConfigs([{ nome: 'Caixa ' + String.fromCharCode(65 + caixas.length), fundo_inicial: 0, ingressos_alocados: 0, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '' }]) }}
+              <button type="button" onClick={iniciarNovoCaixa}
                 className="flex items-center gap-1 text-[11px] px-3 py-1.5 rounded-xl"
                 style={{ background: '#111', border: `1px solid ${ACCENT}30`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
                 <Plus size={11} /> Novo caixa
@@ -548,19 +590,34 @@ function CaixaCard({ caixa, eventoId, fechado = false }: { caixa: CaixaAberto; e
     <Link href={`/bilheteria/${eventoId}/caixa/${caixa.id}`}
       className="rounded-2xl p-4 flex flex-col gap-3 transition-all hover:border-[#2a2a2a]"
       style={{ background: fechado ? '#0a0a0a' : '#0d0d0d', border: `1px solid ${fechado ? '#141414' : '#1a1a1a'}` }}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-2 h-2 rounded-full" style={{ background: fechado ? '#333' : '#4ade80' }} />
-          <span className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)', opacity: fechado ? 0.5 : 1 }}>
-            {caixa.nome}
-          </span>
-          {caixa.operadorName && (
-            <span className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              • {caixa.operadorName}
+      <div className="flex items-start justify-between">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2.5">
+            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: fechado ? '#333' : '#4ade80' }} />
+            <span className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)', opacity: fechado ? 0.5 : 1 }}>
+              {caixa.nome}
             </span>
+          </div>
+          {caixa.operadorName && (
+            <div className="ml-[18px] flex flex-col gap-0.5">
+              <span className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                {caixa.operadorName}
+              </span>
+              {caixa.operadorEmail && (
+                <span className="text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  {caixa.operadorEmail}
+                </span>
+              )}
+              {caixa.operadorCode && (
+                <span className="inline-block text-[10px] font-mono w-fit px-1.5 py-0.5 rounded"
+                      style={{ background: '#161616', color: '#444' }}>
+                  {caixa.operadorCode}
+                </span>
+              )}
+            </div>
           )}
         </div>
-        <ChevronRight size={14} className="text-[#333]" />
+        <ChevronRight size={14} className="text-[#333] shrink-0 mt-0.5" />
       </div>
       <div className="grid grid-cols-3 gap-2">
         <Stat label="Vendidos" value={String(caixa.vendidos)} muted={fechado} />
