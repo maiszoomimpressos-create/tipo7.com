@@ -1,6 +1,6 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { ShieldX } from 'lucide-react'
+import { ShieldX, ArrowLeft } from 'lucide-react'
 import { GerenciadorCaixas } from './GerenciadorCaixas'
 
 interface Props {
@@ -69,6 +69,14 @@ export default async function BilheteriaPage({ params }: Props) {
             <p className="text-[#555] text-sm max-w-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
               O promotor ainda não abriu e designou um caixa para você. Atualize a página em instantes.
             </p>
+            <a
+              href={`/trabalho/${eventoId}`}
+              className="flex items-center gap-2 mt-2 text-sm text-[#444] hover:text-white transition-colors"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <ArrowLeft size={14} />
+              Voltar ao evento
+            </a>
           </div>
         )
       }
