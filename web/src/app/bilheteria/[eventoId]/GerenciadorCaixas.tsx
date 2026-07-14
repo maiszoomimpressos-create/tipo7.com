@@ -23,9 +23,11 @@ interface CaixaConfig {
 }
 
 interface MembroEquipe {
-  userId: string
-  nome:   string | null
-  cargo:  string | null
+  userId:   string
+  nome:     string | null
+  cargo:    string | null
+  email:    string | null
+  userCode: string | null
 }
 
 interface CaixaAberto {
@@ -68,11 +70,20 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
       .then(r => r.ok ? r.json() : { staff: [] })
       .then(d => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const membros: MembroEquipe[] = (d.staff ?? []).filter((s: any) => s.status === 'active').map((s: any) => ({
-          userId: s.user_id,
-          nome:   (Array.isArray(s.profiles) ? s.profiles[0] : s.profiles)?.full_name ?? s.email ?? null,
-          cargo:  (Array.isArray(s.event_positions) ? s.event_positions[0] : s.event_positions)?.name ?? null,
-        }))
+        const membros: MembroEquipe[] = (d.staff ?? [])
+          .filter((s: any) => {
+            if (s.status !== 'active') return false
+            const pos  = Array.isArray(s.event_positions) ? s.event_positions[0] : s.event_positions
+            const perms: { permission: string }[] = pos?.event_position_permissions ?? []
+            return perms.some(p => p.permission === 'vender_ingresso')
+          })
+          .map((s: any) => ({
+            userId:   s.user_id,
+            nome:     (Array.isArray(s.profiles) ? s.profiles[0] : s.profiles)?.full_name ?? s.email ?? null,
+            cargo:    (Array.isArray(s.event_positions) ? s.event_positions[0] : s.event_positions)?.name ?? null,
+            email:    s.email ?? null,
+            userCode: s.userCode ?? null,
+          }))
         setEquipe(membros)
       })
       .catch(() => {})
@@ -329,15 +340,23 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
                                 background: selecionado ? `${ACCENT}15` : '#111',
                                 border:     `1px solid ${selecionado ? ACCENT + '40' : '#1e1e1e'}`,
                               }}>
-                              <div>
-                                <p className="text-sm font-medium" style={{ color: selecionado ? ACCENT : '#ddd', fontFamily: 'var(--font-dm-sans)' }}>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate" style={{ color: selecionado ? ACCENT : '#ddd', fontFamily: 'var(--font-dm-sans)' }}>
                                   {m.nome ?? '—'}
                                 </p>
-                                {m.cargo && (
-                                  <p className="text-[11px] mt-0.5" style={{ color: selecionado ? ACCENT + 'aa' : '#555', fontFamily: 'var(--font-dm-sans)' }}>
-                                    {m.cargo}
-                                  </p>
-                                )}
+                                <div className="flex flex-wrap items-center gap-x-2 mt-0.5">
+                                  {m.email && (
+                                    <p className="text-[11px] truncate" style={{ color: selecionado ? ACCENT + '99' : '#444', fontFamily: 'var(--font-dm-sans)' }}>
+                                      {m.email}
+                                    </p>
+                                  )}
+                                  {m.userCode && (
+                                    <p className="text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0"
+                                       style={{ background: selecionado ? `${ACCENT}18` : '#1a1a1a', color: selecionado ? ACCENT + 'cc' : '#555' }}>
+                                      {m.userCode}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
                               {selecionado && (
                                 <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
@@ -353,7 +372,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
                       </div>
                     ) : (
                       <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        Nenhum membro confirmou presença ainda. Convide pessoas em Gestão da Equipe.
+                        Nenhum membro com função de bilheteiro encontrado. Adicione membros com permissão de vender ingressos em Gestão da Equipe.
                       </p>
                     )
                   )}

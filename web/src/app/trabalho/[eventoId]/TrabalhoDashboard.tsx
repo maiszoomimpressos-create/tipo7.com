@@ -34,9 +34,14 @@ export function TrabalhoDashboard({ eventoId }: { eventoId: string }) {
   const [pulseId, setPulseId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
-    const res = await fetch(`/api/eventos/${eventoId}/caixas`)
-    if (!res.ok) return
+    const res = await fetch(`/api/eventos/${eventoId}/caixas`, { cache: 'no-store' })
+    if (!res.ok) {
+      console.error('[Dashboard] API erro', res.status, await res.text().catch(() => ''))
+      setLoading(false)
+      return
+    }
     const json = await res.json()
+    console.log('[Dashboard] caixas recebidos:', json.caixas?.length ?? 0)
     setCaixas(json.caixas ?? [])
     setLastUpdate(new Date())
     setLoading(false)
@@ -44,6 +49,9 @@ export function TrabalhoDashboard({ eventoId }: { eventoId: string }) {
 
   useEffect(() => {
     fetchData()
+
+    // Polling a cada 30s como fallback ao Realtime
+    const poll = setInterval(fetchData, 30_000)
 
     const supabase = createClient()
 
@@ -69,6 +77,7 @@ export function TrabalhoDashboard({ eventoId }: { eventoId: string }) {
       .subscribe()
 
     return () => {
+      clearInterval(poll)
       supabase.removeChannel(channel)
     }
   }, [eventoId, fetchData])
