@@ -6,7 +6,7 @@ import {
   Plus, Trash2, ArrowLeft, Loader2, AlertTriangle, CheckCircle2,
   ShoppingBag, Lock, Unlock, Users, TrendingUp,
   Banknote, Smartphone, CreditCard, RefreshCw, ChevronRight,
-  Calculator,
+  Calculator, Pencil,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from './CalculadoraDinheiro'
 
@@ -300,7 +300,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
             {configs.map((cfg, i) => (
               <div key={i} className="rounded-2xl p-4 flex flex-col gap-3"
                    style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 group">
                   <input
                     value={cfg.nome}
                     onChange={e => updateConfig(i, 'nome', e.target.value)}
@@ -308,6 +308,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
                     className="flex-1 bg-transparent text-white text-sm font-semibold outline-none placeholder:text-[#333]"
                     style={{ fontFamily: 'var(--font-dm-sans)' }}
                   />
+                  <Pencil size={11} className="text-[#2a2a2a] group-hover:text-[#444] transition-colors shrink-0" />
                   {configs.length > 1 && (
                     <button type="button" onClick={() => removeCaixa(i)}
                       className="text-[#333] hover:text-red-400 transition-colors">
