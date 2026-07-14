@@ -1378,6 +1378,35 @@ if exist "%CHROME%" (
           </div>
         )}
 
+        {/* Ingressos físicos em mãos */}
+        {caixaId && (
+          <div
+            className="flex items-center justify-between px-4 py-3 rounded-xl"
+            style={{
+              background: saldoAtual <= 5 ? 'rgba(248,113,113,0.06)' : '#0d0d0d',
+              border: `1px solid ${saldoAtual <= 5 ? 'rgba(248,113,113,0.25)' : '#1e1e1e'}`,
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <Ticket size={13} style={{ color: saldoAtual <= 5 ? '#f87171' : '#555' }} />
+              <span className="text-xs" style={{ color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
+                Ingressos físicos em mãos
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span
+                className="text-sm font-bold"
+                style={{ color: saldoAtual <= 5 ? '#f87171' : '#fff', fontFamily: 'var(--font-outfit)' }}
+              >
+                {saldoAtual}
+              </span>
+              {saldoAtual <= 5 && (
+                <AlertTriangle size={12} className="text-red-400" />
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Botão de venda */}
         <button
           type="button"
