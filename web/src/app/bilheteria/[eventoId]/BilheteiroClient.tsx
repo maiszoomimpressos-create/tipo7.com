@@ -1534,8 +1534,8 @@ function ModalFechamento({ eventoId, caixaId, onFechar }: { eventoId: string; ca
 
   if (apuracao) {
     return (
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm">
-        <div className="w-full max-w-md rounded-t-3xl flex flex-col gap-5 p-6 max-h-[85dvh] overflow-y-auto"
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+        <div className="w-full max-w-md mx-4 rounded-3xl flex flex-col gap-5 p-6 max-h-[85dvh] overflow-y-auto"
              style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
           <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>Apuração do caixa</h3>
           <div className="flex flex-col gap-2">
@@ -1567,8 +1567,8 @@ function ModalFechamento({ eventoId, caixaId, onFechar }: { eventoId: string; ca
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm" onClick={onFechar}>
-      <div className="w-full max-w-md rounded-t-3xl flex flex-col gap-5 p-6"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onFechar}>
+      <div className="w-full max-w-md mx-4 rounded-3xl flex flex-col gap-5 p-6"
            style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
            onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
