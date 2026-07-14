@@ -12,6 +12,7 @@ import {
   ArrowRightLeft, X, Calculator,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from './CalculadoraDinheiro'
+import { CaixaSidebar }       from './CaixaSidebar'
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
@@ -1013,10 +1014,10 @@ if exist "%CHROME%" (
 
   // ── Tela de venda ─────────────────────────────────────────────────────────
   return (
-    <div className="min-h-dvh bg-[#070707]">
+    <div className="min-h-dvh bg-[#070707] flex flex-col">
 
       {/* Header */}
-      <div className="px-4 py-4 border-b border-[#111] flex items-center gap-3">
+      <div className="px-4 py-4 border-b border-[#111] flex items-center gap-3 shrink-0">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
              style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}30` }}>
           <ShoppingBag size={16} style={{ color: ACCENT }} />
@@ -1108,7 +1109,12 @@ if exist "%CHROME%" (
         />
       )}
 
-      <div className="max-w-lg mx-auto px-5 py-6 flex flex-col gap-6">
+      {/* Body: conteúdo + sidebar */}
+      <div className="flex flex-1">
+
+        {/* Formulário de venda */}
+        <div className="flex-1 min-w-0">
+        <div className="max-w-lg mx-auto px-5 py-6 flex flex-col gap-6">
 
         {/* Tipo de ingresso — dropdown customizado */}
         <div ref={dropdownRef} className="relative">
@@ -1394,6 +1400,19 @@ if exist "%CHROME%" (
           </p>
         )}
       </div>
+        </div>{/* fim formulário */}
+
+        {/* Sidebar de stats — só desktop, só quando tem caixa */}
+        {caixaId && (
+          <aside
+            className="hidden md:flex flex-col gap-4 w-72 shrink-0 px-5 py-6 sticky top-0 self-start"
+            style={{ borderLeft: '1px solid #111' }}
+          >
+            <CaixaSidebar caixaId={caixaId} />
+          </aside>
+        )}
+
+      </div>{/* fim body */}
     </div>
   )
 }
