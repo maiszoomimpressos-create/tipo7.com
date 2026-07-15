@@ -96,6 +96,7 @@ export function TrabalhoClient({
   cargoNome, permissoes, ingressos, isOwner, caixaDesignado,
 }: Props) {
   const acessos = buildAcessos(eventoId, permissoes, isOwner)
+    .filter(a => !(a.perm === 'vender_ingresso' && caixaDesignado))
 
   const dataFormatada = eventoDate
     ? new Date(eventoDate).toLocaleDateString('pt-BR', {
