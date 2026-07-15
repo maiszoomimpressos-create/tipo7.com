@@ -42,13 +42,14 @@ export default async function CriarEventoPage() {
     .eq('user_id', user.id)
     .single()
 
-  // Busca todas as organizações do usuário (pode ter promotora + estabelecimento)
+  // Busca organização do usuário com dados completos para pré-preencher o modal
   const { data: orgs } = await supabase
     .from('organizations')
-    .select('id')
+    .select('id, name, type, cnpj, nome_fantasia')
     .eq('owner_id', user.id)
 
-  const orgIds = (orgs ?? []).map(o => o.id)
+  const orgIds  = (orgs ?? []).map(o => o.id)
+  const orgAtual = (orgs ?? [])[0] ?? null
 
   const { data: eventos } = orgIds.length > 0
     ? await supabase
@@ -90,6 +91,13 @@ export default async function CriarEventoPage() {
           promotorId={promotorProfile?.id ?? null}
           tipoPessoaAtual={(promotorProfile?.tipo_pessoa ?? null) as 'pf' | 'pj' | null}
           nomeUsuario={profile?.full_name ?? 'Promotor'}
+          orgAtual={orgAtual ? {
+            id:           orgAtual.id,
+            name:         orgAtual.name,
+            type:         orgAtual.type as 'promotora' | 'estabelecimento',
+            cnpj:         (orgAtual as { cnpj?: string | null }).cnpj ?? null,
+            nome_fantasia:(orgAtual as { nome_fantasia?: string | null }).nome_fantasia ?? null,
+          } : null}
           profile={{
             phone:         profile?.phone         ?? '',
             zip_code:      profile?.zip_code      ?? '',

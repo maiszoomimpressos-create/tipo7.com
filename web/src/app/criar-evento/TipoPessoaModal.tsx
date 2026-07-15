@@ -3,7 +3,7 @@
 // Modal de criação de evento — define tipo de pessoa e dados da empresa
 // PF: 2 etapas | PJ: 3 etapas (tipo empresa → dados → contato/evento)
 // Dados do perfil do usuário são pré-preenchidos automaticamente
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
@@ -21,10 +21,19 @@ export interface ProfileData {
   complement:    string
 }
 
+interface OrgAtual {
+  id:            string
+  name:          string
+  type:          'promotora' | 'estabelecimento'
+  cnpj:          string | null
+  nome_fantasia: string | null
+}
+
 interface Props {
   promotorId:      string | null
   tipoPessoaAtual: 'pf' | 'pj' | null
   nomeUsuario:     string
+  orgAtual:        OrgAtual | null
   profile:         ProfileData
   onFechar:        () => void
 }
@@ -63,26 +72,32 @@ const formatCEP = (v: string) => {
   return d.length <= 5 ? d : `${d.slice(0,5)}-${d.slice(5)}`
 }
 
-export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, profile, onFechar }: Props) {
+export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgAtual, profile, onFechar }: Props) {
   const { user } = useAuth()
   const supabase  = createClient()
   const router    = useRouter()
 
-  const [etapa,      setEtapa]      = useState<1 | 2 | 3>(1)
-  const [tipoPessoa, setTipoPessoa] = useState<'pf' | 'pj' | ''>(tipoPessoaAtual ?? '')
-  const [orgTipo,    setOrgTipo]    = useState<'promotora' | 'estabelecimento' | ''>('')
-  const [orgId,      setOrgId]      = useState<string | null>(null)
-  const [eventoId,   setEventoId]   = useState<string | null>(null)
+  // Se o usuário já definiu tipo_pessoa, pula a etapa 1
+  // PJ com CNPJ já preenchido → vai direto para etapa 3 (nome do evento)
+  const orgJaCompleta = tipoPessoaAtual === 'pj' && !!orgAtual?.cnpj
+  const etapaInicial: 1 | 2 | 3 = tipoPessoaAtual ? (orgJaCompleta ? 3 : 2) : 1
+
+  const [etapa,         setEtapa]         = useState<1 | 2 | 3>(etapaInicial)
+  const [inicializando, setInicializando] = useState(!!tipoPessoaAtual)
+  const [tipoPessoa,    setTipoPessoa]    = useState<'pf' | 'pj' | ''>(tipoPessoaAtual ?? '')
+  const [orgTipo,       setOrgTipo]       = useState<'promotora' | 'estabelecimento' | ''>(orgAtual?.type ?? '')
+  const [orgId,         setOrgId]         = useState<string | null>(orgAtual?.id ?? null)
+  const [eventoId,      setEventoId]      = useState<string | null>(null)
 
   const [saving,      setSaving]      = useState(false)
   const [savingFinal, setSavingFinal] = useState(false)
   const [erro,        setErro]        = useState<string | null>(null)
 
-  // Dados da empresa (etapa 2 PJ)
-  const [razaoSocial,  setRazaoSocial]  = useState('')
-  const [cnpj,         setCnpj]         = useState('')
+  // Dados da empresa (etapa 2 PJ) — pré-preenchidos se org já existe
+  const [razaoSocial,  setRazaoSocial]  = useState(tipoPessoaAtual === 'pj' ? (orgAtual?.name ?? '') : '')
+  const [cnpj,         setCnpj]         = useState(orgAtual?.cnpj ? formatCNPJ(orgAtual.cnpj) : '')
   const [cnpjErro,     setCnpjErro]     = useState<string | null>(null)
-  const [nomeFantasia, setNomeFantasia] = useState('')
+  const [nomeFantasia, setNomeFantasia] = useState(orgAtual?.nome_fantasia ?? '')
 
   // Contato / endereço (etapa 3 PJ)
   const [phone,        setPhone]        = useState(profile.phone)
@@ -99,6 +114,42 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, prof
   const [cepLoading,   setCepLoading]   = useState(false)
 
   const [nomeEvento, setNomeEvento] = useState('')
+
+  // Para usuários retornantes: cria o rascunho do evento silenciosamente ao abrir o modal
+  useEffect(() => {
+    if (!tipoPessoaAtual || !user) return
+    ;(async () => {
+      try {
+        let newOrgId = orgAtual?.id ?? null
+        if (!newOrgId) {
+          const { data: orgEx } = await supabase.from('organizations').select('id').eq('owner_id', user.id).maybeSingle()
+          if (orgEx) {
+            newOrgId = orgEx.id
+          } else {
+            const { data: novaOrg, error: errOrg } = await supabase
+              .from('organizations')
+              .insert({ name: nomeUsuario, type: 'promotora', owner_id: user.id })
+              .select('id').single()
+            if (errOrg) throw errOrg
+            newOrgId = novaOrg.id
+          }
+          setOrgId(newOrgId)
+        }
+        const { data: evento, error: errEvento } = await supabase
+          .from('events')
+          .insert({ organization_id: newOrgId, created_by: user.id, status: 'rascunho' })
+          .select('id').single()
+        if (errEvento) throw errEvento
+        setEventoId(evento.id)
+      } catch {
+        setErro('Erro ao inicializar. Tente novamente.')
+        setEtapa(1)
+      } finally {
+        setInicializando(false)
+      }
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const totalEtapas = tipoPessoa === 'pj' ? 3 : 2
 
@@ -321,8 +372,18 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, prof
             </button>
           </div>
 
+          {/* Loading enquanto cria o rascunho automaticamente */}
+          {inicializando && (
+            <div className="flex flex-col items-center justify-center py-10 gap-3">
+              <Loader2 size={24} className="animate-spin" style={{ color: '#E8B84B' }} />
+              <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Preparando seu evento...
+              </p>
+            </div>
+          )}
+
           {/* ══ ETAPA 1 — PF ou PJ ══════════════════════════════════════════ */}
-          {etapa === 1 && (
+          {!inicializando && etapa === 1 && (
             <>
               <div className="mb-5">
                 <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -369,7 +430,7 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, prof
           )}
 
           {/* ══ ETAPA 2 (PF) — nome do evento ═══════════════════════════════ */}
-          {etapa === 2 && tipoPessoa === 'pf' && (
+          {!inicializando && etapa === 2 && tipoPessoa === 'pf' && (
             <>
               <div className="mb-5">
                 <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Sobre o evento</p>
@@ -400,7 +461,7 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, prof
           )}
 
           {/* ══ ETAPA 2 (PJ) — tipo de empresa + dados ════════════════════ */}
-          {etapa === 2 && tipoPessoa === 'pj' && (
+          {!inicializando && etapa === 2 && tipoPessoa === 'pj' && (
             <>
               <div className="mb-5">
                 <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Tipo de empresa</p>
@@ -484,7 +545,7 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, prof
           )}
 
           {/* ══ ETAPA 3 (PJ) — contato + endereço + evento ═══════════════ */}
-          {etapa === 3 && tipoPessoa === 'pj' && (
+          {!inicializando && etapa === 3 && tipoPessoa === 'pj' && (
             <>
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-1">

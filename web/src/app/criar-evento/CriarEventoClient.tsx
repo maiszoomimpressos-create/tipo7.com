@@ -17,10 +17,19 @@ interface EventoItem {
   banner_url: string | null
 }
 
+interface OrgAtual {
+  id:            string
+  name:          string
+  type:          'promotora' | 'estabelecimento'
+  cnpj:          string | null
+  nome_fantasia: string | null
+}
+
 interface Props {
   promotorId:      string | null
   tipoPessoaAtual: 'pf' | 'pj' | null
   nomeUsuario:     string
+  orgAtual:        OrgAtual | null
   profile:         ProfileData
   eventos:         EventoItem[]
 }
@@ -99,7 +108,7 @@ function ConfirmDeleteModal({
 }
 
 // ── Componente principal ────────────────────────────────────────────────────
-export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, profile, eventos: inicial }: Props) {
+export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, orgAtual, profile, eventos: inicial }: Props) {
   const [modalAberto,    setModalAberto]    = useState(false)
   const [lista,          setLista]          = useState<EventoItem[]>(inicial)
   const [excluindo,      setExcluindo]      = useState<string | null>(null)
@@ -258,6 +267,7 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, pr
           promotorId={promotorId}
           tipoPessoaAtual={tipoPessoaAtual}
           nomeUsuario={nomeUsuario}
+          orgAtual={orgAtual}
           profile={profile}
           onFechar={() => setModalAberto(false)}
         />
