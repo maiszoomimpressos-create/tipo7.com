@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Shield, Car, UtensilsCrossed, Beer, Accessibility, Wifi,
   Baby, HeartPulse, Cigarette, Camera, Tag, Loader2, Check,
@@ -28,6 +29,7 @@ interface Props {
 }
 
 export function PainelAtributos({ eventoId }: Props) {
+  const router = useRouter()
   const [attributes, setAttributes] = useState<Attribute[]>([])
   const [active,     setActive]     = useState<Set<string>>(new Set())
   const [loading,    setLoading]    = useState(true)
@@ -60,13 +62,18 @@ export function PainelAtributos({ eventoId }: Props) {
         .eq('attribute_id', attributeId)
       setActive(prev => { const next = new Set(prev); next.delete(attributeId); return next })
     } else {
-      // Ativa o atributo para o evento
+      // Ativa o atributo — upsert ignorando duplicatas preserva value_json existente
       await supabase
         .from('event_attribute_values')
-        .insert({ event_id: eventoId, attribute_id: attributeId })
+        .upsert(
+          { event_id: eventoId, attribute_id: attributeId },
+          { onConflict: 'event_id,attribute_id', ignoreDuplicates: true }
+        )
       setActive(prev => new Set([...prev, attributeId]))
     }
     setToggling(null)
+    // Força re-fetch dos dados do servidor para atualizar os badges na página pública
+    router.refresh()
   }
 
   if (loading) {

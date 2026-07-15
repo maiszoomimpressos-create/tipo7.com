@@ -45,7 +45,20 @@ const formatCEP = (v: string) => {
   return d.length <= 5 ? d : `${d.slice(0,5)}-${d.slice(5)}`
 }
 
-const toDateInput = (iso: string) => iso ? new Date(iso).toISOString().slice(0,16) : ''
+function toLocalISO(d: Date) {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+// Lê a hora UTC do banco e exibe como-está (sem converter para fuso local)
+// O sistema sempre salva sem timezone info, então o banco armazena como UTC
+// e precisamos ler como UTC para manter consistência com o que o usuário digitou
+function toUTCISO(d: Date) {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth()+1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`
+}
+
+const toDateInput = (iso: string) => iso ? toUTCISO(new Date(iso)) : ''
 
 const diaSemana = (dt: string) => {
   if (!dt) return null
@@ -56,6 +69,50 @@ const diaSemana = (dt: string) => {
 
 const inputCls = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]'
 const labelCls = 'text-[#666] text-[11px] font-medium tracking-widest uppercase'
+
+const selectCls = 'bg-[#111] border border-[#222] rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 appearance-none cursor-pointer'
+
+function DateTimeInput24h({ value, onChange, className }: { value: string; onChange: (v: string) => void; className?: string }) {
+  const [datePart, timePart] = value ? value.split('T') : ['', '']
+  const [hh, mm] = timePart ? timePart.split(':') : ['00', '00']
+
+  function emit(date: string, hour: string, min: string) {
+    if (!date) { onChange(''); return }
+    onChange(`${date}T${hour.padStart(2,'0')}:${min.padStart(2,'0')}`)
+  }
+
+  return (
+    <div className={cn('flex gap-2', className)}>
+      <input
+        type="date"
+        value={datePart}
+        onChange={e => emit(e.target.value, hh || '00', mm || '00')}
+        className={cn(inputCls, 'flex-1 [color-scheme:dark]')}
+        style={{ fontFamily: 'var(--font-dm-sans)' }}
+      />
+      <select
+        value={hh || '00'}
+        onChange={e => emit(datePart, e.target.value, mm || '00')}
+        className={cn(selectCls, 'w-20')}
+        style={{ fontFamily: 'var(--font-dm-sans)' }}
+      >
+        {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(h => (
+          <option key={h} value={h}>{h}h</option>
+        ))}
+      </select>
+      <select
+        value={mm || '00'}
+        onChange={e => emit(datePart, hh || '00', e.target.value)}
+        className={cn(selectCls, 'w-20')}
+        style={{ fontFamily: 'var(--font-dm-sans)' }}
+      >
+        {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => (
+          <option key={m} value={m}>{m}min</option>
+        ))}
+      </select>
+    </div>
+  )
+}
 
 export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props) {
   const router   = useRouter()
@@ -108,7 +165,7 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
     if (dur && !isNaN(parseFloat(dur))) {
       d.setMinutes(d.getMinutes() + Math.round(parseFloat(dur) * 60))
     }
-    setDataFim(d.toISOString().slice(0, 16))
+    setDataFim(toLocalISO(d))
   }
 
   const handleDataInicio = (v: string) => {
@@ -129,7 +186,7 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
       const d = new Date(dataInicio)
       if (numDias > 1) d.setDate(d.getDate() + (numDias - 1))
       d.setMinutes(d.getMinutes() + Math.round(horas * 60))
-      setDataFim(d.toISOString().slice(0, 16))
+      setDataFim(toLocalISO(d))
     }
   }
 
@@ -362,10 +419,7 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
                 </span>
               </div>
             </div>
-            <input type="datetime-local" value={dataInicio}
-              onChange={e => handleDataInicio(e.target.value)}
-              className={cn(inputCls,'text-[#bbb] [color-scheme:dark]')}
-              style={{ fontFamily: 'var(--font-dm-sans)' }} />
+            <DateTimeInput24h value={dataInicio} onChange={handleDataInicio} />
             {diaSemana(dataInicio) && (
               <span className="text-[#E8B84B] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 {diaSemana(dataInicio)}
@@ -406,10 +460,7 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
               Encerramento{' '}
               <span className="text-[#333] normal-case tracking-normal font-normal">(ajuste se necessário)</span>
             </label>
-            <input type="datetime-local" value={dataFim}
-              onChange={e => setDataFim(e.target.value)}
-              className={cn(inputCls,'text-[#bbb] [color-scheme:dark]')}
-              style={{ fontFamily: 'var(--font-dm-sans)' }} />
+            <DateTimeInput24h value={dataFim} onChange={setDataFim} />
             {diaSemana(dataFim) && (
               <span className="text-[#E8B84B] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 {diaSemana(dataFim)}

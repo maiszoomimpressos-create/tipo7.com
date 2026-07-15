@@ -1,14 +1,9 @@
-// Cliente HTTP base para a API do PagBank.
-// Sandbox: https://sandbox.api.pagseguro.com
+// Cliente HTTP base para a API do PagBank — tipo7.com
 // Produção: https://api.pagseguro.com
 //
 // Referência: https://dev.pagbank.uol.com.br/reference
 
-// URL base escolhida conforme PAGBANK_ENV
-export const PAGBANK_BASE_URL =
-  process.env.PAGBANK_ENV === 'production'
-    ? 'https://api.pagseguro.com'
-    : 'https://sandbox.api.pagseguro.com'
+export const PAGBANK_BASE_URL = 'https://api.pagseguro.com'
 
 // Headers obrigatórios em todas as requisições ao PagBank
 export function pagbankHeaders(idempotencyKey?: string): Record<string, string> {

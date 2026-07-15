@@ -66,7 +66,7 @@ interface Props {
   isOwner:         boolean
   capacity:        number | null
   soldByTicket:    Record<string, number>
-  atributosAtivos: { id: string; name: string; icon: string }[]
+  atributosAtivos: { id: string; name: string; icon: string; value_json?: Record<string, string> | null }[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -536,6 +536,14 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
             <div className="flex flex-wrap gap-2.5">
               {atributosAtivos.map(attr => {
                 const Icon = ICON_MAP[attr.icon] ?? Tag
+                // Detalhes do estacionamento pago
+                const parking = attr.value_json
+                const parkingPago   = parking?.parking_type === 'pago'
+                const parkingLabel  = parking
+                  ? parkingPago
+                    ? `Estacionamento pago · ${parking.spots} vagas · R$ ${Number(parking.price_per_spot).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / vaga`
+                    : 'Estacionamento gratuito'
+                  : null
                 return (
                   <div
                     key={attr.id}
@@ -549,11 +557,20 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                       style={{ background: 'rgba(232,184,75,0.12)' }}>
                       <Icon size={14} style={{ color: ACCENT }} />
                     </div>
-                    <span
-                      className="text-[#bbb] text-sm font-medium"
-                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {attr.name}
-                    </span>
+                    <div className="flex flex-col">
+                      <span
+                        className="text-[#bbb] text-sm font-medium leading-tight"
+                        style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        {attr.name}
+                      </span>
+                      {parkingLabel && (
+                        <span
+                          className="text-[#666] text-xs leading-tight mt-0.5"
+                          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                          {parkingLabel}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )
               })}

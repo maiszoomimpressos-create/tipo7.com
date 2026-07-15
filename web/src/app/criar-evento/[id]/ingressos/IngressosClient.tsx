@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   Users, Package, Layers, Plus, Trash2, Loader2,
-  ChevronDown, ChevronUp, Ticket, ArrowRight, Check, ArrowLeft,
+  Ticket, ArrowRight, Check, ArrowLeft,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -34,6 +34,7 @@ interface Props {
   eventoId:              string
   numDias:               number
   dateStart:             string
+  dateEnd:               string
   ticketModeInicial:     'individual' | 'pacote' | 'ambos' | null
   packageDiscountInicial: number
   diasIniciais:          DiaConfig[]
@@ -44,6 +45,44 @@ interface Props {
 
 const inputCls = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]'
 const labelCls = 'text-[#666] text-[11px] font-medium tracking-widest uppercase'
+const selectCls = 'bg-[#111] border border-[#222] rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 appearance-none cursor-pointer'
+
+function extractTime(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`
+}
+
+function TimeInput24h({ value, onChange, compact }: { value: string; onChange: (v: string) => void; compact?: boolean }) {
+  const parts = value ? value.split(':') : ['00','00']
+  const hh = parts[0] ?? '00'
+  const mm = parts[1]?.slice(0,2) ?? '00'
+  const emit = (h: string, m: string) => onChange(`${h.padStart(2,'0')}:${m.padStart(2,'0')}`)
+
+  const cls = compact
+    ? 'bg-[#111] border border-[#222] rounded-lg px-2 py-1.5 text-white text-xs outline-none focus:border-[#E8B84B]/40 appearance-none cursor-pointer'
+    : selectCls
+
+  return (
+    <div className="flex gap-2">
+      <select value={hh} onChange={e => emit(e.target.value, mm)}
+        className={cn(cls, compact ? 'w-16' : 'flex-1')}
+        style={{ fontFamily: 'var(--font-dm-sans)' }}>
+        {Array.from({ length: 24 }, (_, i) => String(i).padStart(2,'0')).map(h => (
+          <option key={h} value={h}>{h}h</option>
+        ))}
+      </select>
+      <select value={mm} onChange={e => emit(hh, e.target.value)}
+        className={cn(cls, compact ? 'w-20' : 'flex-1')}
+        style={{ fontFamily: 'var(--font-dm-sans)' }}>
+        {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => (
+          <option key={m} value={m}>{m}min</option>
+        ))}
+      </select>
+    </div>
+  )
+}
 
 const formatBRL = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -151,6 +190,7 @@ export function IngressosClient({
   eventoId,
   numDias,
   dateStart,
+  dateEnd,
   ticketModeInicial,
   packageDiscountInicial,
   diasIniciais,
@@ -169,11 +209,13 @@ export function IngressosClient({
   const datas = gerarDatas(dateStart, numDias)
   const [dias, setDias] = useState<DiaConfig[]>(() => {
     if (diasIniciais.length > 0) return diasIniciais
+    const defaultStart = extractTime(dateStart)
+    const defaultEnd   = extractTime(dateEnd)
     return datas.map((date, i) => ({
       day_number:  i + 1,
       date,
-      start_time:  '',
-      end_time:    '',
+      start_time:  defaultStart,
+      end_time:    defaultEnd,
       attractions: [],
     }))
   })
@@ -467,94 +509,98 @@ export function IngressosClient({
             </div>
           )}
 
-          {/* Modo INDIVIDUAL ou AMBOS — accordion por dia */}
+          {/* Modo INDIVIDUAL ou AMBOS — abas por dia */}
           {(ticketMode === 'individual' || ticketMode === 'ambos') && (
-            <div className="flex flex-col gap-3">
-              {dias.map(dia => (
-                <div key={dia.day_number} className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
+            <div className="flex flex-col gap-4">
 
-                  {/* Cabeçalho do dia */}
-                  <button type="button"
-                    onClick={() => setDiaAberto(p => p === dia.day_number ? 0 : dia.day_number)}
-                    className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/[0.02] transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-[#E8B84B]/8 border border-[#E8B84B]/15 flex items-center justify-center shrink-0">
-                        <span className="text-[#E8B84B] text-xs font-bold" style={{ fontFamily: 'var(--font-syne)' }}>
-                          {dia.day_number}
+              {/* Barra de abas */}
+              <div className="flex gap-2 overflow-x-auto pb-1 -mb-1">
+                {dias.map(dia => {
+                  const ativo = diaAberto === dia.day_number
+                  return (
+                    <button key={dia.day_number} type="button"
+                      onClick={() => setDiaAberto(dia.day_number)}
+                      className={cn(
+                        'flex-shrink-0 flex flex-col items-start px-4 py-2.5 rounded-xl border transition-all duration-200 text-left',
+                        ativo
+                          ? 'border-[#E8B84B]/40 bg-[#E8B84B]/8'
+                          : 'border-[#1a1a1a] bg-[#0a0a0a] hover:border-[#2a2a2a]'
+                      )}>
+                      <span
+                        className="text-[10px] font-bold tracking-wider uppercase"
+                        style={{ color: ativo ? '#E8B84B' : '#444', fontFamily: 'var(--font-syne)' }}>
+                        Dia {dia.day_number}
+                      </span>
+                      <span className="text-xs mt-0.5" style={{ color: ativo ? '#bbb' : '#333', fontFamily: 'var(--font-dm-sans)' }}>
+                        {formatData(dia.date)}
+                      </span>
+                      {dia.start_time && (
+                        <span className="text-[10px] mt-0.5" style={{ color: ativo ? '#666' : '#2a2a2a', fontFamily: 'var(--font-dm-sans)' }}>
+                          {dia.start_time.slice(0,5)}{dia.end_time ? ` → ${dia.end_time.slice(0,5)}` : ''}
                         </span>
-                      </div>
-                      <div className="text-left">
-                        <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                          Dia {dia.day_number}
-                        </p>
-                        <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                          {formatData(dia.date)}
-                          {dia.start_time && ` · ${dia.start_time.slice(0,5)}`}
-                          {dia.end_time   && ` às ${dia.end_time.slice(0,5)}`}
-                          {dia.attractions.length > 0 && ` · ${dia.attractions.length} atração${dia.attractions.length > 1 ? 'ões' : ''}`}
-                        </p>
-                      </div>
-                    </div>
-                    {diaAberto === dia.day_number
-                      ? <ChevronUp size={14} className="text-[#444]" />
-                      : <ChevronDown size={14} className="text-[#444]" />
-                    }
-                  </button>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
 
-                  {/* Conteúdo expandido */}
-                  {diaAberto === dia.day_number && (
-                    <div className="px-6 pb-6 flex flex-col gap-5 border-t border-[#141414] pt-5">
+              {/* Conteúdo da aba ativa */}
+              {dias.filter(dia => dia.day_number === diaAberto).map(dia => (
+                <div key={dia.day_number} className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
+                  <div className="px-6 pb-6 flex flex-col gap-5 pt-5">
 
-                      {/* Horário do dia */}
-                      <div className="flex flex-col gap-2">
-                        <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>Horário</label>
+                      {/* Horário do dia — só multi-day pede; single-day herdou do evento */}
+                      {isMultiDay && (
+                        <div className="flex flex-col gap-2">
+                          <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>Horário</label>
 
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>Abertura</span>
-                          <input type="time" value={dia.start_time}
-                            onChange={e => handleStartTimeDia(dia.day_number, e.target.value)}
-                            className={cn(inputCls, '[color-scheme:dark]')}
-                            style={{ fontFamily: 'var(--font-dm-sans)' }} />
-                        </div>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>Abertura</span>
+                            <TimeInput24h
+                              value={dia.start_time}
+                              onChange={v => handleStartTimeDia(dia.day_number, v)}
+                            />
+                          </div>
 
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                            Duração <span className="text-[#333]">(calcula o encerramento)</span>
-                          </span>
-                          <div className="flex flex-wrap gap-2">
-                            {['2','4','6','8','12','18','24'].map(h => (
-                              <button key={h} type="button"
-                                onClick={() => handleDuracaoDia(dia.day_number, h, dia.start_time)}
-                                className={cn(
-                                  'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200',
-                                  duracaoDia[dia.day_number] === h
-                                    ? 'bg-[#E8B84B] text-[#070707] border-[#E8B84B]'
-                                    : 'bg-transparent text-[#555] border-[#222] hover:border-[#444] hover:text-[#888]'
-                                )}
-                                style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                                {h}h
-                              </button>
-                            ))}
-                            <input
-                              type="number" min="0.5" max="72" step="0.5" placeholder="Ex: 5"
-                              value={['2','4','6','8','12','18','24'].includes(duracaoDia[dia.day_number] ?? '') ? '' : (duracaoDia[dia.day_number] ?? '')}
-                              onChange={e => handleDuracaoDia(dia.day_number, e.target.value, dia.start_time)}
-                              className="w-20 bg-[#111] border border-[#222] rounded-lg px-3 py-1.5 text-white text-xs outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
-                              style={{ fontFamily: 'var(--font-dm-sans)' }}
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                              Duração <span className="text-[#333]">(calcula o encerramento)</span>
+                            </span>
+                            <div className="flex flex-wrap gap-2">
+                              {['2','4','6','8','12','18','24'].map(h => (
+                                <button key={h} type="button"
+                                  onClick={() => handleDuracaoDia(dia.day_number, h, dia.start_time)}
+                                  className={cn(
+                                    'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200',
+                                    duracaoDia[dia.day_number] === h
+                                      ? 'bg-[#E8B84B] text-[#070707] border-[#E8B84B]'
+                                      : 'bg-transparent text-[#555] border-[#222] hover:border-[#444] hover:text-[#888]'
+                                  )}
+                                  style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                                  {h}h
+                                </button>
+                              ))}
+                              <input
+                                type="number" min="0.5" max="72" step="0.5" placeholder="Ex: 5"
+                                value={['2','4','6','8','12','18','24'].includes(duracaoDia[dia.day_number] ?? '') ? '' : (duracaoDia[dia.day_number] ?? '')}
+                                onChange={e => handleDuracaoDia(dia.day_number, e.target.value, dia.start_time)}
+                                className="w-20 bg-[#111] border border-[#222] rounded-lg px-3 py-1.5 text-white text-xs outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
+                                style={{ fontFamily: 'var(--font-dm-sans)' }}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                              Encerramento <span className="text-[#333]">(ajuste se necessário)</span>
+                            </span>
+                            <TimeInput24h
+                              value={dia.end_time}
+                              onChange={v => updateDia(dia.day_number, { end_time: v })}
                             />
                           </div>
                         </div>
-
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                            Encerramento <span className="text-[#333]">(ajuste se necessário)</span>
-                          </span>
-                          <input type="time" value={dia.end_time}
-                            onChange={e => updateDia(dia.day_number, { end_time: e.target.value })}
-                            className={cn(inputCls, '[color-scheme:dark]')}
-                            style={{ fontFamily: 'var(--font-dm-sans)' }} />
-                        </div>
-                      </div>
+                      )}
 
                       {/* Atrações */}
                       <div className="flex flex-col gap-2">
@@ -569,12 +615,13 @@ export function IngressosClient({
                               onChange={e => updateAttraction(dia.day_number, ai, { name: e.target.value })}
                               className={cn(inputCls, 'flex-1')}
                               style={{ fontFamily: 'var(--font-dm-sans)' }} />
-                            <input type="time"
-                              value={a.scheduled_time ?? ''}
-                              onChange={e => updateAttraction(dia.day_number, ai, { scheduled_time: e.target.value })}
-                              title="Horário previsto"
-                              className="w-32 bg-[#111] border border-[#222] rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 [color-scheme:dark] shrink-0"
-                              style={{ fontFamily: 'var(--font-dm-sans)' }} />
+                            <div className="shrink-0">
+                              <TimeInput24h
+                                compact
+                                value={a.scheduled_time ?? ''}
+                                onChange={v => updateAttraction(dia.day_number, ai, { scheduled_time: v })}
+                              />
+                            </div>
                             <button type="button" onClick={() => removeAttraction(dia.day_number, ai)}
                               className="text-[#2a2a2a] hover:text-red-500 transition-colors px-2">
                               <Trash2 size={14} />
@@ -599,8 +646,7 @@ export function IngressosClient({
                         onAddSugestao={addIngressoSugestao}
                       />
 
-                    </div>
-                  )}
+                  </div>
                 </div>
               ))}
 

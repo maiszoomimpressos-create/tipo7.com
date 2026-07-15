@@ -43,8 +43,7 @@ interface PagBankWebhookBody {
 
 export async function POST(req: NextRequest) {
   // ── 1. Verificação do segredo do webhook ──────────────────────────────────
-  // Se PAGBANK_WEBHOOK_SECRET estiver configurado, valida o header de segurança.
-  // Deixamos vazio no sandbox enquanto testamos — em produção, sempre configurar.
+  // Valida o header de segurança enviado pelo PagBank em cada notificação.
   const webhookSecret = process.env.PAGBANK_WEBHOOK_SECRET
   if (webhookSecret) {
     const headerSecret = req.headers.get('x-pagbank-notification-secret') ?? ''

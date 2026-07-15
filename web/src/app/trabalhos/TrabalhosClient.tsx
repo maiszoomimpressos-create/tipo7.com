@@ -4,19 +4,10 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Briefcase, Calendar, MapPin, Shield, Check, X,
-  Loader2, ChevronRight, CheckCircle2, Bell,
-  ScanQrCode, ShoppingCart, ClipboardList, BarChart2, ArrowRight,
+  Loader2, Bell, Clock,
 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
-
-const PERMISSAO_LABEL: Record<string, string> = {
-  validar_ingresso:     'Validar ingressos',
-  vender_ingresso:      'Bilheteria',
-  ver_lista_convidados: 'Ver lista de compradores',
-  ver_relatorios:       'Ver relatórios',
-  gerenciar_checkin:    'Gerenciar check-in',
-}
 
 type Evento = {
   id: string
@@ -45,7 +36,7 @@ interface Props {
   registros: Registro[]
 }
 
-// ── Modal de convite ──────────────────────────────────────────────────────────
+// ── Modal de resposta ao convite ──────────────────────────────────────────────
 
 function ModalConvite({
   registro,
@@ -63,7 +54,14 @@ function ModalConvite({
   const perms  = cargo?.event_position_permissions ?? []
   const quemConvidou = (registro.convidado_por as { full_name: string | null } | null)?.full_name
 
-  // Fecha ao pressionar Escape
+  const PERMISSAO_LABEL: Record<string, string> = {
+    validar_ingresso:     'Validar ingressos',
+    vender_ingresso:      'Bilheteria',
+    ver_lista_convidados: 'Ver lista de compradores',
+    ver_relatorios:       'Ver relatórios',
+    gerenciar_checkin:    'Gerenciar check-in',
+  }
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onFechar() }
     document.addEventListener('keydown', handler)
@@ -80,24 +78,24 @@ function ModalConvite({
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
+      style={{ background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(8px)' }}
       onClick={onFechar}
     >
       <div
         className="w-full max-w-md rounded-2xl overflow-hidden"
-        style={{ background: '#0d0d0d', border: `1px solid ${ACCENT}25` }}
+        style={{ background: '#0d0d0d', border: `1px solid ${ACCENT}30` }}
         onClick={e => e.stopPropagation()}
       >
         {/* Faixa dourada topo */}
         <div className="h-[2px]" style={{ background: `linear-gradient(90deg, transparent, ${ACCENT}, transparent)` }} />
 
-        {/* Banner do evento */}
+        {/* Banner */}
         {evento?.banner_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={evento.banner_url}
             alt={evento.title ?? 'Evento'}
-            className="w-full h-32 object-cover"
+            className="w-full h-36 object-cover"
           />
         ) : (
           <div className="w-full h-20 flex items-center justify-center" style={{ background: '#111' }}>
@@ -106,20 +104,17 @@ function ModalConvite({
         )}
 
         <div className="p-5">
-          {/* Aviso de convite */}
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-2">
             <Bell size={12} style={{ color: ACCENT }} />
             <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
               Convite para trabalhar
             </span>
           </div>
 
-          {/* Nome do evento */}
           <p className="text-white text-lg font-semibold mb-1" style={{ fontFamily: 'var(--font-outfit)' }}>
             {evento?.title ?? 'Evento'}
           </p>
 
-          {/* Data e local */}
           <div className="flex flex-col gap-1 mb-4">
             {evento?.date_start && (
               <span className="flex items-center gap-1.5 text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -135,7 +130,6 @@ function ModalConvite({
             )}
           </div>
 
-          {/* Cargo e permissões */}
           <div className="rounded-xl p-3.5 mb-4" style={{ background: '#111', border: '1px solid #1e1e1e' }}>
             <div className="flex items-center gap-2 mb-2.5">
               <Shield size={13} style={{ color: ACCENT }} />
@@ -167,7 +161,6 @@ function ModalConvite({
             </p>
           )}
 
-          {/* Botões */}
           <div className="flex gap-2">
             <button
               type="button"
@@ -176,10 +169,7 @@ function ModalConvite({
               className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl text-sm font-medium border transition-colors hover:border-red-400/40 hover:text-red-400 disabled:opacity-50"
               style={{ borderColor: '#222', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
             >
-              {respondendo
-                ? <Loader2 size={13} className="animate-spin" />
-                : <X size={13} />
-              }
+              {respondendo ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
               Recusar
             </button>
             <button
@@ -189,10 +179,7 @@ function ModalConvite({
               className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl text-sm font-semibold text-[#070707] transition-all hover:brightness-110 disabled:opacity-50"
               style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
             >
-              {respondendo
-                ? <Loader2 size={13} className="animate-spin" />
-                : <Check size={13} />
-              }
+              {respondendo ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
               Aceitar
             </button>
           </div>
@@ -202,173 +189,163 @@ function ModalConvite({
   )
 }
 
-// ── Atalhos por permissão ─────────────────────────────────────────────────────
+// ── Card de evento ────────────────────────────────────────────────────────────
 
-const ATALHOS: {
-  perm: string
-  label: string
-  desc: string
-  icon: React.ElementType
-  href: (eventoId: string) => string
-  cor: string
-}[] = [
-  {
-    perm:  'vender_ingresso',
-    label: 'Abrir caixa',
-    desc:  'Vender ingressos presencialmente',
-    icon:  ShoppingCart,
-    href:  (id) => `/bilheteria/${id}`,
-    cor:   '#E8B84B',
-  },
-  {
-    perm:  'validar_ingresso',
-    label: 'Scanner',
-    desc:  'Escanear e validar ingressos na entrada',
-    icon:  ScanQrCode,
-    href:  (id) => `/scanner/${id}`,
-    cor:   '#4ade80',
-  },
-  {
-    perm:  'ver_lista_convidados',
-    label: 'Lista de compradores',
-    desc:  'Ver quem comprou ingresso',
-    icon:  ClipboardList,
-    href:  (id) => `/dashboard/${id}`,
-    cor:   '#60a5fa',
-  },
-  {
-    perm:  'ver_relatorios',
-    label: 'Relatórios',
-    desc:  'Ver vendas e presença',
-    icon:  BarChart2,
-    href:  (id) => `/dashboard/${id}`,
-    cor:   '#a78bfa',
-  },
-]
-
-// ── Modal de trabalho confirmado ──────────────────────────────────────────────
-
-function ModalTrabalho({
+function CardEvento({
   registro,
-  onFechar,
+  onClick,
 }: {
   registro: Registro
-  onFechar: () => void
+  onClick: () => void
 }) {
-  const evento = registro.events
-  const cargo  = registro.event_positions
-  const perms  = new Set((cargo?.event_position_permissions ?? []).map(p => p.permission))
-
-  const atalhos = ATALHOS.filter(a => perms.has(a.perm))
-    .filter((a, i, arr) => arr.findIndex(b => b.href(evento?.id ?? '') === a.href(evento?.id ?? '')) === i)
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onFechar() }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [onFechar])
+  const evento  = registro.events
+  const cargo   = registro.event_positions
+  const ativo   = registro.status === 'active'
 
   function formatarData(iso: string | null) {
     if (!iso) return null
-    return new Date(iso).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+    return new Date(iso).toLocaleDateString('pt-BR', {
+      day: '2-digit', month: 'long', year: 'numeric',
+    })
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
-      onClick={onFechar}
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full text-left rounded-2xl overflow-hidden transition-all"
+      style={{
+        background: '#0d0d0d',
+        border: ativo ? '1px solid #1e1e1e' : `1px solid ${ACCENT}18`,
+        opacity: ativo ? 1 : 0.75,
+      }}
     >
-      <div
-        className="w-full max-w-md rounded-2xl overflow-hidden"
-        style={{ background: '#0d0d0d', border: '1px solid #1e1e1e' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, #4ade80, transparent)' }} />
+      {/* Banner com overlay para pendente */}
+      <div className="relative w-full h-36 overflow-hidden">
+        {evento?.banner_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={evento.banner_url}
+            alt={evento.title ?? 'Evento'}
+            className="w-full h-full object-cover"
+            style={{ filter: ativo ? 'none' : 'brightness(0.35) grayscale(0.4)' }}
+          />
+        ) : (
+          <div
+            className="w-full h-full flex items-center justify-center"
+            style={{ background: '#111', filter: ativo ? 'none' : 'brightness(0.35)' }}
+          >
+            <Briefcase size={32} className="text-[#2a2a2a]" />
+          </div>
+        )}
 
-        <div className="p-5">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <CheckCircle2 size={14} className="text-green-400" />
-                <span className="text-green-400 text-[10px] uppercase tracking-widest font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Confirmado
-                </span>
-              </div>
-              <p className="text-white text-lg font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
-                {evento?.title ?? 'Evento'}
+        {/* Overlay gradiente sempre (ativo = leve, pendente = mais escuro) */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: ativo
+              ? 'linear-gradient(to top, rgba(13,13,13,0.85) 0%, transparent 60%)'
+              : 'linear-gradient(to top, rgba(7,7,7,0.95) 0%, rgba(0,0,0,0.6) 100%)',
+          }}
+        />
+
+        {/* Badge de status */}
+        <div className="absolute top-3 right-3">
+          {ativo ? (
+            <span
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold"
+              style={{ background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.25)', fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+              Confirmado
+            </span>
+          ) : (
+            <span
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold"
+              style={{ background: `rgba(232,184,75,0.15)`, color: ACCENT, border: `1px solid ${ACCENT}30`, fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <Clock size={10} />
+              Aguardando resposta
+            </span>
+          )}
+        </div>
+
+        {/* Mensagem de pendente no centro do banner */}
+        {!ativo && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div
+              className="flex flex-col items-center gap-2 px-4 py-3 rounded-xl"
+              style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', border: `1px solid ${ACCENT}20` }}
+            >
+              <Bell size={18} style={{ color: ACCENT }} />
+              <p className="text-white text-sm font-semibold text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Convite pendente
+              </p>
+              <p className="text-[#aaa] text-xs text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Toque para aceitar ou recusar
               </p>
             </div>
-            <button type="button" onClick={onFechar}>
-              <X size={16} className="text-[#444] hover:text-white" />
-            </button>
           </div>
+        )}
 
-          <div className="flex flex-col gap-1 mb-4">
+        {/* Nome do evento no rodapé do banner */}
+        <div className="absolute bottom-0 left-0 right-0 px-4 pb-3">
+          <p
+            className="text-white font-semibold text-base leading-tight truncate"
+            style={{ fontFamily: 'var(--font-outfit)', textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}
+          >
+            {evento?.title ?? 'Evento'}
+          </p>
+        </div>
+      </div>
+
+      {/* Rodapé do card */}
+      <div className="px-4 py-3 flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-1 min-w-0">
+          {/* Cargo */}
+          <div className="flex items-center gap-1.5">
+            <Shield size={11} style={{ color: ACCENT }} />
+            <span className="text-[#777] text-xs truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {cargo?.name ?? 'Sem cargo definido'}
+            </span>
+          </div>
+          {/* Data e local */}
+          <div className="flex items-center gap-3 flex-wrap">
             {evento?.date_start && (
-              <span className="flex items-center gap-1.5 text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                <Calendar size={11} />
+              <span className="flex items-center gap-1 text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <Calendar size={10} />
                 {formatarData(evento.date_start)}
               </span>
             )}
-            {(evento?.venue_name || evento?.city) && (
-              <span className="flex items-center gap-1.5 text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                <MapPin size={11} />
-                {[evento.venue_name, evento.city, evento.state].filter(Boolean).join(', ')}
+            {(evento?.city || evento?.venue_name) && (
+              <span className="flex items-center gap-1 text-[#333] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <MapPin size={10} />
+                {[evento.venue_name, evento.city].filter(Boolean).join(', ')}
               </span>
             )}
           </div>
-
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl mb-5" style={{ background: '#111', border: '1px solid #1e1e1e' }}>
-            <Shield size={12} style={{ color: '#E8B84B' }} />
-            <span className="text-white text-xs font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              {cargo?.name ?? 'Sem cargo'}
-            </span>
-          </div>
-
-          {atalhos.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              <p className="text-[#444] text-[10px] uppercase tracking-wider mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Seu acesso neste evento
-              </p>
-              {atalhos.map(a => {
-                const Icon = a.icon
-                return (
-                  <a
-                    key={a.perm}
-                    href={a.href(evento?.id ?? '')}
-                    className="flex items-center justify-between px-4 py-3.5 rounded-xl transition-all hover:brightness-110"
-                    style={{ background: `${a.cor}10`, border: `1px solid ${a.cor}25` }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                        style={{ background: `${a.cor}15` }}
-                      >
-                        <Icon size={15} style={{ color: a.cor }} />
-                      </div>
-                      <div>
-                        <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                          {a.label}
-                        </p>
-                        <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                          {a.desc}
-                        </p>
-                      </div>
-                    </div>
-                    <ArrowRight size={14} style={{ color: a.cor }} />
-                  </a>
-                )
-              })}
-            </div>
-          ) : (
-            <p className="text-[#444] text-sm text-center py-4" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              Nenhum acesso específico configurado para sua função.
-            </p>
-          )}
         </div>
+
+        {/* Seta ou ícone de ação */}
+        {ativo ? (
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: '#1a1a1a' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </div>
+        ) : (
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: `${ACCENT}12`, border: `1px solid ${ACCENT}25` }}
+          >
+            <Bell size={13} style={{ color: ACCENT }} />
+          </div>
+        )}
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -379,8 +356,11 @@ export function TrabalhosClient({ registros }: Props) {
   const [conviteSelecionado, setConviteSelecionado] = useState<Registro | null>(null)
   const [respondendo,        setRespondendo]        = useState(false)
 
-  const pendentes = registros.filter(r => r.status === 'pending')
-  const ativos    = registros.filter(r => r.status === 'active')
+  // Pendentes primeiro, depois ativos
+  const ordenados = [
+    ...registros.filter(r => r.status === 'pending'),
+    ...registros.filter(r => r.status === 'active'),
+  ]
 
   async function responder(acao: 'aceitar' | 'recusar') {
     if (!conviteSelecionado) return
@@ -398,11 +378,12 @@ export function TrabalhosClient({ registros }: Props) {
     }
   }
 
-  function formatarData(iso: string | null) {
-    if (!iso) return null
-    return new Date(iso).toLocaleDateString('pt-BR', {
-      day: '2-digit', month: 'long', year: 'numeric',
-    })
+  function handleClick(registro: Registro) {
+    if (registro.status === 'pending') {
+      setConviteSelecionado(registro)
+    } else {
+      router.push(`/trabalho/${registro.events?.id ?? ''}`)
+    }
   }
 
   if (registros.length === 0) {
@@ -424,7 +405,6 @@ export function TrabalhosClient({ registros }: Props) {
 
   return (
     <>
-      {/* Modal de convite pendente */}
       {conviteSelecionado && (
         <ModalConvite
           registro={conviteSelecionado}
@@ -434,126 +414,14 @@ export function TrabalhosClient({ registros }: Props) {
         />
       )}
 
-      <div className="flex flex-col gap-8">
-
-        {/* ── Convites pendentes ── */}
-        {pendentes.length > 0 && (
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <span
-                className="text-xs font-semibold uppercase tracking-widest"
-                style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-              >
-                Convites pendentes
-              </span>
-              <span
-                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-[#070707]"
-                style={{ background: ACCENT }}
-              >
-                {pendentes.length}
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              {pendentes.map(r => {
-                const evento = r.events
-                const cargo  = r.event_positions
-
-                return (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => setConviteSelecionado(r)}
-                    className="w-full flex items-center justify-between px-5 py-4 rounded-2xl text-left transition-all hover:border-[#E8B84B]/30"
-                    style={{ background: '#0a0a0a', border: `1px solid ${ACCENT}20` }}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
-                        style={{ background: `${ACCENT}12`, border: `1px solid ${ACCENT}20` }}
-                      >
-                        <Bell size={14} style={{ color: ACCENT }} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-white text-sm font-medium truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                          {evento?.title ?? 'Evento'}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                            {cargo?.name ?? 'Sem cargo'}
-                          </span>
-                          {evento?.date_start && (
-                            <>
-                              <span className="text-[#333]">·</span>
-                              <span className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                                {formatarData(evento.date_start)}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <span
-                      className="text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-lg shrink-0 ml-3"
-                      style={{ background: `${ACCENT}12`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-                    >
-                      Ver convite
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* ── Trabalhos confirmados ── */}
-        {ativos.length > 0 && (
-          <section>
-            <p
-              className="text-xs font-semibold uppercase tracking-widest mb-4"
-              style={{ color: '#444', fontFamily: 'var(--font-dm-sans)' }}
-            >
-              Trabalhos confirmados
-            </p>
-
-            <div className="flex flex-col gap-3">
-              {ativos.map(r => {
-                const evento = r.events
-                const cargo  = r.event_positions
-
-                return (
-                  <a
-                    key={r.id}
-                    href={`/trabalho/${r.events?.id ?? ''}`}
-                    className="w-full flex items-center justify-between px-5 py-4 rounded-2xl text-left transition-colors hover:border-[#2a2a2a]"
-                    style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <CheckCircle2 size={16} className="text-green-400 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-white text-sm font-medium truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                          {evento?.title ?? 'Evento'}
-                        </p>
-                        <div className="flex items-center gap-3 mt-0.5">
-                          <span className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                            {cargo?.name ?? 'Sem cargo'}
-                          </span>
-                          {evento?.date_start && (
-                            <span className="text-[#333] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                              {formatarData(evento.date_start)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <ChevronRight size={14} className="text-[#333] shrink-0" />
-                  </a>
-                )
-              })}
-            </div>
-          </section>
-        )}
-
+      <div className="flex flex-col gap-4">
+        {ordenados.map(r => (
+          <CardEvento
+            key={r.id}
+            registro={r}
+            onClick={() => handleClick(r)}
+          />
+        ))}
       </div>
     </>
   )

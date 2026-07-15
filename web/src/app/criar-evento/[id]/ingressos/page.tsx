@@ -95,6 +95,7 @@ export default async function IngressosPage({ params }: Props) {
           eventoId={id}
           numDias={numDias}
           dateStart={evento.date_start ?? ''}
+          dateEnd={evento.date_end ?? ''}
           ticketModeInicial={(evento.ticket_mode ?? null) as 'individual' | 'pacote' | 'ambos' | null}
           packageDiscountInicial={evento.package_discount_pct ?? 0}
           diasIniciais={(dias ?? []).map(d => ({

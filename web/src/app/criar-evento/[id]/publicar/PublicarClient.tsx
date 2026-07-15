@@ -107,7 +107,10 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
   const [publishing,             setPublishing]             = useState(false)
   const [erro,                   setErro]                   = useState<string | null>(null)
   const [responsabilidadeAceita, setResponsabilidadeAceita] = useState(false)
-  const [modalEstacionamento,    setModalEstacionamento]    = useState(false)
+  const [etapaEst,    setEtapaEst]    = useState<'pergunta' | 'tipo' | 'detalhes' | null>(null)
+  const [parkingTipo, setParkingTipo] = useState<'gratuito' | 'pago' | null>(null)
+  const [parkingVagas,  setParkingVagas]  = useState('')
+  const [parkingValor,  setParkingValor]  = useState('')
   const jaPublicado = statusAtual === 'publicado'
 
   // ── Checklist de requisitos ──
@@ -121,30 +124,10 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
   const podePubilcar  = Object.values(checks).every(Boolean)
   const semBanner     = !resumo.bannerUrl
 
-  // ── Abre o modal de estacionamento antes de publicar ──
-  const handlePublicar = () => {
-    if (!podePubilcar || !responsabilidadeAceita) return
-    setModalEstacionamento(true)
-  }
-
-  // ── Confirma publicação (com ou sem estacionamento) ──
-  const confirmarPublicacao = async (temEstacionamento: boolean) => {
-    setModalEstacionamento(false)
+  // ── Publica o evento (sem mexer no estacionamento) ──
+  const publicarEvento = async () => {
     setPublishing(true); setErro(null)
     try {
-      if (temEstacionamento) {
-        const { data: attr } = await supabase
-          .from('event_attributes')
-          .select('id')
-          .ilike('name', '%estacionamento%')
-          .eq('active', true)
-          .maybeSingle()
-        if (attr?.id) {
-          await supabase
-            .from('event_attribute_values')
-            .upsert({ event_id: eventoId, attribute_id: attr.id }, { onConflict: 'event_id,attribute_id' })
-        }
-      }
       const { error } = await supabase
         .from('events')
         .update({ status: 'publicado' })
@@ -155,6 +138,69 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
       setErro('Erro ao publicar. Tente novamente.')
       setPublishing(false)
     }
+  }
+
+  // ── Abre o modal ou pula direto se estacionamento já configurado ──
+  const handlePublicar = async () => {
+    if (!podePubilcar || !responsabilidadeAceita) return
+
+    // Verifica se o organizador já marcou estacionamento no painel de estrutura
+    const { data: attrPark } = await supabase
+      .from('event_attributes')
+      .select('id')
+      .ilike('name', '%estacionamento%')
+      .eq('active', true)
+      .maybeSingle()
+
+    if (attrPark?.id) {
+      const { data: jaConfigurado } = await supabase
+        .from('event_attribute_values')
+        .select('attribute_id')
+        .eq('event_id', eventoId)
+        .eq('attribute_id', attrPark.id)
+        .maybeSingle()
+
+      if (jaConfigurado) {
+        // Estacionamento já está marcado — publica direto sem modal
+        await publicarEvento()
+        return
+      }
+    }
+
+    setEtapaEst('pergunta')
+  }
+
+  // ── Confirma publicação com dados do modal ──
+  const confirmarPublicacao = async (opts: { tem: boolean; tipo?: 'gratuito' | 'pago'; vagas?: number; valor?: number }) => {
+    setEtapaEst(null)
+    if (opts.tem) {
+      setPublishing(true); setErro(null)
+      try {
+        const { data: attr } = await supabase
+          .from('event_attributes')
+          .select('id')
+          .ilike('name', '%estacionamento%')
+          .eq('active', true)
+          .maybeSingle()
+        if (attr?.id) {
+          const valueJson = opts.tipo === 'pago'
+            ? { parking_type: 'pago', spots: opts.vagas ?? null, price_per_spot: opts.valor ?? null }
+            : { parking_type: 'gratuito' }
+          await supabase
+            .from('event_attribute_values')
+            .upsert(
+              { event_id: eventoId, attribute_id: attr.id, value_json: valueJson },
+              { onConflict: 'event_id,attribute_id' }
+            )
+        }
+      } catch {
+        setErro('Erro ao salvar estacionamento. Tente novamente.')
+        setPublishing(false)
+        return
+      }
+      setPublishing(false)
+    }
+    await publicarEvento()
   }
 
   // ── Despublica (volta para rascunho) ──
@@ -433,7 +479,7 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
 
       {/* ── Botão principal ── */}
       {!jaPublicado ? (
-        <button type="button" onClick={handlePublicar}
+        <button type="button" onClick={() => { handlePublicar() }}
           disabled={!podePubilcar || publishing || !responsabilidadeAceita}
           className="w-full py-4 rounded-xl text-sm font-semibold text-[#070707] hover:brightness-110 transition-all flex items-center justify-center gap-2 disabled:opacity-40 sticky bottom-4"
           style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
@@ -458,62 +504,143 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
         </div>
       )}
 
-      {/* ── Modal: estacionamento ── */}
-      {modalEstacionamento && (
+      {/* ── Modal: estacionamento — fluxo em 3 etapas ── */}
+      {etapaEst && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
-          onClick={() => setModalEstacionamento(false)}
+          style={{ background: 'rgba(0,0,0,0.80)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setEtapaEst(null)}
         >
           <div
             className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-5"
             style={{ background: '#0f0f0f', border: '1px solid #222' }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Cabeçalho */}
+            {/* Cabeçalho comum */}
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div
-                  className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ background: 'rgba(232,184,75,0.10)', border: '1px solid rgba(232,184,75,0.25)' }}
-                >
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: 'rgba(232,184,75,0.10)', border: '1px solid rgba(232,184,75,0.25)' }}>
                   <Car size={20} style={{ color: '#E8B84B' }} />
                 </div>
                 <div>
                   <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
-                    Estacionamento no evento?
+                    {etapaEst === 'pergunta'  && 'Estacionamento no evento?'}
+                    {etapaEst === 'tipo'      && 'Como será o estacionamento?'}
+                    {etapaEst === 'detalhes'  && 'Detalhes do estacionamento pago'}
                   </p>
                   <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Esta informação aparece para os compradores.
+                    {etapaEst === 'pergunta'  && 'Esta informação aparece para os compradores.'}
+                    {etapaEst === 'tipo'      && 'Os compradores poderão ver essa condição.'}
+                    {etapaEst === 'detalhes'  && 'Compradores poderão reservar vaga online.'}
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setModalEstacionamento(false)}
-                className="text-[#444] hover:text-white transition-colors shrink-0 mt-0.5"
-              >
+              <button onClick={() => setEtapaEst(null)} className="text-[#444] hover:text-white transition-colors shrink-0 mt-0.5">
                 <X size={16} />
               </button>
             </div>
 
-            {/* Botões */}
-            <div className="flex flex-col gap-2.5">
-              <button
-                onClick={() => confirmarPublicacao(true)}
-                className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all hover:brightness-110 flex items-center justify-center gap-2"
-                style={{ background: '#E8B84B', color: '#070707', fontFamily: 'var(--font-dm-sans)' }}
-              >
-                <Car size={15} />
-                Sim, haverá estacionamento
-              </button>
-              <button
-                onClick={() => confirmarPublicacao(false)}
-                className="w-full py-3.5 rounded-xl text-sm font-medium transition-all hover:border-[#333] hover:text-[#aaa]"
-                style={{ color: '#666', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)' }}
-              >
-                Não, publicar sem estacionamento
-              </button>
-            </div>
+            {/* ── Etapa 1: tem ou não estacionamento ── */}
+            {etapaEst === 'pergunta' && (
+              <div className="flex flex-col gap-2.5">
+                <button
+                  onClick={() => setEtapaEst('tipo')}
+                  className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all hover:brightness-110 flex items-center justify-center gap-2"
+                  style={{ background: '#E8B84B', color: '#070707', fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  <Car size={15} />
+                  Sim, haverá estacionamento
+                </button>
+                <button
+                  onClick={() => confirmarPublicacao({ tem: false })}
+                  className="w-full py-3.5 rounded-xl text-sm font-medium transition-all hover:border-[#333] hover:text-[#aaa]"
+                  style={{ color: '#666', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  Não, publicar sem estacionamento
+                </button>
+              </div>
+            )}
+
+            {/* ── Etapa 2: gratuito ou pago ── */}
+            {etapaEst === 'tipo' && (
+              <div className="flex flex-col gap-2.5">
+                <button
+                  onClick={() => confirmarPublicacao({ tem: true, tipo: 'gratuito' })}
+                  className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all hover:brightness-110 flex items-center justify-center gap-2"
+                  style={{ background: '#E8B84B', color: '#070707', fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  Gratuito
+                </button>
+                <button
+                  onClick={() => { setParkingTipo('pago'); setEtapaEst('detalhes') }}
+                  className="w-full py-3.5 rounded-xl text-sm font-semibold border transition-all hover:border-[#444] hover:text-white flex items-center justify-center gap-2"
+                  style={{ color: '#aaa', border: '1px solid #2a2a2a', fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  Pago
+                </button>
+                <button
+                  onClick={() => setEtapaEst('pergunta')}
+                  className="text-[#444] hover:text-[#777] text-xs text-center transition-colors mt-1"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  ← Voltar
+                </button>
+              </div>
+            )}
+
+            {/* ── Etapa 3: vagas e valor (só pago) ── */}
+            {etapaEst === 'detalhes' && (
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[#666] text-[11px] font-medium tracking-widest uppercase" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Quantidade de vagas
+                  </label>
+                  <input
+                    type="number" min="1" placeholder="Ex: 200"
+                    value={parkingVagas}
+                    onChange={e => setParkingVagas(e.target.value)}
+                    className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
+                    style={{ fontFamily: 'var(--font-dm-sans)' }}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[#666] text-[11px] font-medium tracking-widest uppercase" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Valor por vaga (R$)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#444] text-sm">R$</span>
+                    <input
+                      type="number" min="0" step="0.50" placeholder="0,00"
+                      value={parkingValor}
+                      onChange={e => setParkingValor(e.target.value)}
+                      className="w-full bg-[#111] border border-[#222] rounded-xl pl-9 pr-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={() => confirmarPublicacao({
+                    tem: true,
+                    tipo: 'pago',
+                    vagas: parseInt(parkingVagas) || undefined,
+                    valor: parseFloat(parkingValor) || undefined,
+                  })}
+                  disabled={!parkingVagas || !parkingValor}
+                  className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all hover:brightness-110 disabled:opacity-40"
+                  style={{ background: '#E8B84B', color: '#070707', fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  Confirmar e publicar
+                </button>
+                <button
+                  onClick={() => setEtapaEst('tipo')}
+                  className="text-[#444] hover:text-[#777] text-xs text-center transition-colors"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  ← Voltar
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

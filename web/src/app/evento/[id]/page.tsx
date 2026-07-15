@@ -92,15 +92,16 @@ export default async function EventoPage({ params }: Props) {
   // Busca atributos ativos do evento (para exibição pública na página)
   const { data: atributosRaw } = await supabase
     .from('event_attribute_values')
-    .select('event_attributes(id, name, icon)')
+    .select('value_json, event_attributes(id, name, icon)')
     .eq('event_id', id)
 
   // Normaliza os dados — o join retorna o objeto aninhado como Record ou array
-  type AttrJoin = { id: string; name: string; icon: string }
+  type AttrJoin = { id: string; name: string; icon: string; value_json?: Record<string, string> | null }
   const atributosAtivos: AttrJoin[] = (atributosRaw ?? []).flatMap(row => {
     const a = row.event_attributes as unknown
     if (!a) return []
-    return Array.isArray(a) ? (a as AttrJoin[]) : [a as AttrJoin]
+    const base = Array.isArray(a) ? (a as AttrJoin[]) : [a as AttrJoin]
+    return base.map(attr => ({ ...attr, value_json: row.value_json as Record<string, string> | null ?? null }))
   })
 
   // Para o organizador: busca quantidades vendidas por tipo (usa service client — RLS bloquearia)
