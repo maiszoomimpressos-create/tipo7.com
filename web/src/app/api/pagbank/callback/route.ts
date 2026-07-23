@@ -13,7 +13,9 @@ export async function GET(req: NextRequest) {
   const erro  = searchParams.get('error')
 
   if (erro) {
-    return NextResponse.redirect(`${APP_URL}/configuracoes/contas?pagbank_erro=cancelado`)
+    const descricaoErro = searchParams.get('error_description') ?? ''
+    console.error('[pagbank/callback] autorização recusada pelo PagBank:', erro, descricaoErro)
+    return NextResponse.redirect(`${APP_URL}/configuracoes/contas?pagbank_erro=cancelado&pb_detalhe=${encodeURIComponent(erro)}`)
   }
   if (!code || !state) {
     return NextResponse.redirect(`${APP_URL}/configuracoes/contas?pagbank_erro=parametros`)
