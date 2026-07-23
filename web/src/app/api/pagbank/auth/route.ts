@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('client_id',     process.env.PAGBANK_CLIENT_ID!)
   url.searchParams.set('redirect_uri',  REDIRECT_URI)
-  url.searchParams.set('scope',         'payments.read+payments.create+accounts.read')
+  url.searchParams.set('scope',         'payments.read payments.create accounts.read')
   url.searchParams.set('state',         state)
 
   return NextResponse.redirect(url.toString())
