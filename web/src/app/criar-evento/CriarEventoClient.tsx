@@ -3,18 +3,20 @@
 import { useState } from 'react'
 import {
   CalendarPlus, Plus, Pencil, Trash2,
-  ExternalLink, ImageIcon, Ticket, Settings, AlertTriangle, X,
+  ExternalLink, ImageIcon, Ticket, Settings, AlertTriangle, X, Car,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { TipoPessoaModal, type ProfileData } from './TipoPessoaModal'
 
 interface EventoItem {
-  id:         string
-  title:      string
-  status:     'rascunho' | 'publicado'
-  date_start: string | null
-  created_at: string
-  banner_url: string | null
+  id:                    string
+  title:                 string
+  status:                'rascunho' | 'publicado'
+  date_start:            string | null
+  created_at:            string
+  banner_url:            string | null
+  modulo_ingressos:      boolean
+  modulo_estacionamento: boolean
 }
 
 interface OrgAtual {
@@ -214,10 +216,24 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, or
                       {ev.title}
                     </p>
                   </div>
-                  <p className="text-[#444] text-[11px] pl-3.5"
+                  <p className="text-[#444] text-[11px] pl-3.5 mb-1.5"
                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
                     {ev.date_start ? formatData(ev.date_start) : `Criado em ${new Date(ev.created_at).toLocaleDateString('pt-BR')}`}
                   </p>
+                  <div className="flex items-center gap-1.5 pl-3.5">
+                    {ev.modulo_ingressos && (
+                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-medium"
+                        style={{ background: 'rgba(232,184,75,0.1)', color: '#E8B84B' }}>
+                        <Ticket size={9} /> Ingressos
+                      </span>
+                    )}
+                    {ev.modulo_estacionamento && (
+                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-medium"
+                        style={{ background: 'rgba(56,189,248,0.1)', color: '#38bdf8' }}>
+                        <Car size={9} /> Estacionamento
+                      </span>
+                    )}
+                  </div>
                 </div>
 
               </a>

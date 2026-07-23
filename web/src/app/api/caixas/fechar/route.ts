@@ -58,15 +58,29 @@ export async function POST(req: NextRequest) {
 
   const orderIds = (orders ?? []).map(o => o.id)
   let vendidos = 0
-  let totalDinheiro = 0
+  let totalDinheiroIngressos = 0
 
   if (orderIds.length > 0) {
     const { data: itens } = await admin.from('order_items').select('quantity').in('order_id', orderIds)
     vendidos = (itens ?? []).reduce((s, i) => s + (i.quantity ?? 0), 0)
   }
   for (const o of orders ?? []) {
-    if (o.payment_method === 'dinheiro') totalDinheiro += Number(o.total ?? 0)
+    if (o.payment_method === 'dinheiro') totalDinheiroIngressos += Number(o.total ?? 0)
   }
+
+  // Sessões de estacionamento pagas neste caixa — reaproveita o mesmo fechamento de caixa
+  const { data: sessoesEst } = await admin
+    .from('estacionamento_sessoes')
+    .select('valor_cobrado, forma_pagamento')
+    .eq('caixa_id', caixaId)
+    .eq('status', 'pago')
+
+  let totalDinheiroEstacionamento = 0
+  for (const s of sessoesEst ?? []) {
+    if (s.forma_pagamento === 'dinheiro') totalDinheiroEstacionamento += Number(s.valor_cobrado ?? 0)
+  }
+
+  const totalDinheiro = totalDinheiroIngressos + totalDinheiroEstacionamento
 
   const ingressosEntregues = caixa.ingressos_alocados + recebidos - enviados
   const expectedGaveta     = Number(caixa.fundo_inicial) + totalDinheiro
@@ -95,6 +109,8 @@ export async function POST(req: NextRequest) {
     apuracao: {
       fundo_inicial:        Number(caixa.fundo_inicial),
       total_dinheiro:       totalDinheiro,
+      total_dinheiro_ingressos:      totalDinheiroIngressos,
+      total_dinheiro_estacionamento: totalDinheiroEstacionamento,
       expected_gaveta:      expectedGaveta,
       dinheiro_contado,
       diferenca_dinheiro,

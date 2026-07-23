@@ -1,6 +1,8 @@
 // Monta o corpo da requisição de ordem PIX para o PagBank.
 // Documentação: https://dev.pagbank.uol.com.br/reference/criar-pedido
 
+import type { PagBankSplit } from './pagbankToken'
+
 export interface PagBankPixParams {
   amount:          number  // valor em R$ (decimal) — será convertido para centavos
   description:     string  // nome do item (ex.: "Ingressos - Show XYZ")
@@ -10,6 +12,7 @@ export interface PagBankPixParams {
   buyerEmail:      string
   notificationUrl: string  // URL onde o PagBank enviará os webhooks
   expiresAt:       string  // ISO 8601 — quando o QR PIX expira
+  splits?:         PagBankSplit  // divisão do pagamento entre promotor e Tipo7
 }
 
 // Estrutura do corpo aceita pelo endpoint POST /orders do PagBank
@@ -28,6 +31,7 @@ export interface PagBankPixOrder {
   qr_codes: Array<{
     amount: { value: number }     // centavos
     expiration_date: string       // ISO 8601
+    splits?: PagBankSplit         // divisão do pagamento entre promotor e Tipo7
   }>
   notification_urls: string[]
 }
@@ -44,6 +48,7 @@ export function buildPagBankPixOrder(params: PagBankPixParams): PagBankPixOrder 
     buyerEmail,
     notificationUrl,
     expiresAt,
+    splits,
   } = params
 
   // PagBank exige valores inteiros em centavos
@@ -67,6 +72,7 @@ export function buildPagBankPixOrder(params: PagBankPixParams): PagBankPixOrder 
       {
         amount:          { value: centavos },
         expiration_date: expiresAt,
+        ...(splits ? { splits } : {}),
       },
     ],
     notification_urls: [notificationUrl],

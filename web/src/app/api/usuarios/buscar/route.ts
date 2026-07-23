@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   let targetId:   string | null = null
   let targetNome: string | null = null
 
-  if (q.toUpperCase().startsWith('T7-USR-')) {
+  if (q.toUpperCase().startsWith('T7-')) {
     const { data: perfil } = await admin
       .from('profiles')
       .select('id, full_name')

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Copy, Check, Users, MapPin, User } from 'lucide-react'
+import { Copy, Check, Users, MapPin, User, AlertCircle } from 'lucide-react'
 
 interface Props {
   codigo:  string
@@ -12,26 +12,24 @@ interface Props {
 const TIPO_CONFIG = {
   usuario: {
     label: 'Seu código pessoal',
-    desc:  'Use este código para participar ou trabalhar em eventos na plataforma.',
+    desc:  'Código único e permanente, ligado a você — não muda mesmo se você virar promotor ou dono de estabelecimento depois. Use pra participar de eventos ou ser convidado pra trabalhar numa equipe.',
     icon:  User,
-    prefix: 'T7-USR',
   },
   promotora: {
     label: 'Promotor de eventos',
-    desc:  null,
+    desc:  'Código da sua organização como promotor. É diferente do seu código pessoal — identifica a promotora em si, não você.',
     icon:  Users,
-    prefix: 'T7-PRO',
   },
   estabelecimento: {
     label: 'Estabelecimento',
-    desc:  null,
+    desc:  'Código do seu estabelecimento. É diferente do seu código pessoal — identifica o local/negócio em si, não você.',
     icon:  MapPin,
-    prefix: 'T7-EST',
   },
 }
 
 export function CodigoOrg({ codigo, tipo, nome }: Props) {
   const [copiado, setCopiado] = useState(false)
+  const [mostrarAjuda, setMostrarAjuda] = useState(false)
   const cfg = TIPO_CONFIG[tipo]
   const Icon = cfg.icon
 
@@ -60,9 +58,28 @@ export function CodigoOrg({ codigo, tipo, nome }: Props) {
           </div>
 
           <div className="min-w-0">
-            <p className="text-[#444] text-[10px] uppercase tracking-widest mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              {cfg.label}
-            </p>
+            <div className="flex items-center gap-1.5 relative">
+              <p className="text-[#444] text-[10px] uppercase tracking-widest mb-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                {cfg.label}
+              </p>
+              <button
+                type="button"
+                onClick={() => setMostrarAjuda(v => !v)}
+                onMouseEnter={() => setMostrarAjuda(true)}
+                onMouseLeave={() => setMostrarAjuda(false)}
+                className="text-[#555] hover:text-[#E8B84B] transition-colors mb-0.5"
+              >
+                <AlertCircle size={11} />
+              </button>
+              {mostrarAjuda && (
+                <div
+                  className="absolute left-0 top-full mt-1.5 z-20 w-60 p-2.5 rounded-lg text-[10px] leading-snug text-[#ccc] shadow-xl shadow-black/50"
+                  style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  {cfg.desc}
+                </div>
+              )}
+            </div>
             <p
               className="text-[#E8B84B] text-lg font-bold tracking-widest"
               style={{ fontFamily: 'var(--font-syne)', letterSpacing: '0.08em' }}
@@ -72,11 +89,6 @@ export function CodigoOrg({ codigo, tipo, nome }: Props) {
             <p className="text-[#444] text-xs truncate mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
               {nome}
             </p>
-            {cfg.desc && (
-              <p className="text-[#333] text-[11px] mt-1.5 leading-snug" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                {cfg.desc}
-              </p>
-            )}
           </div>
         </div>
 

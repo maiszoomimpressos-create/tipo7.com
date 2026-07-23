@@ -7,6 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProfileStatus } from '@/hooks/useProfileStatus'
+import { useLocation } from '@/contexts/LocationContext'
 import { MapPin, X, Loader2, ArrowRight, CheckCircle, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +28,10 @@ export function ProfileCompletionModal() {
   const { user }                                   = useAuth()
   const { incompleto, camposFaltando, carregando } = useProfileStatus()
   const supabase                                   = createClient()
+  // Cidade detectada por geolocalização — ainda não existe cidade no perfil
+  // nesse ponto (é justamente o que está sendo preenchido), então usamos isso
+  // como viés de busca em vez do endereço do próprio perfil.
+  const { city: cidadeDetectada } = useLocation()
 
   const [visivel,    setVisivel]    = useState(false)
   const [dispensado, setDispensado] = useState(false)
@@ -55,6 +60,7 @@ export function ProfileCompletionModal() {
   const [addrSuggestions, setAddrSuggestions] = useState<PlaceSuggestion[]>([])
   const [addrSearching,   setAddrSearching]   = useState(false)
   const [showAddrDropdown, setShowAddrDropdown] = useState(false)
+  const [addrSearchError, setAddrSearchError] = useState<string | null>(null)
   const addrDropdownRef = useRef<HTMLDivElement>(null)
   const addrDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -119,18 +125,29 @@ export function ProfileCompletionModal() {
 
   const buscarEnderecoSugestoes = useCallback((valor: string) => {
     if (addrDebounceRef.current) clearTimeout(addrDebounceRef.current)
-    if (!valor || valor.length < 3) { setAddrSuggestions([]); setShowAddrDropdown(false); return }
+    if (!valor || valor.length < 3) { setAddrSuggestions([]); setShowAddrDropdown(false); setAddrSearchError(null); return }
     addrDebounceRef.current = setTimeout(async () => {
       setAddrSearching(true)
       try {
-        const res  = await fetch(`/api/places/autocomplete?q=${encodeURIComponent(valor)}`)
+        const params = new URLSearchParams({ q: valor })
+        if (cidadeDetectada) params.set('cidade', cidadeDetectada)
+        const res  = await fetch(`/api/places/autocomplete?${params.toString()}`)
         const data = await res.json()
+        if (!res.ok) {
+          setAddrSearchError('Busca de endereço indisponível no momento. Preencha manualmente abaixo.')
+          setAddrSuggestions([]); setShowAddrDropdown(false)
+          return
+        }
+        setAddrSearchError(null)
         setAddrSuggestions(data.suggestions ?? [])
         setShowAddrDropdown((data.suggestions ?? []).length > 0)
-      } catch { setAddrSuggestions([]) }
+      } catch {
+        setAddrSearchError('Busca de endereço indisponível no momento. Preencha manualmente abaixo.')
+        setAddrSuggestions([])
+      }
       finally { setAddrSearching(false) }
     }, 350)
-  }, [])
+  }, [cidadeDetectada])
 
   const selecionarEndereco = async (s: PlaceSuggestion) => {
     setAddrQuery(s.nomePrincipal)
@@ -302,6 +319,11 @@ export function ProfileCompletionModal() {
                     </div>
                   )}
                 </div>
+                {addrSearchError && (
+                  <p className="text-amber-400 text-xs mt-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    {addrSearchError}
+                  </p>
+                )}
               </div>
 
               {/* CEP — só aparece se estiver vazio */}

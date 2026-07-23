@@ -29,10 +29,15 @@ export default async function ContasPage() {
 
   const admin = createServiceClient()
 
-  const [{ data: contaMP }, { data: settingsRows }] = await Promise.all([
+  const [{ data: contaMP }, { data: contaPagBank }, { data: settingsRows }] = await Promise.all([
     supabase
       .from('promotor_mp_accounts')
       .select('mp_user_id, mp_access_token, mp_public_key, updated_at')
+      .eq('user_id', user.id)
+      .maybeSingle(),
+    supabase
+      .from('promotor_pagbank_accounts')
+      .select('pagbank_account_id, updated_at')
       .eq('user_id', user.id)
       .maybeSingle(),
     admin
@@ -73,7 +78,7 @@ export default async function ContasPage() {
             </p>
           </div>
 
-          <ContasClient contaAtual={contaMP ?? null} tarifas={tarifas} />
+          <ContasClient contaAtual={contaMP ?? null} contaPagBankAtual={contaPagBank ?? null} tarifas={tarifas} />
 
         </main>
       </PromoterLayout>

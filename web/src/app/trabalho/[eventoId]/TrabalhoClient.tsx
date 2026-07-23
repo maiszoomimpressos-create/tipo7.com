@@ -3,7 +3,7 @@
 import {
   ArrowLeft, Calendar, MapPin, Shield,
   ShoppingCart, ScanQrCode, ClipboardList, BarChart2,
-  Settings, CheckCircle2, ChevronRight, Ticket,
+  Settings, CheckCircle2, ChevronRight, Ticket, Car,
 } from 'lucide-react'
 import { TrabalhoDashboard } from './TrabalhoDashboard'
 
@@ -51,6 +51,14 @@ function buildAcessos(eventoId: string, permissoes: string[], isOwner: boolean):
       icon:  BarChart2,
       href:  `/dashboard/${eventoId}`,
       cor:   '#a78bfa',
+    },
+    {
+      perm:  'gerenciar_estacionamento',
+      label: 'Estacionamento',
+      desc:  'Registrar entrada/saída de veículos',
+      icon:  Car,
+      href:  `/estacionamento/${eventoId}`,
+      cor:   '#38bdf8',
     },
   ]
 

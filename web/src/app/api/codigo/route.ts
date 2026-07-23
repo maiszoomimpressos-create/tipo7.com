@@ -1,4 +1,6 @@
-// Gera código único sequencial para promotor (T7-PRO-XXXXX) ou estabelecimento (T7-EST-XXXXX)
+// Gera código único T7-BR-P-XXXXXXX (promotora) ou T7-BR-E-XXXXXXX (estabelecimento)
+// via a function do banco generate_org_code — aleatório com verificação de
+// duplicidade, mesmo mecanismo usado pro código de pessoa.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
@@ -14,15 +16,10 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  // Service client para contar todos os orgs (bypassa RLS)
   const admin = createServiceClient()
-  const { count } = await admin
-    .from('organizations')
-    .select('*', { count: 'exact', head: true })
-    .eq('type', tipo)
+  const { data: codigo, error } = await admin.rpc('generate_org_code', { p_tipo: tipo })
 
-  const prefix = tipo === 'promotora' ? 'T7-PRO' : 'T7-EST'
-  const codigo = `${prefix}-${String((count ?? 0) + 1).padStart(5, '0')}`
+  if (error || !codigo) return NextResponse.json({ error: 'Erro ao gerar código' }, { status: 500 })
 
   return NextResponse.json({ codigo })
 }

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { PainelOrganizador } from './PainelOrganizador'
+import { PainelEventosFilhos } from './PainelEventosFilhos'
 import type { IngressoEditavel } from './PainelIngressos'
 import { CheckoutCardPanel } from './CheckoutCardPanel'
 import { createClient } from '@/lib/supabase/client'
@@ -33,6 +34,8 @@ interface Evento {
   ticketMode:         'individual' | 'pacote' | 'ambos' | null
   packageDiscountPct: number
   bannerUrl:          string | null
+  moduloEstacionamento: boolean
+  isChild:            boolean
   feeMode:            'promotor' | 'comprador' | 'mista'
   feePct:             number
 }
@@ -896,17 +899,21 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
         {/* ── Coluna direita — painel de gestão (organizador) ou compra ──── */}
         <div className="lg:sticky lg:top-24">
           {isOwner && (
-            <PainelOrganizador
-              eventoId={evento.id}
-              capacity={capacity}
-              ingressos={ingressos.map((t): IngressoEditavel => ({
-                id:       t.id,
-                name:     t.name,
-                price:    t.price,
-                quantity: t.quantity,
-                sold:     soldByTicket[t.id] ?? 0,
-              }))}
-            />
+            <>
+              <PainelOrganizador
+                eventoId={evento.id}
+                capacity={capacity}
+                moduloEstacionamento={evento.moduloEstacionamento}
+                ingressos={ingressos.map((t): IngressoEditavel => ({
+                  id:       t.id,
+                  name:     t.name,
+                  price:    t.price,
+                  quantity: t.quantity,
+                  sold:     soldByTicket[t.id] ?? 0,
+                }))}
+              />
+              <PainelEventosFilhos eventoId={evento.id} isChild={evento.isChild} />
+            </>
           )}
           {!isOwner && (
             <div className="rounded-2xl border border-[#1a1a1a] bg-[#0d0d0d] overflow-hidden">

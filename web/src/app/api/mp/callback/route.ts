@@ -20,14 +20,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${BASE}/configuracoes/contas?mp_erro=parametros`)
   }
 
-  // Valida state anti-CSRF
+  // Valida state anti-CSRF — só a parte antes de "::" é comparada com o
+  // cookie; o resto (se houver) é o return_to que viajou junto desde /auth.
+  const [csrfState, returnTo] = state.split('::')
+
   const jar = await cookies()
   const stateGuardado = jar.get('mp_oauth_state')?.value
   jar.delete('mp_oauth_state')
 
-  if (!stateGuardado || stateGuardado !== state) {
+  if (!stateGuardado || stateGuardado !== csrfState) {
     return NextResponse.redirect(`${BASE}/configuracoes/contas?mp_erro=state`)
   }
+
+  const isInternal = !!returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//') && !returnTo.startsWith('/\\')
+  const destino     = isInternal ? returnTo : '/configuracoes/contas'
 
   // Troca o code pelo access_token
   const tokenRes = await fetch('https://api.mercadopago.com/oauth/token', {
@@ -81,5 +87,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${BASE}/configuracoes/contas?mp_erro=banco`)
   }
 
-  return NextResponse.redirect(`${BASE}/configuracoes/contas?mp_ok=1`)
+  const separador = destino.includes('?') ? '&' : '?'
+  return NextResponse.redirect(`${BASE}${destino}${separador}mp_ok=1`)
 }

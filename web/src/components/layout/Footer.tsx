@@ -3,7 +3,7 @@ import { Ticket } from 'lucide-react'
 const LINKS = {
   Plataforma: [
     { label: 'Explorar eventos',  href: '/eventos'       },
-    { label: 'Criar evento',      href: '/criar-evento'  },
+    { label: 'Criar evento',      href: '/minha-area'    },
     { label: 'Minha conta',       href: '/perfil'        },
     { label: 'Meus ingressos',    href: '/meus-ingressos'},
   ],

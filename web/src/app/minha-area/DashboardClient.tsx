@@ -3,8 +3,8 @@
 import { useState, useMemo } from 'react'
 import {
   DollarSign, Ticket, Users, CalendarCheck,
-  ChevronDown, ScanLine, ArrowUpRight, ImageIcon,
-  Copy, Check, MapPin,
+  ChevronDown, ScanLine, Plus, ArrowUpRight, ImageIcon,
+  Copy, Check, MapPin, Car,
 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
@@ -12,12 +12,14 @@ const ACCENT = '#E8B84B'
 // ─── Tipos exportados ─────────────────────────────────────────────────────────
 
 export interface EventoResumo {
-  id:         string
-  title:      string
-  status:     string
-  date_start: string | null
-  banner_url: string | null
-  category:   string | null
+  id:                    string
+  title:                 string
+  status:                string
+  date_start:            string | null
+  banner_url:            string | null
+  category:              string | null
+  modulo_ingressos:      boolean
+  modulo_estacionamento: boolean
 }
 
 export interface TipoIngresso {
@@ -240,8 +242,8 @@ export function DashboardClient({ orgName, orgCodigo, orgTipo, eventos, kpis, ti
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-[#070707]"
           style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
         >
-          Meus eventos
-          <ArrowUpRight size={14} />
+          <Plus size={14} strokeWidth={2.5} />
+          Novo evento
         </a>
       </div>
 
@@ -293,9 +295,13 @@ export function DashboardClient({ orgName, orgCodigo, orgTipo, eventos, kpis, ti
                       <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                         {ev.date_start ? fmtData(ev.date_start) : '—'}
                       </p>
-                      <span className="text-[10px] font-semibold" style={{ color: st.color, fontFamily: 'var(--font-dm-sans)' }}>
-                        {st.label}
-                      </span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] font-semibold" style={{ color: st.color, fontFamily: 'var(--font-dm-sans)' }}>
+                          {st.label}
+                        </span>
+                        {ev.modulo_ingressos && <Ticket size={10} className="text-[#E8B84B]" />}
+                        {ev.modulo_estacionamento && <Car size={10} className="text-[#38bdf8]" />}
+                      </div>
                     </div>
                     <ArrowUpRight size={13} className="text-[#333] group-hover:text-[#555] shrink-0 transition-colors" />
                   </a>

@@ -18,6 +18,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 import { pagbankPost, PagBankError } from '@/lib/pagbankClient'
 import { buildPagBankPixOrder } from '@/lib/pagbankPix'
+import { resolvePagBankSplit } from '@/lib/pagbankToken'
+import { resolveEventGateway } from '@/lib/resolveGateway'
 
 // Resposta esperada do endpoint POST /orders do PagBank
 interface PagBankOrderResponse {
@@ -104,6 +106,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'PIX não disponível para ingressos gratuitos' }, { status: 400 })
     }
 
+    // Resolve o dono do evento e exige conta PagBank conectada — nunca cai de
+    // volta pra conta única da Tipo7 (evita misturar dinheiro de promotores
+    // diferentes e o problema de tributação sobre o valor cheio).
+    const { ownerId } = await resolveEventGateway(eventoId, admin)
+    const centavosTotal = Math.round(faceValue * 100)
+    const splits = ownerId ? await resolvePagBankSplit(ownerId, admin, centavosTotal) : null
+    if (!splits) {
+      return NextResponse.json(
+        { error: 'O promotor deste evento ainda não conectou uma conta PagBank. Pagamento indisponível.' },
+        { status: 503 }
+      )
+    }
+
     // Cria pedido atomicamente: bloqueia ingressos, verifica estoque, cria orders + order_items
     const { data: resultado, error: rpcError } = await admin.rpc('criar_pedido_atomico', {
       p_user_id:  user.id,
@@ -144,6 +159,7 @@ export async function POST(req: NextRequest) {
       buyerEmail:      buyerEmail || (user.email ?? ''),
       notificationUrl: 'https://www.tipo7.com/api/webhooks/pagbank',
       expiresAt,
+      splits,
     })
 
     const pbResponse = await pagbankPost<PagBankOrderResponse>(

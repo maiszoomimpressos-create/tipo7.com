@@ -18,6 +18,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 import { pagbankPost, PagBankError } from '@/lib/pagbankClient'
 import { issueTickets } from '@/lib/issueTickets'
+import { resolvePagBankSplit } from '@/lib/pagbankToken'
+import { resolveEventGateway } from '@/lib/resolveGateway'
 
 // Resposta do PagBank para ordem com cartão
 interface PagBankCardOrderResponse {
@@ -105,6 +107,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Valor inválido para pagamento com cartão' }, { status: 400 })
     }
 
+    // Resolve o dono do evento e exige conta PagBank conectada — nunca cai de
+    // volta pra conta única da Tipo7 (evita misturar dinheiro de promotores
+    // diferentes e o problema de tributação sobre o valor cheio).
+    const { ownerId } = await resolveEventGateway(eventoId, admin)
+    const centavosTotal = Math.round(faceValue * 100)
+    const splits = ownerId ? await resolvePagBankSplit(ownerId, admin, centavosTotal) : null
+    if (!splits) {
+      return NextResponse.json(
+        { error: 'O promotor deste evento ainda não conectou uma conta PagBank. Pagamento indisponível.' },
+        { status: 503 }
+      )
+    }
+
     // Cria pedido atomicamente
     const { data: resultado, error: rpcError } = await admin.rpc('criar_pedido_atomico', {
       p_user_id:  user.id,
@@ -158,6 +173,7 @@ export async function POST(req: NextRequest) {
             reference_id:   orderId,
             description:    `Ingressos - ${evento?.title ?? 'Evento'}`.slice(0, 100),
             amount:         { value: centavos, currency: 'BRL' },
+            splits,
             payment_method: {
               type:         'CREDIT_CARD',
               installments,

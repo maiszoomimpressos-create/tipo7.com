@@ -9,11 +9,12 @@ import {
 const ACCENT = '#E8B84B'
 
 const PERMISSOES = [
-  { value: 'validar_ingresso',     label: 'Validar ingresso',     desc: 'Escanear QR na entrada'         },
-  { value: 'vender_ingresso',      label: 'Bilheteria',           desc: 'Vender ingressos presencial'    },
-  { value: 'ver_lista_convidados', label: 'Ver lista',            desc: 'Lista de compradores'           },
-  { value: 'ver_relatorios',       label: 'Ver relatórios',       desc: 'Vendas e presença'              },
-  { value: 'gerenciar_checkin',    label: 'Gerenciar check-in',   desc: 'Controlar entrada/saída'        },
+  { value: 'validar_ingresso',        label: 'Validar ingresso',     desc: 'Escanear QR na entrada'         },
+  { value: 'vender_ingresso',         label: 'Bilheteria',           desc: 'Vender ingressos presencial'    },
+  { value: 'ver_lista_convidados',    label: 'Ver lista',            desc: 'Lista de compradores'           },
+  { value: 'ver_relatorios',          label: 'Ver relatórios',       desc: 'Vendas e presença'              },
+  { value: 'gerenciar_checkin',       label: 'Gerenciar check-in',   desc: 'Controlar entrada/saída'        },
+  { value: 'gerenciar_estacionamento', label: 'Estacionamento',      desc: 'Registrar entrada/saída de veículos' },
 ]
 
 type Funcao = {
@@ -263,11 +264,12 @@ export function PainelEquipe({ eventoId }: Props) {
   }
 
   const permLabel: Record<string, string> = {
-    validar_ingresso:     'Validar',
-    vender_ingresso:      'Bilheteria',
-    ver_lista_convidados: 'Ver lista',
-    ver_relatorios:       'Relatórios',
-    gerenciar_checkin:    'Check-in',
+    validar_ingresso:        'Validar',
+    vender_ingresso:         'Bilheteria',
+    ver_lista_convidados:    'Ver lista',
+    ver_relatorios:          'Relatórios',
+    gerenciar_checkin:       'Check-in',
+    gerenciar_estacionamento: 'Estacionamento',
   }
 
   return (

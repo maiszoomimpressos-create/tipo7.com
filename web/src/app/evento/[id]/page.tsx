@@ -20,7 +20,7 @@ export default async function EventoPage({ params }: Props) {
       venue_name, city, state, street,
       ticket_mode, package_discount_pct,
       banner_url, organization_id, capacity,
-      fee_mode
+      fee_mode, modulo_estacionamento, parent_event_id
     `)
     .eq('id', id)
     .single()
@@ -141,6 +141,8 @@ export default async function EventoPage({ params }: Props) {
           ticketMode:         (evento.ticket_mode ?? null) as 'individual' | 'pacote' | 'ambos' | null,
           packageDiscountPct: evento.package_discount_pct ?? 0,
           bannerUrl:          evento.banner_url         ?? null,
+          moduloEstacionamento: (evento as unknown as { modulo_estacionamento: boolean }).modulo_estacionamento ?? false,
+          isChild:            (evento as unknown as { parent_event_id: string | null }).parent_event_id != null,
           feeMode,
           feePct,
         }}

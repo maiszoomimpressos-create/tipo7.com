@@ -125,14 +125,14 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
   const semBanner     = !resumo.bannerUrl
 
   // ── Publica o evento (sem mexer no estacionamento) ──
+  // Passa pela API em vez de atualizar direto — o servidor revalida os
+  // requisitos (incluindo Mercado Pago conectado) antes de aceitar.
   const publicarEvento = async () => {
     setPublishing(true); setErro(null)
     try {
-      const { error } = await supabase
-        .from('events')
-        .update({ status: 'publicado' })
-        .eq('id', eventoId)
-      if (error) throw error
+      const res  = await fetch(`/api/eventos/${eventoId}/publicar`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) { setErro(data.error ?? 'Erro ao publicar. Tente novamente.'); setPublishing(false); return }
       router.push(`/criar-evento/${eventoId}/publicado`)
     } catch {
       setErro('Erro ao publicar. Tente novamente.')
@@ -251,7 +251,7 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
           <CheckItem ok={checks.data}      eventoId={eventoId} label="Data de início"    sub={resumo.dateStart ? formatData(resumo.dateStart) : undefined} href={`/criar-evento/${eventoId}`} />
           <CheckItem ok={checks.local}     eventoId={eventoId} label="Local do evento"   sub={resumo.nomeLocal || resumo.cidade || undefined} href={`/criar-evento/${eventoId}`} />
           <CheckItem ok={checks.ingressos} eventoId={eventoId} label="Ingressos configurados" sub={ingressos.length > 0 ? `${ingressos.length} tipo${ingressos.length > 1 ? 's' : ''}` : undefined} href={`/criar-evento/${eventoId}/ingressos`} />
-          <CheckItem ok={checks.mp}        eventoId={eventoId} label="Conta Mercado Pago conectada" sub={mpConectado ? 'Pagamentos habilitados' : undefined} href={`/api/mp/connect?return_to=/criar-evento/${eventoId}/publicar`} />
+          <CheckItem ok={checks.mp}        eventoId={eventoId} label="Conta Mercado Pago conectada" sub={mpConectado ? 'Pagamentos habilitados' : undefined} href={`/api/mp/auth?return_to=/criar-evento/${eventoId}/publicar`} />
 
           {/* Aviso de banner — não bloqueia publicação, só alerta */}
           {semBanner && (
@@ -294,7 +294,7 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
               </p>
             </div>
           </div>
-          <a href={`/api/mp/connect?return_to=/criar-evento/${eventoId}/publicar`}
+          <a href={`/api/mp/auth?return_to=/criar-evento/${eventoId}/publicar`}
              className="w-full py-3 rounded-xl text-sm font-semibold text-center transition-all hover:brightness-110"
              style={{ background: '#E8B84B', color: '#070707', fontFamily: 'var(--font-dm-sans)' }}>
             Conectar Mercado Pago

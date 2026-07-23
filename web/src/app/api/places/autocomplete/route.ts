@@ -14,9 +14,15 @@ export async function GET(req: NextRequest) {
   const key = process.env.GOOGLE_PLACES_API_KEY
   if (!key) return NextResponse.json({ error: 'API key não configurada' }, { status: 500 })
 
+  // Filtro opcional de cidade/estado — reduz ambiguidade em nomes de local genéricos
+  // (ex.: "Chácara Bela Vista" existe em várias cidades)
+  const cidade = req.nextUrl.searchParams.get('cidade')?.trim()
+  const estado = req.nextUrl.searchParams.get('estado')?.trim()
+  const input  = cidade ? `${q}, ${cidade}${estado ? ' - ' + estado : ''}` : q
+
   const url = new URL('https://places.googleapis.com/v1/places:autocomplete')
   const body = {
-    input: q,
+    input,
     languageCode: 'pt-BR',
     regionCode: 'BR',
   }

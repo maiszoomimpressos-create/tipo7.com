@@ -31,7 +31,7 @@ export default async function EditarEventoPage({ params }: Props) {
 
   // Busca perfil e tipo de pessoa para exibir responsável (PF)
   const [{ data: profile }, { data: promotor }] = await Promise.all([
-    supabase.from('profiles').select('full_name, cpf, phone').eq('id', user.id).single(),
+    supabase.from('profiles').select('full_name, cpf, phone, city, state').eq('id', user.id).single(),
     supabase.from('promotor_profiles').select('tipo_pessoa').eq('user_id', user.id).single(),
   ])
 
@@ -103,6 +103,8 @@ export default async function EditarEventoPage({ params }: Props) {
         <EventoForm
           eventoId={evento.id}
           tipoPessoa={(promotor?.tipo_pessoa ?? null) as 'pf' | 'pj' | null}
+          perfilCidade={profile?.city  ?? null}
+          perfilEstado={profile?.state ?? null}
           responsavel={promotor?.tipo_pessoa === 'pf' ? {
             nome:     profile?.full_name ?? '',
             cpf:      profile?.cpf       ?? '',

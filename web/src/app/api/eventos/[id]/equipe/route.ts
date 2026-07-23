@@ -92,10 +92,10 @@ export async function POST(
 
   const busca = body.emailOuCodigo.trim()
 
-  // Busca por código T7-USR (direto na tabela profiles) ou por email (Auth)
+  // Busca por código T7 (direto na tabela profiles) ou por email (Auth)
   let targetUserId: string | null = null
 
-  if (busca.toUpperCase().startsWith('T7-USR-')) {
+  if (busca.toUpperCase().startsWith('T7-')) {
     const { data: perfil } = await admin
       .from('profiles')
       .select('id')

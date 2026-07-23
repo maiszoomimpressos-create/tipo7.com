@@ -27,10 +27,12 @@ interface Inicial {
 }
 
 interface Props {
-  eventoId:    string
-  tipoPessoa:  'pf' | 'pj' | null
-  responsavel: Responsavel | null
-  inicial:     Inicial
+  eventoId:     string
+  tipoPessoa:   'pf' | 'pj' | null
+  responsavel:  Responsavel | null
+  inicial:      Inicial
+  perfilCidade: string | null
+  perfilEstado: string | null
 }
 
 const CATEGORIAS = [
@@ -114,7 +116,7 @@ function DateTimeInput24h({ value, onChange, className }: { value: string; onCha
   )
 }
 
-export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props) {
+export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial, perfilCidade, perfilEstado }: Props) {
   const router   = useRouter()
   const supabase = createClient()
 
@@ -139,8 +141,33 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
   const [suggestions,   setSuggestions]   = useState<PlaceSuggestion[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [showDropdown,  setShowDropdown]  = useState(false)
+  const [placeSearchError, setPlaceSearchError] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Filtro de cidade na busca de local — evita ambiguidade em nomes genéricos.
+  // Parte do endereço já salvo no evento; se não houver, cai pro perfil do promotor.
+  const [biasCidade, setBiasCidade]   = useState(inicial.cidade || perfilCidade || '')
+  const [biasEstado, setBiasEstado]   = useState(inicial.estado || perfilEstado || '')
+  const [trocandoBias, setTrocandoBias] = useState(false)
+  const [biasCepInput, setBiasCepInput] = useState('')
+  const [biasCepLoading, setBiasCepLoading] = useState(false)
+
+  const buscarCidadePorCEP = async (valorCep: string) => {
+    const digitos = valorCep.replace(/\D/g, '')
+    if (digitos.length !== 8) return
+    setBiasCepLoading(true)
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digitos}/json/`)
+      const d   = await res.json()
+      if (!d.erro) {
+        setBiasCidade(d.localidade ?? '')
+        setBiasEstado(d.uf ?? '')
+        setTrocandoBias(false)
+      }
+    } catch { /* usuário pode tentar de novo */ }
+    finally { setBiasCepLoading(false) }
+  }
 
   const [cep,         setCep]         = useState(formatCEP(inicial.cep))
   const [rua,         setRua]         = useState(inicial.rua)
@@ -202,18 +229,30 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
 
   const buscarSugestoes = useCallback((valor: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!valor || valor.length < 2) { setSuggestions([]); setShowDropdown(false); return }
+    if (!valor || valor.length < 2) { setSuggestions([]); setShowDropdown(false); setPlaceSearchError(null); return }
     debounceRef.current = setTimeout(async () => {
       setSearchLoading(true)
       try {
-        const res  = await fetch(`/api/places/autocomplete?q=${encodeURIComponent(valor)}`)
+        const params = new URLSearchParams({ q: valor })
+        if (biasCidade) params.set('cidade', biasCidade)
+        if (biasEstado) params.set('estado', biasEstado)
+        const res  = await fetch(`/api/places/autocomplete?${params.toString()}`)
         const data = await res.json()
+        if (!res.ok) {
+          setPlaceSearchError('Busca de local indisponível no momento. Preencha o endereço manualmente abaixo.')
+          setSuggestions([]); setShowDropdown(false)
+          return
+        }
+        setPlaceSearchError(null)
         setSuggestions(data.suggestions ?? [])
         setShowDropdown((data.suggestions ?? []).length > 0)
-      } catch { setSuggestions([]) }
+      } catch {
+        setPlaceSearchError('Busca de local indisponível no momento. Preencha o endereço manualmente abaixo.')
+        setSuggestions([])
+      }
       finally { setSearchLoading(false) }
     }, 350)
-  }, [])
+  }, [biasCidade, biasEstado])
 
   const selecionarLocal = async (s: PlaceSuggestion) => {
     setNomeLocal(s.nomePrincipal)
@@ -524,6 +563,48 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial }: Props
                 </div>
               )}
             </div>
+
+            {/* Filtro de cidade da busca — reduz ambiguidade em nomes genéricos */}
+            {!trocandoBias ? (
+              <div className="flex items-center gap-1.5 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <span className="text-[#444]">
+                  {biasCidade
+                    ? <>Buscando perto de <span className="text-[#888]">{biasCidade}{biasEstado ? ` - ${biasEstado}` : ''}</span></>
+                    : 'Buscando em todo o Brasil'}
+                </span>
+                <button type="button" onClick={() => { setTrocandoBias(true); setBiasCepInput('') }}
+                  className="text-[#E8B84B]/70 hover:text-[#E8B84B] transition-colors">
+                  Trocar
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text" inputMode="numeric" placeholder="CEP do local do evento"
+                  value={biasCepInput}
+                  onChange={e => setBiasCepInput(formatCEP(e.target.value))}
+                  onKeyDown={e => { if (e.key === 'Enter') buscarCidadePorCEP(biasCepInput) }}
+                  maxLength={9}
+                  className="flex-1 bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-white text-xs outline-none focus:border-[#E8B84B]/40"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                  autoFocus
+                />
+                {biasCepLoading
+                  ? <Loader2 size={14} className="animate-spin text-[#E8B84B]" />
+                  : (
+                    <button type="button" onClick={() => buscarCidadePorCEP(biasCepInput)}
+                      className="text-[#E8B84B] text-xs font-medium">OK</button>
+                  )}
+                <button type="button" onClick={() => setTrocandoBias(false)}
+                  className="text-[#444] hover:text-[#777] text-xs transition-colors">Cancelar</button>
+              </div>
+            )}
+
+            {placeSearchError && (
+              <p className="text-amber-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                {placeSearchError}
+              </p>
+            )}
             {/* Indica se local foi vinculado a um venue salvo */}
             {venueId && (
               <p className="text-green-400 text-xs flex items-center gap-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>

@@ -29,17 +29,20 @@ export default async function MinhaAreaPage() {
   // Todos os eventos de todas as orgs do usuário
   const { data: eventosRaw } = await admin
     .from('events')
-    .select('id, title, status, date_start, date_end, banner_url, category')
+    .select('id, title, status, date_start, date_end, banner_url, category, modulo_ingressos, modulo_estacionamento')
     .in('organization_id', orgIds)
+    .is('parent_event_id', null)
     .order('created_at', { ascending: false })
 
   const eventos: EventoResumo[] = (eventosRaw ?? []).map(e => ({
-    id:         e.id,
-    title:      e.title       ?? 'Sem título',
-    status:     e.status      ?? 'rascunho',
-    date_start: e.date_start  ?? null,
-    banner_url: (e as unknown as { banner_url: string | null }).banner_url ?? null,
-    category:   e.category    ?? null,
+    id:                    e.id,
+    title:                 e.title       ?? 'Sem título',
+    status:                e.status      ?? 'rascunho',
+    date_start:            e.date_start  ?? null,
+    banner_url:            (e as unknown as { banner_url: string | null }).banner_url ?? null,
+    category:              e.category    ?? null,
+    modulo_ingressos:      (e as unknown as { modulo_ingressos: boolean }).modulo_ingressos,
+    modulo_estacionamento: (e as unknown as { modulo_estacionamento: boolean }).modulo_estacionamento,
   }))
 
   const eventoIds = eventos.map(e => e.id)

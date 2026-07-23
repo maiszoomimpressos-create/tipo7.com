@@ -7,13 +7,13 @@
 //     PF → dados puxados do perfil → nome do evento
 //     PJ → dados da empresa (CNPJ) → nome do evento
 //   Etapa 2 (Estabelecimento): dados PJ + endereço → nome do evento
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   Building2, User, Loader2, X, ArrowRight, CheckCircle2,
-  MapPin, Users, ArrowLeft, Car,
+  MapPin, Users, ArrowLeft, Car, Ticket,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -86,6 +86,50 @@ const formatCEP = (v: string) => {
   return d.length <= 5 ? d : `${d.slice(0,5)}-${d.slice(5)}`
 }
 
+// ── O que esse evento vai vender — decide quais módulos ficam disponíveis ──
+function SeletorModulos({
+  ingressos, estacionamento, onIngressos, onEstacionamento,
+}: {
+  ingressos:        boolean
+  estacionamento:   boolean
+  onIngressos:      (v: boolean) => void
+  onEstacionamento: (v: boolean) => void
+}) {
+  const opcoes = [
+    { icon: Ticket, label: 'Ingressos',     desc: 'Vender ingressos online e presencial', checked: ingressos,      onChange: onIngressos },
+    { icon: Car,    label: 'Estacionamento', desc: 'Vagas pagas no local',                  checked: estacionamento, onChange: onEstacionamento },
+  ]
+  return (
+    <div className="mb-4">
+      <p className="text-[#444] text-[11px] uppercase tracking-wider mb-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+        O que esse evento vai ter
+      </p>
+      <div className="flex flex-col gap-2">
+        {opcoes.map(({ icon: Icon, label, desc, checked, onChange }) => (
+          <button key={label} type="button" onClick={() => onChange(!checked)}
+            className={cn(
+              'flex items-center gap-3 p-3 rounded-xl border text-left transition-all',
+              checked ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35' : 'bg-[#111] border-[#1c1c1c] hover:border-[#2a2a2a]'
+            )}>
+            <div className={cn(
+              'w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-all',
+              checked ? 'bg-[#E8B84B] border-[#E8B84B]' : 'border-[#333]'
+            )}>
+              {checked && <CheckCircle2 size={13} className="text-[#070707]" />}
+            </div>
+            <Icon size={15} className={checked ? 'text-[#E8B84B]' : 'text-[#444]'} />
+            <div>
+              <p className={cn('text-xs font-medium', checked ? 'text-white' : 'text-[#777]')}
+                 style={{ fontFamily: 'var(--font-dm-sans)' }}>{label}</p>
+              <p className="text-[#444] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>{desc}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgAtual, profile, onFechar }: Props) {
   const { user } = useAuth()
   const supabase  = createClient()
@@ -102,11 +146,11 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
   })()
 
   const [stage,         setStage]         = useState<Stage>(etapaInicial)
-  const [inicializando, setInicializando] = useState(!!tipoPessoaAtual)
+  const [nicho,         setNicho]         = useState<'eventos' | 'estacionamento' | 'ambos' | ''>('')
   const [orgTipo,       setOrgTipo]       = useState<'promotora' | 'estabelecimento' | ''>(orgAtual?.type ?? '')
   const [tipoPessoa,    setTipoPessoa]    = useState<'pf' | 'pj' | ''>(tipoPessoaAtual ?? '')
   const [orgId,         setOrgId]         = useState<string | null>(orgAtual?.id ?? null)
-  const [eventoId,      setEventoId]      = useState<string | null>(null)
+  const [codigoGerado,  setCodigoGerado]  = useState<string | null>(null)
 
   const [saving,      setSaving]      = useState(false)
   const [savingFinal, setSavingFinal] = useState(false)
@@ -135,41 +179,10 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
 
   const [nomeEvento, setNomeEvento] = useState('')
 
-  // Para retornantes: cria rascunho do evento silenciosamente ao abrir
-  useEffect(() => {
-    if (!tipoPessoaAtual || !user) return
-    ;(async () => {
-      try {
-        let newOrgId = orgAtual?.id ?? null
-        if (!newOrgId) {
-          const { data: orgEx } = await supabase.from('organizations').select('id').eq('owner_id', user.id).maybeSingle()
-          if (orgEx) {
-            newOrgId = orgEx.id
-          } else {
-            const orgType = tipoPessoaAtual === 'pf' ? 'promotora' : (orgAtual?.type ?? 'promotora')
-            const { data: novaOrg, error: errOrg } = await supabase
-              .from('organizations')
-              .insert({ name: nomeUsuario, type: orgType, owner_id: user.id })
-              .select('id').single()
-            if (errOrg) throw errOrg
-            newOrgId = novaOrg.id
-          }
-          setOrgId(newOrgId)
-        }
-        const { data: evento, error: errEvento } = await supabase
-          .from('events')
-          .insert({ organization_id: newOrgId, created_by: user.id, status: 'rascunho' })
-          .select('id').single()
-        if (errEvento) throw errEvento
-        setEventoId(evento.id)
-      } catch {
-        setErro('Erro ao inicializar. Tente novamente.')
-      } finally {
-        setInicializando(false)
-      }
-    })()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Módulos de venda do evento — Ingressos nasce ligado (comportamento histórico)
+  const [moduloIngressos,      setModuloIngressos]      = useState(true)
+  const [moduloEstacionamento, setModuloEstacionamento] = useState(false)
+  const nenhumModuloSelecionado = !moduloIngressos && !moduloEstacionamento
 
   // ── Auto-preenchimento de CEP via ViaCEP ──────────────────────────────
   const buscarCEP = async (valor: string) => {
@@ -202,28 +215,6 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
     setCnpjErro(null)
   }
 
-  // ── Cria org + rascunho para novo usuário ─────────────────────────────
-  const criarOrgEEvento = async (tipo: 'promotora' | 'estabelecimento'): Promise<string | null> => {
-    if (!user) return null
-    const { data: orgExistente } = await supabase.from('organizations').select('id').eq('owner_id', user.id).maybeSingle()
-    let newOrgId: string
-    if (orgExistente) {
-      newOrgId = orgExistente.id
-      await supabase.from('organizations').update({ type: tipo, name: nomeUsuario }).eq('id', orgExistente.id)
-    } else {
-      const { data: novaOrg, error: errOrg } = await supabase
-        .from('organizations').insert({ name: nomeUsuario, type: tipo, owner_id: user.id }).select('id').single()
-      if (errOrg) throw errOrg
-      newOrgId = novaOrg.id
-    }
-    const { data: evento, error: errEvento } = await supabase
-      .from('events').insert({ organization_id: newOrgId, created_by: user.id, status: 'rascunho' }).select('id').single()
-    if (errEvento) throw errEvento
-    setOrgId(newOrgId)
-    setEventoId(evento.id)
-    return newOrgId
-  }
-
   // ── Salva tipo_pessoa via upsert (evita erro de chave duplicada) ──────
   const salvarTipoPessoa = async (tipo: 'pf' | 'pj') => {
     if (!user) return
@@ -232,49 +223,83 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
       .upsert({ user_id: user.id, tipo_pessoa: tipo }, { onConflict: 'user_id' })
   }
 
+  // ── Cria ou atualiza a organização com tudo que foi preenchido até aqui.
+  //     Só é chamada na ação final (usuário já nomeou o evento e confirmou) ──
+  const salvarOrganizacao = async (): Promise<string> => {
+    if (!user) throw new Error('Usuário não autenticado')
+
+    if (tipoPessoa) await salvarTipoPessoa(tipoPessoa)
+
+    const tipo  = orgTipo || orgAtual?.type || 'promotora'
+    const isPJ  = tipo === 'estabelecimento' || tipoPessoa === 'pj'
+
+    // Só inclui dados de PJ se o usuário realmente passou pela etapa "dados-pj"
+    // nesta sessão do modal (retornantes com org já cadastrada pulam essa etapa).
+    const dadosPJ: Record<string, unknown> = {}
+    if (isPJ && codigoGerado) {
+      dadosPJ.name          = razaoSocial.trim()
+      dadosPJ.cnpj          = cnpj.replace(/\D/g, '')
+      dadosPJ.nome_fantasia = nomeFantasia.trim() || null
+      dadosPJ.codigo        = codigoGerado
+    }
+
+    // Nicho só é gravado se foi respondido nesta sessão do modal (retornantes pulam a pergunta)
+    const camposNicho: Record<string, unknown> = nicho ? { nicho } : {}
+
+    let finalOrgId = orgId
+    if (!finalOrgId) {
+      const { data: orgExistente } = await supabase.from('organizations').select('id').eq('owner_id', user.id).maybeSingle()
+      if (orgExistente) {
+        finalOrgId = orgExistente.id
+        await supabase.from('organizations').update({ type: tipo, name: nomeUsuario, ...dadosPJ, ...camposNicho }).eq('id', finalOrgId)
+      } else {
+        const { data: novaOrg, error: errOrg } = await supabase
+          .from('organizations')
+          .insert({ owner_id: user.id, type: tipo, name: nomeUsuario, ...dadosPJ, ...camposNicho })
+          .select('id').single()
+        if (errOrg) throw errOrg
+        finalOrgId = novaOrg.id
+      }
+    } else if (Object.keys(dadosPJ).length > 0 || Object.keys(camposNicho).length > 0) {
+      await supabase.from('organizations').update({ ...dadosPJ, ...camposNicho }).eq('id', finalOrgId)
+    }
+
+    if (!finalOrgId) throw new Error('Falha ao criar organização')
+    setOrgId(finalOrgId)
+    return finalOrgId
+  }
+
   // ── Etapa 1: usuário escolheu Organizador ou Estabelecimento ──────────
-  const handleEscolhaTipo = async () => {
-    if (!user || !orgTipo) return
+  const handleEscolhaTipo = () => {
+    if (!orgTipo) return
+
+    // O nicho escolhido define o valor inicial dos módulos — usuário ainda pode mudar depois
+    if (nicho) {
+      setModuloIngressos(nicho !== 'estacionamento')
+      setModuloEstacionamento(nicho === 'estacionamento' || nicho === 'ambos')
+    }
+
     if (orgTipo === 'promotora') {
-      // Só avança para escolha PF/PJ, sem ação no banco ainda
       setStage('pf-pj')
       return
     }
-    // Estabelecimento → salva tipo='pj', cria org + rascunho → vai para dados PJ
-    setSaving(true); setErro(null)
-    try {
-      await salvarTipoPessoa('pj')
-      setTipoPessoa('pj')
-      await criarOrgEEvento('estabelecimento')
-      setStage('dados-pj')
-    } catch {
-      setErro('Erro ao salvar. Tente novamente.')
-    } finally {
-      setSaving(false)
-    }
+    // Estabelecimento sempre emite como PJ — só estado local, nada no banco ainda
+    setTipoPessoa('pj')
+    setStage('dados-pj')
   }
 
   // ── Etapa 2 (Organizador): usuário escolheu PF ou PJ ─────────────────
-  const handleEscolhaPFouPJ = async (tipo: 'pf' | 'pj') => {
-    if (!user) return
+  const handleEscolhaPFouPJ = (tipo: 'pf' | 'pj') => {
     setTipoPessoa(tipo)
-    setSaving(true); setErro(null)
-    try {
-      await salvarTipoPessoa(tipo)
-      await criarOrgEEvento('promotora')
-      // PF: vai direto para nomear o evento (dados já puxados do perfil)
-      // PJ: vai para preencher dados da empresa
-      setStage(tipo === 'pf' ? 'nome-evento' : 'dados-pj')
-    } catch {
-      setErro('Erro ao salvar. Tente novamente.')
-    } finally {
-      setSaving(false)
-    }
+    // PF: vai direto para nomear o evento (dados já puxados do perfil)
+    // PJ: vai para preencher dados da empresa
+    setStage(tipo === 'pf' ? 'nome-evento' : 'dados-pj')
   }
 
-  // ── Dados da empresa (PJ promotora e Estabelecimento) ─────────────────
+  // ── Dados da empresa (PJ promotora e Estabelecimento) — só validação,
+  //     nada é gravado ainda; os valores ficam guardados em estado local ──
   const handleSalvarDadosPJ = async () => {
-    if (!orgId || !razaoSocial.trim()) return
+    if (!razaoSocial.trim()) return
     const cnpjDigitos = cnpj.replace(/\D/g, '')
     if (!cnpjDigitos) { setCnpjErro('CNPJ é obrigatório'); return }
     if (!validarCNPJ(cnpj)) { setCnpjErro('CNPJ inválido'); return }
@@ -294,88 +319,121 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
 
       const res = await fetch(`/api/codigo?tipo=${orgTipo}`)
       const { codigo } = await res.json() as { codigo: string }
-
-      await supabase.from('organizations').update({
-        name:          razaoSocial.trim(),
-        cnpj:          cnpjDigitos,
-        nome_fantasia: nomeFantasia.trim() || null,
-        codigo,
-      }).eq('id', orgId)
+      setCodigoGerado(codigo)
 
       // Estabelecimento: precisa de endereço. Promotora PJ: vai direto para nome do evento
       setStage(orgTipo === 'estabelecimento' ? 'contato-est' : 'nome-evento')
     } catch {
-      setErro('Erro ao salvar. Tente novamente.')
+      setErro('Erro ao verificar CNPJ. Tente novamente.')
     } finally {
       setSaving(false)
     }
   }
 
-  // ── Endereço do estabelecimento + nome do evento ───────────────────────
+  // ── Etapa final (Estabelecimento): grava organização + venue + evento ──
+  // Liga o selo informativo "Estacionamento" (event_attributes) quando o módulo é ativado —
+  // mostra na página pública do evento, mas não tem nenhuma lógica de venda por trás.
+  const vincularAtributoEstacionamento = async (eventoId: string) => {
+    const { data: attr } = await supabase
+      .from('event_attributes').select('id').eq('name', 'Estacionamento').maybeSingle()
+    if (attr) {
+      await supabase.from('event_attribute_values')
+        .upsert({ event_id: eventoId, attribute_id: attr.id }, { onConflict: 'event_id,attribute_id' })
+    }
+  }
+
   const handleSalvarContatoEst = async () => {
-    if (!eventoId || !nomeEvento.trim()) return
-    setSavingFinal(true)
+    if (!user || !nomeEvento.trim() || nenhumModuloSelecionado) return
+    setSavingFinal(true); setErro(null)
     try {
-      await supabase.from('events').update({ title: nomeEvento.trim() }).eq('id', eventoId)
+      const finalOrgId = await salvarOrganizacao()
 
-      if (orgId) {
-        const addrZip    = enderecoOpcao === 'perfil' ? profile.zip_code    : zipCode
-        const addrStreet = enderecoOpcao === 'perfil' ? profile.street      : street
-        const addrNum    = enderecoOpcao === 'perfil' ? profile.street_number : streetNumber
-        const addrNeigh  = enderecoOpcao === 'perfil' ? profile.neighborhood : neighborhood
-        const addrCity   = enderecoOpcao === 'perfil' ? profile.city        : city
-        const addrUf     = enderecoOpcao === 'perfil' ? profile.state       : uf
-        const addrComp   = enderecoOpcao === 'perfil' ? profile.complement  : complement
+      const addrZip    = enderecoOpcao === 'perfil' ? profile.zip_code    : zipCode
+      const addrStreet = enderecoOpcao === 'perfil' ? profile.street      : street
+      const addrNum    = enderecoOpcao === 'perfil' ? profile.street_number : streetNumber
+      const addrNeigh  = enderecoOpcao === 'perfil' ? profile.neighborhood : neighborhood
+      const addrCity   = enderecoOpcao === 'perfil' ? profile.city        : city
+      const addrUf     = enderecoOpcao === 'perfil' ? profile.state       : uf
+      const addrComp   = enderecoOpcao === 'perfil' ? profile.complement  : complement
 
-        await supabase.from('organizations').update({
-          phone:         phone || null,
-          zip_code:      addrZip.replace(/\D/g,'')  || null,
-          street:        addrStreet                  || null,
-          street_number: addrNum                     || null,
-          neighborhood:  addrNeigh                   || null,
-          city:          addrCity                    || null,
-          state:         addrUf                      || null,
-          complement:    addrComp                    || null,
-          capacity:      capacity ? parseInt(capacity) : null,
-        }).eq('id', orgId)
+      await supabase.from('organizations').update({
+        phone:         phone || null,
+        zip_code:      addrZip.replace(/\D/g,'')  || null,
+        street:        addrStreet                  || null,
+        street_number: addrNum                     || null,
+        neighborhood:  addrNeigh                   || null,
+        city:          addrCity                    || null,
+        state:         addrUf                      || null,
+        complement:    addrComp                    || null,
+        capacity:      capacity ? parseInt(capacity) : null,
+      }).eq('id', finalOrgId)
 
-        // Salva como venue
-        const { data: venueExistente } = await supabase
-          .from('venues').select('id').eq('owner_org_id', orgId).is('google_place_id', null).maybeSingle()
-        const venueData = {
-          name:          nomeFantasia.trim() || razaoSocial.trim(),
-          zip_code:      addrZip.replace(/\D/g,'')  || null,
-          street:        addrStreet                  || null,
-          street_number: addrNum                     || null,
-          neighborhood:  addrNeigh                   || null,
-          city:          addrCity                    || null,
-          state:         addrUf                      || null,
-          complement:    addrComp                    || null,
-          capacity:      capacity ? parseInt(capacity) : null,
-          has_parking:   temEstacionamento === 'sim' ? true : temEstacionamento === 'nao' ? false : null,
-          parking_spots: temEstacionamento === 'sim' && estacionamentoVagas ? parseInt(estacionamentoVagas) : null,
-          owner_org_id:  orgId,
-        }
-        if (venueExistente) {
-          await supabase.from('venues').update(venueData).eq('id', venueExistente.id)
-        } else {
-          await supabase.from('venues').insert(venueData)
-        }
+      // Salva como venue
+      const { data: venueExistente } = await supabase
+        .from('venues').select('id').eq('owner_org_id', finalOrgId).is('google_place_id', null).maybeSingle()
+      const venueData = {
+        name:          nomeFantasia.trim() || razaoSocial.trim(),
+        zip_code:      addrZip.replace(/\D/g,'')  || null,
+        street:        addrStreet                  || null,
+        street_number: addrNum                     || null,
+        neighborhood:  addrNeigh                   || null,
+        city:          addrCity                    || null,
+        state:         addrUf                      || null,
+        complement:    addrComp                    || null,
+        capacity:      capacity ? parseInt(capacity) : null,
+        has_parking:   temEstacionamento === 'sim' ? true : temEstacionamento === 'nao' ? false : null,
+        parking_spots: temEstacionamento === 'sim' && estacionamentoVagas ? parseInt(estacionamentoVagas) : null,
+        owner_org_id:  finalOrgId,
       }
-      router.push(`/criar-evento/${eventoId}`)
+      if (venueExistente) {
+        await supabase.from('venues').update(venueData).eq('id', venueExistente.id)
+      } else {
+        await supabase.from('venues').insert(venueData)
+      }
+
+      const { data: evento, error: errEvento } = await supabase
+        .from('events')
+        .insert({
+          organization_id:       finalOrgId,
+          created_by:            user.id,
+          status:                'rascunho',
+          title:                 nomeEvento.trim(),
+          modulo_ingressos:      moduloIngressos,
+          modulo_estacionamento: moduloEstacionamento,
+        })
+        .select('id').single()
+      if (errEvento) throw errEvento
+      if (moduloEstacionamento) await vincularAtributoEstacionamento(evento.id)
+
+      router.push(`/criar-evento/${evento.id}`)
     } catch {
       setErro('Erro ao salvar. Tente novamente.')
       setSavingFinal(false)
     }
   }
 
-  // ── Etapa final: apenas nome do evento (promotoras e retornantes) ──────
+  // ── Etapa final (PF, PJ promotora, retornantes): grava organização + evento ──
   const handleSalvarNomeEvento = async () => {
-    if (!eventoId || !nomeEvento.trim()) return
-    setSavingFinal(true)
+    if (!user || !nomeEvento.trim() || nenhumModuloSelecionado) return
+    setSavingFinal(true); setErro(null)
     try {
-      await supabase.from('events').update({ title: nomeEvento.trim() }).eq('id', eventoId)
-      router.push(`/criar-evento/${eventoId}`)
+      const finalOrgId = await salvarOrganizacao()
+
+      const { data: evento, error: errEvento } = await supabase
+        .from('events')
+        .insert({
+          organization_id:       finalOrgId,
+          created_by:            user.id,
+          status:                'rascunho',
+          title:                 nomeEvento.trim(),
+          modulo_ingressos:      moduloIngressos,
+          modulo_estacionamento: moduloEstacionamento,
+        })
+        .select('id').single()
+      if (errEvento) throw errEvento
+      if (moduloEstacionamento) await vincularAtributoEstacionamento(evento.id)
+
+      router.push(`/criar-evento/${evento.id}`)
     } catch {
       setErro('Erro ao salvar. Tente novamente.')
       setSavingFinal(false)
@@ -426,27 +484,15 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
         <div className="p-6">
 
           {/* Step dots */}
-          {!inicializando && (
-            <div className="flex items-center justify-between mb-5">
-              <StepDots />
-              <button onClick={onFechar} className="text-[#444] hover:text-[#777] transition-colors">
-                <X size={16} />
-              </button>
-            </div>
-          )}
-
-          {/* Spinner para retornantes enquanto cria rascunho */}
-          {inicializando && (
-            <div className="flex flex-col items-center justify-center py-10 gap-3">
-              <Loader2 size={24} className="animate-spin" style={{ color: '#E8B84B' }} />
-              <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Preparando seu evento...
-              </p>
-            </div>
-          )}
+          <div className="flex items-center justify-between mb-5">
+            <StepDots />
+            <button onClick={onFechar} className="text-[#444] hover:text-[#777] transition-colors">
+              <X size={16} />
+            </button>
+          </div>
 
           {/* ══ ETAPA 1: Promotor ou Estabelecimento ═══════════════════ */}
-          {!inicializando && stage === 'org-tipo' && (
+          {stage === 'org-tipo' && (
             <>
               <div className="mb-5">
                 <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -492,6 +538,29 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
                 ))}
               </div>
 
+              <div className="mb-5">
+                <p className="text-[#444] text-[11px] uppercase tracking-wider mb-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  O que você vai gerenciar aqui
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: 'eventos'        as const, label: 'Eventos'        },
+                    { value: 'estacionamento' as const, label: 'Estacionamento' },
+                    { value: 'ambos'          as const, label: 'Ambos'          },
+                  ]).map(({ value, label }) => (
+                    <button key={value} type="button" onClick={() => setNicho(value)}
+                      className={cn(
+                        'py-2.5 rounded-xl border text-xs font-medium transition-all',
+                        nicho === value
+                          ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white'
+                          : 'bg-[#111] border-[#1c1c1c] text-[#777] hover:border-[#2a2a2a]'
+                      )}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}
 
               <button type="button" onClick={handleEscolhaTipo} disabled={!orgTipo || saving}
@@ -503,7 +572,7 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
           )}
 
           {/* ══ ETAPA 2 (Promotor): PF ou PJ ═════════════════════════ */}
-          {!inicializando && stage === 'pf-pj' && (
+          {stage === 'pf-pj' && (
             <>
               <div className="mb-5">
                 <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -568,7 +637,7 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
           )}
 
           {/* ══ DADOS DA EMPRESA (PJ promotora e Estabelecimento) ═════ */}
-          {!inicializando && stage === 'dados-pj' && (
+          {stage === 'dados-pj' && (
             <>
               <div className="mb-5">
                 <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -630,7 +699,7 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
           )}
 
           {/* ══ CONTATO + ENDEREÇO (Estabelecimento) + NOME DO EVENTO ═ */}
-          {!inicializando && stage === 'contato-est' && (
+          {stage === 'contato-est' && (
             <>
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-1">
@@ -786,10 +855,18 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
                 </p>
               </div>
 
+              <SeletorModulos
+                ingressos={moduloIngressos} estacionamento={moduloEstacionamento}
+                onIngressos={setModuloIngressos} onEstacionamento={setModuloEstacionamento}
+              />
+              {nenhumModuloSelecionado && (
+                <p className="text-red-400 text-xs text-center mb-3">Selecione ao menos um item acima</p>
+              )}
+
               {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}
 
               <button type="button" onClick={handleSalvarContatoEst}
-                disabled={savingFinal || !nomeEvento.trim()}
+                disabled={savingFinal || !nomeEvento.trim() || nenhumModuloSelecionado}
                 className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 hover:brightness-110 transition-all flex items-center justify-center gap-2 mb-3"
                 style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
                 {savingFinal ? <Loader2 size={15} className="animate-spin" /> : <><span>Continuar</span><ArrowRight size={14} /></>}
@@ -803,7 +880,7 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
           )}
 
           {/* ══ NOME DO EVENTO (PF, PJ promotora, e retornantes) ══════ */}
-          {!inicializando && stage === 'nome-evento' && (
+          {stage === 'nome-evento' && (
             <>
               <div className="mb-5">
                 <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -853,10 +930,18 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
                   className={inp} style={{ fontFamily: 'var(--font-dm-sans)' }} autoFocus />
               </div>
 
+              <SeletorModulos
+                ingressos={moduloIngressos} estacionamento={moduloEstacionamento}
+                onIngressos={setModuloIngressos} onEstacionamento={setModuloEstacionamento}
+              />
+              {nenhumModuloSelecionado && (
+                <p className="text-red-400 text-xs text-center mb-3">Selecione ao menos um item acima</p>
+              )}
+
               {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}
 
               <button type="button" onClick={handleSalvarNomeEvento}
-                disabled={savingFinal || !nomeEvento.trim()}
+                disabled={savingFinal || !nomeEvento.trim() || nenhumModuloSelecionado}
                 className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 hover:brightness-110 transition-all flex items-center justify-center gap-2"
                 style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
                 {savingFinal ? <Loader2 size={15} className="animate-spin" /> : <><span>Criar evento</span><ArrowRight size={14} /></>}

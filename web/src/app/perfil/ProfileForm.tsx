@@ -4,6 +4,7 @@
 // Atualiza a tabela profiles e faz upload de avatar no Supabase Storage
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useLocation } from '@/contexts/LocationContext'
 import { Loader2, CheckCircle, AlertCircle, Camera, MapPin, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -103,6 +104,7 @@ interface Props {
 
 export function ProfileForm({ userId, initial }: Props) {
   const supabase = createClient()
+  const { city: cidadeDetectada } = useLocation()
 
   // ── Estado: dados pessoais ──
   const [name,      setName]      = useState(initial.full_name)
@@ -135,6 +137,7 @@ export function ProfileForm({ userId, initial }: Props) {
   const [addrSuggestions, setAddrSuggestions] = useState<PlaceSuggestion[]>([])
   const [addrSearching,  setAddrSearching]  = useState(false)
   const [showAddrDropdown, setShowAddrDropdown] = useState(false)
+  const [addrSearchError, setAddrSearchError] = useState<string | null>(null)
   const addrDropdownRef = useRef<HTMLDivElement>(null)
   const addrDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -186,18 +189,32 @@ export function ProfileForm({ userId, initial }: Props) {
   // ── Busca sugestões de endereço no Google Places ────────────────────────────
   const buscarEnderecoSugestoes = useCallback((valor: string) => {
     if (addrDebounceRef.current) clearTimeout(addrDebounceRef.current)
-    if (!valor || valor.length < 3) { setAddrSuggestions([]); setShowAddrDropdown(false); return }
+    if (!valor || valor.length < 3) { setAddrSuggestions([]); setShowAddrDropdown(false); setAddrSearchError(null); return }
     addrDebounceRef.current = setTimeout(async () => {
       setAddrSearching(true)
       try {
-        const res  = await fetch(`/api/places/autocomplete?q=${encodeURIComponent(valor)}`)
+        // Prioriza a cidade já salva no perfil; sem isso, cai pra geolocalização
+        const params = new URLSearchParams({ q: valor })
+        const cidadeBias = city || cidadeDetectada
+        if (cidadeBias) params.set('cidade', cidadeBias)
+        if (city && uf) params.set('estado', uf)
+        const res  = await fetch(`/api/places/autocomplete?${params.toString()}`)
         const data = await res.json()
+        if (!res.ok) {
+          setAddrSearchError('Busca de endereço indisponível no momento. Preencha manualmente abaixo.')
+          setAddrSuggestions([]); setShowAddrDropdown(false)
+          return
+        }
+        setAddrSearchError(null)
         setAddrSuggestions(data.suggestions ?? [])
         setShowAddrDropdown((data.suggestions ?? []).length > 0)
-      } catch { setAddrSuggestions([]) }
+      } catch {
+        setAddrSearchError('Busca de endereço indisponível no momento. Preencha manualmente abaixo.')
+        setAddrSuggestions([])
+      }
       finally { setAddrSearching(false) }
     }, 350)
-  }, [])
+  }, [city, uf, cidadeDetectada])
 
   // ── Ao selecionar um endereço, busca os detalhes e preenche os campos ───────
   const selecionarEndereco = async (s: PlaceSuggestion) => {
@@ -553,6 +570,11 @@ export function ProfileForm({ userId, initial }: Props) {
                 </div>
               )}
             </div>
+            {addrSearchError && (
+              <p className="text-amber-400 text-xs mt-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                {addrSearchError}
+              </p>
+            )}
           </div>
 
           {/* CEP — com busca automática ao completar 8 dígitos */}

@@ -54,8 +54,9 @@ export default async function CriarEventoPage() {
   const { data: eventos } = orgIds.length > 0
     ? await supabase
         .from('events')
-        .select('id, title, status, date_start, created_at, banner_url')
+        .select('id, title, status, date_start, created_at, banner_url, modulo_ingressos, modulo_estacionamento')
         .in('organization_id', orgIds)
+        .is('parent_event_id', null)
         .order('created_at', { ascending: false })
     : { data: [] }
 
@@ -109,12 +110,14 @@ export default async function CriarEventoPage() {
             complement:    profile?.complement    ?? '',
           }}
           eventos={(eventos ?? []).map(e => ({
-            id:         e.id,
-            title:      e.title ?? 'Novo evento',
-            status:     e.status as 'rascunho' | 'publicado',
-            date_start: e.date_start ?? null,
-            created_at: e.created_at,
-            banner_url: (e as unknown as { banner_url: string | null }).banner_url ?? null,
+            id:                    e.id,
+            title:                 e.title ?? 'Novo evento',
+            status:                e.status as 'rascunho' | 'publicado',
+            date_start:            e.date_start ?? null,
+            created_at:            e.created_at,
+            banner_url:            (e as unknown as { banner_url: string | null }).banner_url ?? null,
+            modulo_ingressos:      (e as unknown as { modulo_ingressos: boolean }).modulo_ingressos,
+            modulo_estacionamento: (e as unknown as { modulo_estacionamento: boolean }).modulo_estacionamento,
           }))}
         />
       )}

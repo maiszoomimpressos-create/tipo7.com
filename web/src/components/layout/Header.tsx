@@ -1,19 +1,26 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Ticket, Menu, X, ArrowRight, LogOut, User, ChevronDown,
   CalendarPlus, Settings2, MapPin, Navigation, Loader2, Briefcase,
-  Copy, Check,
+  Copy, Check, AlertCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProfileStatus } from '@/hooks/useProfileStatus'
 import { useTrabalhos } from '@/hooks/useTrabalhos'
-import { useCodigos } from '@/hooks/useCodigos'
+import { useCodigos, type CodigoItem } from '@/hooks/useCodigos'
 import { useLocation } from '@/contexts/LocationContext'
 
 const ADMIN_EMAIL = 'maiszoomimpressos@gmail.com'
+
+const CODIGO_DESC: Record<'usuario' | 'promotora' | 'estabelecimento', string> = {
+  usuario:         'Código único e permanente, ligado a você — não muda mesmo se você virar promotor ou dono de estabelecimento depois. Use pra participar de eventos ou ser convidado pra trabalhar numa equipe.',
+  promotora:       'Código da sua organização como promotor. É diferente do seu código pessoal — identifica a promotora em si, não você.',
+  estabelecimento: 'Código do seu estabelecimento. É diferente do seu código pessoal — identifica o local/negócio em si, não você.',
+}
 
 // ─── Chip de localização (desktop: inline compacto) ──────────────────────────
 
@@ -144,11 +151,24 @@ export function Header() {
   const [scrolled,     setScrolled]     = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [copiado,      setCopiado]      = useState<string | null>(null)
+  const [ajudaCodigo,  setAjudaCodigo]  = useState<{ desc: string; top: number; right: number } | null>(null)
 
   function copiarCodigo(codigo: string) {
     navigator.clipboard.writeText(codigo)
     setCopiado(codigo)
     setTimeout(() => setCopiado(null), 2000)
+  }
+
+  // Posiciona a explicação do código com coordenadas de tela (fixed) e renderiza
+  // via portal — assim ela escapa do overflow-hidden do menu suspenso em vez de
+  // ficar cortada dentro dele.
+  function mostrarAjudaCodigo(botao: HTMLButtonElement, c: CodigoItem) {
+    const rect = botao.getBoundingClientRect()
+    setAjudaCodigo({
+      desc:  CODIGO_DESC[c.tipo],
+      top:   rect.bottom + 6,
+      right: window.innerWidth - rect.right,
+    })
   }
 
   const userMenuRef = useRef<HTMLDivElement>(null)
@@ -169,6 +189,7 @@ export function Header() {
     const handler = (e: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
         setUserMenuOpen(false)
+        setAjudaCodigo(null)
       }
     }
     document.addEventListener('mousedown', handler)
@@ -322,32 +343,59 @@ export function Header() {
                         {codigos.length > 0 && (
                           <div className="mt-2.5 flex flex-col gap-1.5">
                             {codigos.map(c => (
-                              <button
+                              <div
                                 key={c.codigo}
-                                type="button"
-                                onClick={() => copiarCodigo(c.codigo)}
-                                className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-lg transition-colors"
+                                className="relative flex items-center justify-between w-full px-2.5 py-1.5 rounded-lg transition-colors"
                                 style={{
                                   background: copiado === c.codigo ? 'rgba(34,197,94,0.08)' : 'rgba(232,184,75,0.06)',
                                   border:     `1px solid ${copiado === c.codigo ? 'rgba(34,197,94,0.2)' : 'rgba(232,184,75,0.12)'}`,
                                 }}
-                                title="Copiar código"
                               >
-                                <span
-                                  className="text-xs font-bold tracking-widest"
-                                  style={{ color: copiado === c.codigo ? '#4ade80' : '#E8B84B', fontFamily: 'var(--font-syne)' }}
+                                <button
+                                  type="button"
+                                  onClick={() => copiarCodigo(c.codigo)}
+                                  className="flex items-center gap-1.5 flex-1 min-w-0"
+                                  title="Copiar código"
                                 >
-                                  {c.codigo}
-                                </span>
-                                {copiado === c.codigo
-                                  ? <Check size={11} className="text-green-400 shrink-0" />
-                                  : <Copy  size={11} className="text-[#555] shrink-0" />
-                                }
-                              </button>
+                                  <span
+                                    className="text-xs font-bold tracking-widest truncate"
+                                    style={{ color: copiado === c.codigo ? '#4ade80' : '#E8B84B', fontFamily: 'var(--font-syne)' }}
+                                  >
+                                    {c.codigo}
+                                  </span>
+                                  {copiado === c.codigo
+                                    ? <Check size={11} className="text-green-400 shrink-0" />
+                                    : <Copy  size={11} className="text-[#555] shrink-0" />
+                                  }
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={e => mostrarAjudaCodigo(e.currentTarget, c)}
+                                  onMouseEnter={e => mostrarAjudaCodigo(e.currentTarget, c)}
+                                  onMouseLeave={() => setAjudaCodigo(null)}
+                                  className="text-[#555] hover:text-[#E8B84B] transition-colors shrink-0 ml-1.5"
+                                >
+                                  <AlertCircle size={11} />
+                                </button>
+                              </div>
                             ))}
                           </div>
                         )}
                       </div>
+
+                      {/* Explicação do código — renderizada via portal, fora do overflow-hidden do menu */}
+                      {ajudaCodigo && typeof document !== 'undefined' && createPortal(
+                        <div
+                          className="fixed z-[200] w-56 p-2.5 rounded-lg text-[10px] leading-snug text-[#ccc] shadow-xl shadow-black/50"
+                          style={{
+                            top: ajudaCodigo.top, right: ajudaCodigo.right,
+                            background: '#1a1a1a', border: '1px solid #2a2a2a', fontFamily: 'var(--font-dm-sans)',
+                          }}
+                        >
+                          {ajudaCodigo.desc}
+                        </div>,
+                        document.body
+                      )}
 
                       {incompleto && (
                         <a
@@ -415,7 +463,7 @@ export function Header() {
                           Meus eventos
                         </a>
                         <a
-                          href="/criar-evento"
+                          href="/minha-area"
                           onClick={() => setUserMenuOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-[#E8B84B] hover:text-[#F0C96A] hover:bg-[#E8B84B]/5 transition-colors"
                           style={{ fontFamily: 'var(--font-dm-sans)' }}
@@ -553,7 +601,7 @@ export function Header() {
                   Meus eventos
                 </a>
                 <a
-                  href="/criar-evento"
+                  href="/minha-area"
                   onClick={() => setMenuOpen(false)}
                   className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-[#070707]"
                   style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}

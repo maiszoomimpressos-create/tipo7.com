@@ -124,7 +124,7 @@ export function MPConnect() {
             </p>
 
             <a
-              href="/api/mp/connect"
+              href="/api/mp/auth"
               className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-[#070707] hover:brightness-110 transition-all w-fit"
               style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
             >

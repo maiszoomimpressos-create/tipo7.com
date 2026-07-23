@@ -1,27 +1,47 @@
 'use client'
 
 import { useState } from 'react'
-import { Ticket, Users, Settings, ExternalLink, BarChart2, Layers } from 'lucide-react'
+import { Ticket, Users, Settings, ExternalLink, BarChart2, Layers, Car, Loader2 } from 'lucide-react'
 import { PainelIngressos, type IngressoEditavel } from './PainelIngressos'
 import { PainelEquipe } from './PainelEquipe'
 import { PainelAtributos } from './PainelAtributos'
 
 const ACCENT = '#E8B84B'
 
-type Tab = 'ingressos' | 'atributos' | 'equipe'
+type Tab = 'ingressos' | 'atributos' | 'equipe' | 'estacionamento'
 
 interface Props {
-  eventoId:  string
-  ingressos: IngressoEditavel[]
-  capacity:  number | null
+  eventoId:            string
+  ingressos:           IngressoEditavel[]
+  capacity:            number | null
+  moduloEstacionamento?: boolean
 }
 
-export function PainelOrganizador({ eventoId, ingressos, capacity }: Props) {
+export function PainelOrganizador({ eventoId, ingressos, capacity, moduloEstacionamento }: Props) {
   const [tab,           setTab]           = useState<Tab>('ingressos')
   const [localIngressos, setLocalIngressos] = useState(ingressos)
+  const [estacionamentoAtivo, setEstacionamentoAtivo] = useState(!!moduloEstacionamento)
+  const [ativando, setAtivando] = useState(false)
+  const [erroAtivar, setErroAtivar] = useState<string | null>(null)
 
   function handleUpdate(id: string, fields: Partial<IngressoEditavel>) {
     setLocalIngressos(prev => prev.map(t => t.id === id ? { ...t, ...fields } : t))
+  }
+
+  async function handleAtivarEstacionamento() {
+    setAtivando(true); setErroAtivar(null)
+    try {
+      const res = await fetch(`/api/eventos/${eventoId}/modulos`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ moduloEstacionamento: true }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErroAtivar(data.error ?? 'Erro ao ativar'); return }
+      setEstacionamentoAtivo(true)
+    } finally {
+      setAtivando(false)
+    }
   }
 
   return (
@@ -61,6 +81,7 @@ export function PainelOrganizador({ eventoId, ingressos, capacity }: Props) {
             { key: 'ingressos',  label: 'Ingressos', icon: Ticket },
             { key: 'atributos', label: 'Estrutura',  icon: Layers },
             { key: 'equipe',    label: 'Equipe',     icon: Users  },
+            { key: 'estacionamento' as const, label: 'Estacionamento', icon: Car },
           ] as { key: Tab; label: string; icon: typeof Ticket }[]).map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -101,6 +122,39 @@ export function PainelOrganizador({ eventoId, ingressos, capacity }: Props) {
         )}
         {tab === 'equipe' && (
           <PainelEquipe eventoId={eventoId} />
+        )}
+        {tab === 'estacionamento' && !estacionamentoAtivo && (
+          <div className="flex flex-col items-center text-center gap-3 py-6">
+            <Car size={28} className="text-[#444]" />
+            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Estacionamento ainda não está ativado neste evento
+            </p>
+            <p className="text-[#555] text-xs max-w-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Pode ativar a qualquer momento, mesmo com o evento já publicado — não afeta o que já está configurado.
+            </p>
+            {erroAtivar && <p className="text-red-400 text-xs">{erroAtivar}</p>}
+            <button type="button" onClick={handleAtivarEstacionamento} disabled={ativando}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-50"
+              style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+            >
+              {ativando ? <Loader2 size={15} className="animate-spin" /> : 'Ativar estacionamento'}
+            </button>
+          </div>
+        )}
+        {tab === 'estacionamento' && estacionamentoAtivo && (
+          <div className="flex flex-col items-center text-center gap-3 py-6">
+            <Car size={28} className="text-[#E8B84B]" />
+            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Configure locais, preços e caixas do estacionamento
+            </p>
+            <a
+              href={`/estacionamento/${eventoId}`}
+              className="px-4 py-2.5 rounded-xl text-sm font-semibold text-[#070707]"
+              style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+            >
+              Abrir gestão do estacionamento
+            </a>
+          </div>
         )}
       </div>
     </div>

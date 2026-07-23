@@ -70,7 +70,7 @@ export function PromoterCTA() {
 
         {/* CTA */}
         <a
-          href="/criar-evento"
+          href="/minha-area"
           className="group inline-flex items-center gap-2 px-8 py-3.5 rounded-xl font-semibold text-sm text-[#070707] hover:brightness-110 transition-all duration-200"
           style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
           Criar meu evento

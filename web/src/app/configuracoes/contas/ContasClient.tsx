@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { CheckCircle, AlertCircle, Loader2, LogOut, Info } from 'lucide-react'
-import { desconectarContaMP } from './actions'
+import { CheckCircle, AlertCircle, Loader2, LogOut, Info, Wallet } from 'lucide-react'
+import { desconectarContaMP, desconectarContaPagBank } from './actions'
 
 const ACCENT = '#E8B84B'
 
@@ -11,6 +11,11 @@ type ContaMP = {
   mp_user_id: number
   mp_access_token: string
   mp_public_key: string | null
+  updated_at: string
+} | null
+
+type ContaPagBank = {
+  pagbank_account_id: string
   updated_at: string
 } | null
 
@@ -26,14 +31,16 @@ type Tarifas = {
 }
 
 interface Props {
-  contaAtual: ContaMP
-  tarifas:    Tarifas
+  contaAtual:        ContaMP
+  contaPagBankAtual: ContaPagBank
+  tarifas:           Tarifas
 }
 
-export function ContasClient({ contaAtual, tarifas }: Props) {
+export function ContasClient({ contaAtual, contaPagBankAtual, tarifas }: Props) {
   const searchParams = useSearchParams()
   const [aviso, setAviso] = useState<{ tipo: 'ok' | 'erro'; msg: string } | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [pagbankPending, startPagBankTransition] = useTransition()
 
   useEffect(() => {
     if (searchParams.get('mp_ok')) {
@@ -50,6 +57,21 @@ export function ContasClient({ contaAtual, tarifas }: Props) {
       }
       setAviso({ tipo: 'erro', msg: msgs[err] ?? 'Erro desconhecido.' })
     }
+
+    if (searchParams.get('pagbank_ok')) {
+      setAviso({ tipo: 'ok', msg: 'PagBank conectado com sucesso!' })
+    }
+    const errPb = searchParams.get('pagbank_erro')
+    if (errPb) {
+      const msgsPb: Record<string, string> = {
+        cancelado:  'Autorização cancelada.',
+        parametros: 'Parâmetros inválidos retornados pelo PagBank.',
+        state:      'Erro de segurança — tente novamente.',
+        token:      'Erro ao obter credenciais do PagBank.',
+        banco:      'Credenciais recebidas, mas houve erro ao salvar. Tente novamente.',
+      }
+      setAviso({ tipo: 'erro', msg: msgsPb[errPb] ?? 'Erro desconhecido.' })
+    }
   }, [searchParams])
 
   function desconectar() {
@@ -58,7 +80,14 @@ export function ContasClient({ contaAtual, tarifas }: Props) {
     })
   }
 
-  const conectado = !!contaAtual
+  function desconectarPagBank() {
+    startPagBankTransition(async () => {
+      await desconectarContaPagBank()
+    })
+  }
+
+  const conectado       = !!contaAtual
+  const pagbankConectado = !!contaPagBankAtual
 
   const metodos = [
     { label: 'Pix',               valor: tarifas.pctPix        },
@@ -155,6 +184,90 @@ export function ContasClient({ contaAtual, tarifas }: Props) {
                 style={{ background: '#009EE3', fontFamily: 'var(--font-dm-sans)' }}
               >
                 Conectar com Mercado Pago
+              </a>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Card PagBank ──────────────────────────────────────────── */}
+      <div className="mt-4 bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
+
+        {/* Topo */}
+        <div className="flex items-center gap-4 px-6 py-5 border-b border-[#141414]">
+          <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
+               style={{ background: '#00A86815' }}>
+            <Wallet size={22} style={{ color: '#00A868' }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-medium text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              PagBank
+            </p>
+            <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Pagamentos via PIX e cartão de crédito
+            </p>
+          </div>
+          {pagbankConectado ? (
+            <span className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border border-green-500/25 bg-green-500/8 text-green-400 shrink-0"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              <CheckCircle size={10} />
+              Conectado
+            </span>
+          ) : (
+            <span className="text-[11px] px-2.5 py-1 rounded-full border border-[#222] bg-[#111] text-[#888] shrink-0"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Não conectado
+            </span>
+          )}
+        </div>
+
+        {/* Corpo */}
+        <div className="px-6 py-5">
+          {pagbankConectado ? (
+            <>
+              <p className="text-[#555] text-sm mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Conta conectada — ID <span className="text-[#888]">{contaPagBankAtual.pagbank_account_id}</span>
+              </p>
+              <p className="text-[#3a3a3a] text-xs mb-5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Atualizado em {new Date(contaPagBankAtual.updated_at).toLocaleDateString('pt-BR')}
+              </p>
+              <div className="flex gap-3">
+                <a
+                  href="/api/pagbank/auth"
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium text-white border border-[#2a2a2a] hover:border-[#E8B84B]/40 hover:text-[#E8B84B] transition-all"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  Reconectar conta
+                </a>
+                <button
+                  onClick={desconectarPagBank}
+                  disabled={pagbankPending}
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium text-red-400/70 hover:text-red-400 border border-transparent hover:border-red-500/20 transition-all disabled:opacity-40"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  {pagbankPending ? <Loader2 size={13} className="animate-spin" /> : <LogOut size={13} />}
+                  Desconectar
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-[#555] text-sm mb-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Conecte sua conta para habilitar a divisão automática dos pagamentos entre a plataforma e o promotor.
+              </p>
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl mb-4"
+                   style={{ background: '#111', border: '1px solid #1a1a1a' }}>
+                <Info size={11} className="shrink-0 mt-0.5" style={{ color: '#333' }} />
+                <p className="text-[#383838] text-[11px] leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Exige conta PagBank no nível &quot;Avançada&quot; pra receber a divisão automática.
+                </p>
+              </div>
+              <a
+                href="/api/pagbank/auth"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-all hover:brightness-110"
+                style={{ background: '#00A868', fontFamily: 'var(--font-dm-sans)' }}
+              >
+                Conectar com PagBank
               </a>
             </>
           )}
