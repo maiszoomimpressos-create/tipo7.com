@@ -71,7 +71,26 @@ export async function proxy(request: NextRequest) {
   return response
 }
 
-// Define em quais rotas o proxy é executado (exclui assets estáticos)
+// Define em quais rotas o proxy é executado — só as que realmente precisam
+// (rotas privadas da lista acima + /auth). Antes rodava em praticamente toda
+// requisição (inclusive /api/* e páginas públicas), custando uma chamada de
+// rede ao Supabase (150-870ms observados) sem nenhum efeito útil nelas —
+// rotas de API já fazem seu próprio getUser() dentro do handler.
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    '/promotor/:path*',
+    '/comprador/:path*',
+    '/estabelecimento/:path*',
+    '/admin/:path*',
+    '/perfil/:path*',
+    '/criar-evento/:path*',
+    '/meus-ingressos/:path*',
+    '/scanner/:path*',
+    '/checkout/:path*',
+    '/dashboard/:path*',
+    '/bilheteria/:path*',
+    '/minha-area/:path*',
+    '/segunda-tela/:path*',
+    '/auth/:path*',
+  ],
 }

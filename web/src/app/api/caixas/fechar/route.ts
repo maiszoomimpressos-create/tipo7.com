@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
     .single()
   if (!caixa) return NextResponse.json({ error: 'Caixa não encontrado' }, { status: 404 })
   if (caixa.status === 'fechado') return NextResponse.json({ error: 'Caixa já fechado' }, { status: 400 })
+  if (caixa.status === 'fechamento_pendente') return NextResponse.json({ error: 'Contagem já enviada, aguardando validação do organizador' }, { status: 400 })
 
   const evento = caixa.events as { organization_id: string } | null
   const { data: org } = await admin
@@ -87,7 +88,12 @@ export async function POST(req: NextRequest) {
   const diferenca_dinheiro  = expectedGaveta - dinheiro_contado
   const diferenca_ingressos = ingressosEntregues - vendidos - ingressos_devolvidos
 
-  // Grava fechamento e fecha o caixa
+  // Grava a contagem. Se quem está contando já é o dono do evento, fecha em
+  // definitivo direto (não faz sentido o dono validar a própria contagem).
+  // Se for o operador, fica aguardando o dono validar antes de fechar de
+  // verdade — ninguém fecha em definitivo sozinho, é o dono quem recebe o
+  // dinheiro físico das mãos do operador.
+  const agora = new Date().toISOString()
   const [{ error: errFech }, { error: errCaixa }] = await Promise.all([
     admin.from('caixa_fechamento').insert({
       caixa_id:             caixaId,
@@ -97,8 +103,11 @@ export async function POST(req: NextRequest) {
       diferenca_ingressos,
       observacoes,
       fechado_por:          user.id,
+      ...(isOwner ? { validado_por: user.id, validado_em: agora } : {}),
     }),
-    admin.from('caixas').update({ status: 'fechado', fechado_em: new Date().toISOString() }).eq('id', caixaId),
+    admin.from('caixas')
+      .update(isOwner ? { status: 'fechado', fechado_em: agora } : { status: 'fechamento_pendente' })
+      .eq('id', caixaId),
   ])
 
   if (errFech) return NextResponse.json({ error: errFech.message }, { status: 500 })
@@ -106,6 +115,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    pendente: !isOwner,
     apuracao: {
       fundo_inicial:        Number(caixa.fundo_inicial),
       total_dinheiro:       totalDinheiro,

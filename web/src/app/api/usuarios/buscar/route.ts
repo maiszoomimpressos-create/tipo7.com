@@ -22,16 +22,15 @@ export async function GET(req: NextRequest) {
     targetId   = perfil?.id ?? null
     targetNome = perfil?.full_name ?? null
   } else {
-    const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
-    const found = users.find(u => u.email?.toLowerCase() === q.toLowerCase())
-    if (found) {
-      targetId = found.id
+    const { data: foundId } = await admin.rpc('find_user_id_by_email', { p_email: q })
+    if (foundId) {
+      targetId = foundId as string
       const { data: perfil } = await admin
         .from('profiles')
         .select('full_name')
-        .eq('id', found.id)
+        .eq('id', foundId)
         .maybeSingle()
-      targetNome = perfil?.full_name ?? found.email ?? null
+      targetNome = perfil?.full_name ?? q ?? null
     }
   }
 

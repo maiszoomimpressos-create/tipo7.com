@@ -8,7 +8,7 @@ import {
   Banknote, Smartphone, CreditCard, RefreshCw, ChevronRight,
   Calculator, Pencil,
 } from 'lucide-react'
-import { CalculadoraDinheiro } from './CalculadoraDinheiro'
+import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 
 const ACCENT = '#E8B84B'
 
@@ -33,7 +33,7 @@ interface MembroEquipe {
 interface CaixaAberto {
   id:                 string
   nome:               string
-  status:             'aberto' | 'fechado'
+  status:             'aberto' | 'fechamento_pendente' | 'fechado'
   operadorId:         string | null
   operadorName:       string | null
   operadorEmail:      string | null
@@ -67,6 +67,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
   const [err, setErr]                   = useState<string | null>(null)
   const [pausando, setPausando]         = useState(false)
   const [calcAberto, setCalcAberto]     = useState<{ idx: number; label: string } | null>(null)
+  const [validando, setValidando]       = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`/api/eventos/${eventoId}/equipe`)
@@ -99,11 +100,26 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
     setCaixas(data.caixas ?? [])
     setPausado(data.vendas_online_pausadas ?? false)
     setRequerSenha(data.transferencia_requer_senha ?? false)
-    const abertos = (data.caixas ?? []).filter((c: CaixaAberto) => c.status === 'aberto')
-    setFase(abertos.length > 0 ? 'abertos' : 'semCaixas')
+    const emAndamento = (data.caixas ?? []).filter((c: CaixaAberto) => c.status !== 'fechado')
+    setFase(emAndamento.length > 0 ? 'abertos' : 'semCaixas')
   }, [eventoId])
 
   useEffect(() => { carregarCaixas() }, [carregarCaixas])
+
+  async function validarCaixa(caixaId: string) {
+    setValidando(caixaId)
+    try {
+      const res = await fetch('/api/caixas/validar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caixaId }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErr(data.error ?? 'Erro ao validar caixa'); return }
+      await carregarCaixas()
+    } finally {
+      setValidando(null)
+    }
+  }
 
   async function pausarVendas() {
     setPausando(true)
@@ -476,8 +492,9 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
   }
 
   // ── Fase: caixas abertos — painel de monitoramento ────────────────────────
-  const abertos  = caixas.filter(c => c.status === 'aberto')
-  const fechados = caixas.filter(c => c.status === 'fechado')
+  const abertos   = caixas.filter(c => c.status === 'aberto')
+  const pendentes = caixas.filter(c => c.status === 'fechamento_pendente')
+  const fechados  = caixas.filter(c => c.status === 'fechado')
   const totalGeral = caixas.reduce((s, c) => s + c.totalVendas, 0)
   const totalDinheiro = caixas.reduce((s, c) => s + c.totalDinheiro, 0)
   const totalPix      = caixas.reduce((s, c) => s + c.totalPix, 0)
@@ -506,6 +523,12 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
       )}
 
       <div className="max-w-2xl mx-auto w-full px-5 py-6 flex flex-col gap-6">
+
+        {err && (
+          <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10">
+            <AlertTriangle size={14} className="shrink-0" /> {err}
+          </div>
+        )}
 
         {/* Totais gerais */}
         <div className="rounded-2xl p-4 flex flex-col gap-3"
@@ -556,6 +579,31 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
             </div>
             {abertos.map(c => (
               <CaixaCard key={c.id} caixa={c} eventoId={eventoId} />
+            ))}
+          </div>
+        )}
+
+        {/* Caixas aguardando validação */}
+        {pendentes.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs uppercase tracking-wider" style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+              {pendentes.length} caixa{pendentes.length > 1 ? 's' : ''} aguardando validação
+            </p>
+            {pendentes.map(c => (
+              <div key={c.id} className="rounded-2xl p-4 flex items-center justify-between gap-3"
+                   style={{ background: '#0d0d0d', border: `1px solid ${ACCENT}30` }}>
+                <div>
+                  <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>{c.nome}</p>
+                  {c.operadorName && (
+                    <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>{c.operadorName} enviou a contagem</p>
+                  )}
+                </div>
+                <button type="button" onClick={() => validarCaixa(c.id)} disabled={validando === c.id}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-[#070707]"
+                  style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                  {validando === c.id ? <Loader2 size={12} className="animate-spin" /> : 'Validar'}
+                </button>
+              </div>
             ))}
           </div>
         )}

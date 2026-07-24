@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Car, Plus, Loader2, Clock, Banknote, CreditCard, Smartphone, Gift, X, ArrowLeft, DoorOpen,
+  Wallet, Lock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
@@ -77,6 +78,10 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [formaPagamentoEntrada, setFormaPagamentoEntrada] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
   const [portaoEntradaSel, setPortaoEntradaSel] = useState('')
   const [portaoSaidaSel,   setPortaoSaidaSel]   = useState('')
+  const [modalFecharCaixa, setModalFecharCaixa] = useState(false)
+  const [dinheiroContado,  setDinheiroContado]  = useState('')
+  const [salvandoCaixa,    setSalvandoCaixa]    = useState(false)
+  const [erroCaixa,        setErroCaixa]        = useState<string | null>(null)
 
   const [sessoes, setSessoes] = useState<Sessao[]>([])
   const [carregando, setCarregando] = useState(true)
@@ -238,6 +243,26 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     }
   }
 
+  const handleFecharCaixa = async () => {
+    if (!caixaId) return
+    setSalvandoCaixa(true); setErroCaixa(null)
+    try {
+      const res = await fetch('/api/caixas/fechar', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ caixaId, dinheiro_contado: Number(dinheiroContado) || 0, ingressos_devolvidos: 0 }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErroCaixa(data.error ?? 'Erro ao fechar caixa'); return }
+      setModalFecharCaixa(false); setDinheiroContado('')
+      router.refresh()
+    } catch {
+      setErroCaixa('Erro ao fechar caixa. Tente novamente.')
+    } finally {
+      setSalvandoCaixa(false)
+    }
+  }
+
   return (
     <div className="min-h-dvh bg-[#070707] flex flex-col">
       <div className="max-w-2xl mx-auto w-full px-4 py-8 flex flex-col gap-6">
@@ -248,9 +273,14 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               <Car size={20} className="text-[#E8B84B]" />
               Estacionamento — {eventoTitle}
             </h1>
-            {caixaNome && (
-              <p className="text-[#555] text-xs mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Caixa designado: <span className="text-[#888]">{caixaNome}</span>
+            {caixaNome ? (
+              <button type="button" onClick={() => setModalFecharCaixa(true)}
+                className="flex items-center gap-1.5 mt-1 text-xs hover:underline" style={{ color: '#888', fontFamily: 'var(--font-dm-sans)' }}>
+                <Wallet size={11} className="text-green-400" /> Caixa: {caixaNome} · enviar contagem
+              </button>
+            ) : (
+              <p className="flex items-center gap-1.5 mt-1 text-xs" style={{ color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
+                <Lock size={11} /> Sem caixa designado — peça pro organizador abrir um pra você
               </p>
             )}
           </div>
@@ -496,6 +526,32 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
             <button type="button" onClick={() => setSaidaAlvo(null)}
               className="w-full text-center text-[#444] hover:text-[#777] text-xs mt-3 flex items-center justify-center gap-1.5">
               <ArrowLeft size={12} /> Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — enviar contagem do caixa (o organizador valida depois, confere o troco na entrega) */}
+      {modalFecharCaixa && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Enviar contagem — {caixaNome}</p>
+              <button onClick={() => setModalFecharCaixa(false)} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
+            </div>
+            <div className="flex flex-col gap-3 mb-4">
+              <input type="number" placeholder="Dinheiro contado na gaveta (R$)" value={dinheiroContado}
+                onChange={e => setDinheiroContado(e.target.value)} min="0" step="0.01"
+                className={inp} style={{ fontFamily: 'var(--font-dm-sans)' }} autoFocus />
+              <p className="text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Isso não fecha o caixa ainda — o organizador precisa validar a contagem quando você entregar o dinheiro.
+              </p>
+            </div>
+            {erroCaixa && <p className="text-red-400 text-xs text-center mb-3">{erroCaixa}</p>}
+            <button type="button" onClick={handleFecharCaixa} disabled={salvandoCaixa}
+              className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
+              style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+              {salvandoCaixa ? <Loader2 size={15} className="animate-spin" /> : 'Enviar contagem'}
             </button>
           </div>
         </div>

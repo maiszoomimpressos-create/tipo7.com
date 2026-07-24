@@ -27,6 +27,8 @@ export default async function CaixaPage({ params }: Props) {
 
   if (caixa.status === 'fechado')
     return <SemPermissao mensagem="Este caixa já foi fechado." />
+  if (caixa.status === 'fechamento_pendente')
+    return <SemPermissao mensagem="A contagem deste caixa já foi enviada — aguardando validação do organizador." />
 
   const { data: evento } = await admin
     .from('events')

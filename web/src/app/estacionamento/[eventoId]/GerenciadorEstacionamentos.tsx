@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Car, Plus, Loader2, Pencil, Trash2, X, Lock, Unlock, Wallet, AlertCircle, ArrowLeft,
-  DoorOpen, ChevronDown, ChevronUp, ArrowRightLeft, LogIn, LogOut,
+  DoorOpen, ChevronDown, ChevronUp, ArrowRightLeft, LogIn, LogOut, Calculator,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 
 const ACCENT = '#E8B84B'
 
@@ -44,11 +45,12 @@ const TIPO_PORTAO_ICON: Record<Portao['tipo'], React.ElementType> = {
 }
 
 interface Caixa {
-  id:            string
-  nome:          string
-  status:        'aberto' | 'fechado'
-  operadorName:  string | null
-  fundo_inicial: number
+  id:                 string
+  nome:               string
+  status:             'aberto' | 'fechamento_pendente' | 'fechado'
+  operadorName:       string | null
+  fundo_inicial:      number
+  estacionamentoNome: string | null
 }
 
 interface Props {
@@ -194,6 +196,17 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
     })
     const data = await res.json()
     if (!res.ok) { setErro(data.error ?? 'Erro ao fechar caixa'); return }
+    await carregar()
+  }
+
+  const handleValidarCaixa = async (caixaId: string) => {
+    const res = await fetch('/api/caixas/validar', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ caixaId }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setErro(data.error ?? 'Erro ao validar caixa'); return }
     await carregar()
   }
 
@@ -372,17 +385,34 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
                 <div key={c.id} className="flex items-center justify-between gap-3 bg-[#0d0d0d] border border-[#1a1a1a] rounded-xl px-4 py-3">
                   <div>
                     <p className="text-white text-sm font-medium flex items-center gap-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {c.status === 'aberto' ? <Unlock size={12} className="text-green-400" /> : <Lock size={12} className="text-[#555]" />}
+                      {c.status === 'aberto'
+                        ? <Unlock size={12} className="text-green-400" />
+                        : c.status === 'fechamento_pendente'
+                          ? <Wallet size={12} style={{ color: ACCENT }} />
+                          : <Lock size={12} className="text-[#555]" />}
                       {c.nome}
+                      {c.estacionamentoNome && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-normal" style={{ background: '#111', color: '#888' }}>
+                          {c.estacionamentoNome}
+                        </span>
+                      )}
                     </p>
                     <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                       {c.operadorName ?? 'Sem operador designado'} · fundo {formatBRL(Number(c.fundo_inicial))}
+                      {c.status === 'fechamento_pendente' && ' · aguardando validação'}
                     </p>
                   </div>
                   {c.status === 'aberto' && (
                     <button type="button" onClick={() => handleFecharCaixa(c.id)}
                       className="px-3 py-2 rounded-lg text-xs font-medium border border-[#222] text-[#aaa] hover:border-red-400/40 hover:text-red-400 transition-colors">
                       Fechar
+                    </button>
+                  )}
+                  {c.status === 'fechamento_pendente' && (
+                    <button type="button" onClick={() => handleValidarCaixa(c.id)}
+                      className="px-3 py-2 rounded-lg text-xs font-semibold text-[#070707]"
+                      style={{ background: ACCENT }}>
+                      Validar
                     </button>
                   )}
                 </div>
@@ -403,6 +433,7 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
       {modalCaixaAberto && (
         <AbrirCaixaModal
           eventoId={eventoId}
+          estacionamentos={estacionamentos}
           onFechar={() => setModalCaixaAberto(false)}
           onAberto={async () => { setModalCaixaAberto(false); await carregar() }}
         />
@@ -534,10 +565,17 @@ function NovoEstacionamentoModal({ eventoId, onFechar, onCriado }: { eventoId: s
   )
 }
 
-function AbrirCaixaModal({ eventoId, onFechar, onAberto }: { eventoId: string; onFechar: () => void; onAberto: () => void }) {
+function AbrirCaixaModal({ eventoId, estacionamentos, onFechar, onAberto }: {
+  eventoId: string
+  estacionamentos: Estacionamento[]
+  onFechar: () => void
+  onAberto: () => void
+}) {
   const [nome, setNome] = useState('Caixa 1')
-  const [fundoInicial, setFundoInicial] = useState('0')
+  const [fundoInicial, setFundoInicial] = useState(0)
+  const [calcAberta, setCalcAberta] = useState(false)
   const [operador, setOperador] = useState('')
+  const [estacionamentoId, setEstacionamentoId] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -550,8 +588,9 @@ function AbrirCaixaModal({ eventoId, onFechar, onAberto }: { eventoId: string; o
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           nome:                    nome.trim(),
-          fundoInicial:            Number(fundoInicial) || 0,
+          fundoInicial,
           operadorEmailOuCodigo:   operador.trim() || undefined,
+          estacionamentoId:        estacionamentoId || undefined,
         }),
       })
       const data = await res.json()
@@ -573,9 +612,26 @@ function AbrirCaixaModal({ eventoId, onFechar, onAberto }: { eventoId: string; o
         <div className="flex flex-col gap-3 mb-4">
           <input type="text" placeholder="Nome do caixa *" value={nome}
             onChange={e => setNome(e.target.value)} className={inp} style={{ fontFamily: 'var(--font-dm-sans)' }} autoFocus />
-          <input type="number" placeholder="Fundo inicial (R$)" value={fundoInicial}
-            onChange={e => setFundoInicial(e.target.value)} min="0" step="0.01"
-            className={inp} style={{ fontFamily: 'var(--font-dm-sans)' }} />
+          <div>
+            <label className="text-[#555] text-[10px] uppercase tracking-wider block mb-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Fundo inicial
+            </label>
+            <button type="button" onClick={() => setCalcAberta(true)}
+              className="w-full flex items-center justify-between bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-sm transition-colors hover:border-[#E8B84B]/40"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              <span style={{ color: fundoInicial > 0 ? '#fff' : '#444' }}>
+                {formatBRL(fundoInicial)}
+              </span>
+              <Calculator size={14} style={{ color: ACCENT }} />
+            </button>
+          </div>
+          {estacionamentos.length > 1 && (
+            <select value={estacionamentoId} onChange={e => setEstacionamentoId(e.target.value)}
+              className={inp} style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              <option value="">Caixa geral (não vinculado a um local)</option>
+              {estacionamentos.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+            </select>
+          )}
           <input type="text" placeholder="E-mail ou código T7-USR do operador (opcional)" value={operador}
             onChange={e => setOperador(e.target.value)} className={inp} style={{ fontFamily: 'var(--font-dm-sans)' }} />
           <p className="text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -591,6 +647,15 @@ function AbrirCaixaModal({ eventoId, onFechar, onAberto }: { eventoId: string; o
           {salvando ? <Loader2 size={15} className="animate-spin" /> : 'Abrir caixa'}
         </button>
       </div>
+
+      {calcAberta && (
+        <CalculadoraDinheiro
+          label={`Fundo inicial — ${nome || 'caixa'}`}
+          valor={fundoInicial}
+          onChange={setFundoInicial}
+          onClose={() => setCalcAberta(false)}
+        />
+      )}
     </div>
   )
 }

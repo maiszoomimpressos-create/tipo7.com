@@ -3,10 +3,15 @@
 import { useState, useEffect } from 'react'
 import {
   Users, UserPlus, Trash2, Loader2, Check, AlertTriangle,
-  Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X, DoorOpen,
+  Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X, DoorOpen, Wallet, Calculator,
 } from 'lucide-react'
+import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 
 const ACCENT = '#E8B84B'
+
+function formatBRL(v: number) {
+  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
 
 const PERMISSOES = [
   { value: 'validar_ingresso',        label: 'Validar ingresso',     desc: 'Escanear QR na entrada'         },
@@ -32,6 +37,7 @@ type Template = {
 
 type Membro = {
   id: string
+  user_id: string
   status: string
   email:    string | null
   userCode: string | null
@@ -47,6 +53,10 @@ type Portao = {
   tipo: 'entrada' | 'saida' | 'ambos'
   estacionamentoNome: string
 }
+
+type EstacionamentoResumo = { id: string; nome: string }
+
+type CaixaResumo = { id: string; operadorId: string | null; status: 'aberto' | 'fechamento_pendente' | 'fechado' }
 
 interface Props {
   eventoId: string
@@ -176,6 +186,11 @@ export function PainelEquipe({ eventoId }: Props) {
   const [portaoSel,      setPortaoSel]      = useState('')       // '' = sem restrição
   const [portaoEditando, setPortaoEditando] = useState('')
   const [portoes,        setPortoes]        = useState<Portao[]>([])
+  const [estacionamentosList, setEstacionamentosList] = useState<EstacionamentoResumo[]>([])
+  const [caixas,         setCaixas]         = useState<CaixaResumo[]>([])
+  const [abrindoCaixaPara, setAbrindoCaixaPara] = useState<Membro | null>(null)
+  const [fechandoCaixaPara, setFechandoCaixaPara] = useState<{ membro: Membro; caixa: CaixaResumo } | null>(null)
+  const [validandoCaixa, setValidandoCaixa] = useState<string | null>(null)
 
   async function carregarMembros() {
     setLoadingMem(true)
@@ -190,13 +205,22 @@ export function PainelEquipe({ eventoId }: Props) {
     try {
       const res  = await fetch(`/api/eventos/${eventoId}/estacionamentos`)
       const data = await res.json() as {
-        estacionamentos?: { nome: string; estacionamento_portoes?: { id: string; nome: string; tipo: Portao['tipo'] }[] }[]
+        estacionamentos?: { id: string; nome: string; estacionamento_portoes?: { id: string; nome: string; tipo: Portao['tipo'] }[] }[]
       }
       const lista = (data.estacionamentos ?? []).flatMap(e =>
         (e.estacionamento_portoes ?? []).map(p => ({ ...p, estacionamentoNome: e.nome }))
       )
       setPortoes(lista)
+      setEstacionamentosList((data.estacionamentos ?? []).map(e => ({ id: e.id, nome: e.nome })))
     } catch { /* silencioso — portão é opcional */ }
+  }
+
+  async function carregarCaixas() {
+    try {
+      const res  = await fetch(`/api/eventos/${eventoId}/caixas`)
+      const data = await res.json() as { caixas?: { id: string; operadorId: string | null; status: CaixaResumo['status'] }[] }
+      setCaixas((data.caixas ?? []).map(c => ({ id: c.id, operadorId: c.operadorId, status: c.status })))
+    } catch { /* silencioso */ }
   }
 
   async function carregarFuncoes() {
@@ -212,7 +236,29 @@ export function PainelEquipe({ eventoId }: Props) {
     } finally { setLoadingFun(false) }
   }
 
-  useEffect(() => { carregarMembros(); carregarFuncoes(); carregarPortoes() }, [eventoId])
+  useEffect(() => { carregarMembros(); carregarFuncoes(); carregarPortoes(); carregarCaixas() }, [eventoId])
+
+  function temPermissaoEstacionamento(m: Membro): boolean {
+    const perms = m.event_positions?.event_position_permissions ?? []
+    return perms.some(p => PERMISSOES_ESTACIONAMENTO.includes(p.permission))
+  }
+
+  function caixaDoMembro(userId: string): CaixaResumo | undefined {
+    return caixas.find(c => c.operadorId === userId && c.status !== 'fechado')
+  }
+
+  async function validarCaixaMembro(caixaId: string) {
+    setValidandoCaixa(caixaId)
+    try {
+      const res = await fetch('/api/caixas/validar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caixaId }),
+      })
+      if (res.ok) await carregarCaixas()
+    } finally {
+      setValidandoCaixa(null)
+    }
+  }
 
   // ── Funções ──
 
@@ -699,6 +745,7 @@ export function PainelEquipe({ eventoId }: Props) {
             const profile  = m.profiles
             const position = m.event_positions as { id: string; name: string; event_position_permissions: { permission: string }[] } | null
             const editando = editandoMembro === m.id
+            const caixaAtiva = m.status === 'active' && temPermissaoEstacionamento(m) ? caixaDoMembro(m.user_id) : undefined
             return (
               <div
                 key={m.id}
@@ -753,6 +800,36 @@ export function PainelEquipe({ eventoId }: Props) {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    {m.status === 'active' && temPermissaoEstacionamento(m) && !caixaAtiva && (
+                      <button
+                        type="button"
+                        onClick={() => setAbrindoCaixaPara(m)}
+                        className="flex items-center gap-1 px-2 h-7 rounded-lg text-[10px] font-semibold text-[#070707] whitespace-nowrap"
+                        style={{ background: ACCENT }}
+                      >
+                        <Wallet size={11} /> Abrir caixa
+                      </button>
+                    )}
+                    {caixaAtiva?.status === 'aberto' && (
+                      <button
+                        type="button"
+                        onClick={() => setFechandoCaixaPara({ membro: m, caixa: caixaAtiva })}
+                        className="flex items-center gap-1 px-2 h-7 rounded-lg text-[10px] font-semibold border border-[#333] text-[#aaa] hover:border-red-400/40 hover:text-red-400 transition-colors whitespace-nowrap"
+                      >
+                        <Wallet size={11} /> Fechar caixa
+                      </button>
+                    )}
+                    {caixaAtiva?.status === 'fechamento_pendente' && (
+                      <button
+                        type="button"
+                        onClick={() => validarCaixaMembro(caixaAtiva.id)}
+                        disabled={validandoCaixa === caixaAtiva.id}
+                        className="flex items-center gap-1 px-2 h-7 rounded-lg text-[10px] font-semibold text-[#070707] whitespace-nowrap"
+                        style={{ background: ACCENT }}
+                      >
+                        {validandoCaixa === caixaAtiva.id ? <Loader2 size={11} className="animate-spin" /> : <Wallet size={11} />} Validar
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => editando ? setEditandoMembro(null) : abrirEdicaoMembro(m)}
@@ -851,6 +928,202 @@ export function PainelEquipe({ eventoId }: Props) {
             )
           })}
         </div>
+      )}
+
+      {abrindoCaixaPara && (
+        <AbrirCaixaMembroModal
+          eventoId={eventoId}
+          membro={abrindoCaixaPara}
+          estacionamentos={estacionamentosList}
+          onFechar={() => setAbrindoCaixaPara(null)}
+          onAberto={async () => { setAbrindoCaixaPara(null); await carregarCaixas() }}
+        />
+      )}
+
+      {fechandoCaixaPara && (
+        <FecharCaixaMembroModal
+          membro={fechandoCaixaPara.membro}
+          caixaId={fechandoCaixaPara.caixa.id}
+          onFechar={() => setFechandoCaixaPara(null)}
+          onFechado={async () => { setFechandoCaixaPara(null); await carregarCaixas() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Modal: abrir caixa de estacionamento já designado pra um membro específico ──
+function AbrirCaixaMembroModal({
+  eventoId, membro, estacionamentos, onFechar, onAberto,
+}: {
+  eventoId: string
+  membro: Membro
+  estacionamentos: EstacionamentoResumo[]
+  onFechar: () => void
+  onAberto: () => void
+}) {
+  const nomeMembro = membro.profiles?.full_name ?? membro.email ?? 'Operador'
+  const [nome, setNome]                     = useState(`Caixa — ${nomeMembro}`)
+  const [fundoInicial, setFundoInicial]     = useState(0)
+  const [calcAberta, setCalcAberta]         = useState(false)
+  const [estacionamentoId, setEstacionamentoId] = useState('')
+  const [salvando, setSalvando]             = useState(false)
+  const [erro, setErro]                     = useState<string | null>(null)
+
+  const identificadorOperador = membro.email ?? membro.userCode
+
+  async function salvar() {
+    if (!nome.trim() || !identificadorOperador) return
+    setSalvando(true); setErro(null)
+    try {
+      const res = await fetch(`/api/estacionamento/${eventoId}/abrir-caixa`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          nome:                  nome.trim(),
+          fundoInicial,
+          operadorEmailOuCodigo: identificadorOperador,
+          estacionamentoId:      estacionamentoId || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErro(data.error ?? 'Erro ao abrir caixa'); return }
+      onAberto()
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Abrir caixa</p>
+            <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>pra {nomeMembro}</p>
+          </div>
+          <button onClick={onFechar} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
+        </div>
+
+        <div className="flex flex-col gap-3 mb-4">
+          <input type="text" placeholder="Nome do caixa *" value={nome}
+            onChange={e => setNome(e.target.value)}
+            className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+            style={{ fontFamily: 'var(--font-dm-sans)' }} autoFocus />
+          <div>
+            <label className="text-[#555] text-[10px] uppercase tracking-wider block mb-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Fundo inicial
+            </label>
+            <button type="button" onClick={() => setCalcAberta(true)}
+              className="w-full flex items-center justify-between bg-[#111] border border-[#222] rounded-xl px-4 py-2.5 text-sm transition-colors hover:border-[#E8B84B]/40"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              <span style={{ color: fundoInicial > 0 ? '#fff' : '#444' }}>{formatBRL(fundoInicial)}</span>
+              <Calculator size={14} style={{ color: ACCENT }} />
+            </button>
+          </div>
+          {estacionamentos.length > 1 && (
+            <select value={estacionamentoId} onChange={e => setEstacionamentoId(e.target.value)}
+              className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              <option value="">Caixa geral (não vinculado a um local)</option>
+              {estacionamentos.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+            </select>
+          )}
+        </div>
+
+        {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}
+
+        <button type="button" onClick={salvar} disabled={salvando || !nome.trim() || !identificadorOperador}
+          className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
+          style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+          {salvando ? <Loader2 size={15} className="animate-spin" /> : 'Abrir caixa'}
+        </button>
+      </div>
+
+      {calcAberta && (
+        <CalculadoraDinheiro
+          label={`Fundo inicial — ${nome || 'caixa'}`}
+          valor={fundoInicial}
+          onChange={setFundoInicial}
+          onClose={() => setCalcAberta(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Modal: fechar caixa de um membro — dono confere o troco e fecha direto
+//    (mesma regra do resto do sistema: quem valida é quem fecha; como aqui
+//    quem está clicando já é o dono, fecha em definitivo na hora) ──────────
+function FecharCaixaMembroModal({
+  membro, caixaId, onFechar, onFechado,
+}: {
+  membro: Membro
+  caixaId: string
+  onFechar: () => void
+  onFechado: () => void
+}) {
+  const nomeMembro = membro.profiles?.full_name ?? membro.email ?? 'Operador'
+  const [dinheiroContado, setDinheiroContado] = useState(0)
+  const [calcAberta, setCalcAberta]           = useState(false)
+  const [salvando, setSalvando]               = useState(false)
+  const [erro, setErro]                       = useState<string | null>(null)
+
+  async function fechar() {
+    setSalvando(true); setErro(null)
+    try {
+      const res = await fetch('/api/caixas/fechar', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ caixaId, dinheiro_contado: dinheiroContado, ingressos_devolvidos: 0 }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErro(data.error ?? 'Erro ao fechar caixa'); return }
+      onFechado()
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Fechar caixa</p>
+            <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>de {nomeMembro}</p>
+          </div>
+          <button onClick={onFechar} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
+        </div>
+
+        <div className="flex flex-col gap-3 mb-4">
+          <label className="text-[#555] text-[10px] uppercase tracking-wider block" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Dinheiro contado na entrega
+          </label>
+          <button type="button" onClick={() => setCalcAberta(true)}
+            className="w-full flex items-center justify-between bg-[#111] border border-[#222] rounded-xl px-4 py-2.5 text-sm transition-colors hover:border-[#E8B84B]/40"
+            style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            <span style={{ color: dinheiroContado > 0 ? '#fff' : '#444' }}>{formatBRL(dinheiroContado)}</span>
+            <Calculator size={14} style={{ color: ACCENT }} />
+          </button>
+        </div>
+
+        {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}
+
+        <button type="button" onClick={fechar} disabled={salvando}
+          className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
+          style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+          {salvando ? <Loader2 size={15} className="animate-spin" /> : 'Fechar caixa'}
+        </button>
+      </div>
+
+      {calcAberta && (
+        <CalculadoraDinheiro
+          label={`Dinheiro contado — ${nomeMembro}`}
+          valor={dinheiroContado}
+          onChange={setDinheiroContado}
+          onClose={() => setCalcAberta(false)}
+        />
       )}
     </div>
   )

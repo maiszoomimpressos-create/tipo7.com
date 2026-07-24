@@ -11,7 +11,7 @@ import {
   Clock, Monitor, Settings, Download, FileText, Thermometer, MonitorOff,
   ArrowRightLeft, X, Calculator,
 } from 'lucide-react'
-import { CalculadoraDinheiro } from './CalculadoraDinheiro'
+import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { CaixaSidebar }       from './CaixaSidebar'
 import QRCode from 'react-qr-code'
 
@@ -1105,6 +1105,7 @@ if exist "%CHROME%" (
         <ModalFechamento
           eventoId={eventoId}
           caixaId={caixaId}
+          isOwner={!!isOwner}
           onFechar={() => setModalFechamento(false)}
         />
       )}
@@ -1551,7 +1552,7 @@ function ModalTransferencia({
 }
 
 // ── Modal de Fechamento de Caixa ──────────────────────────────────────────────
-function ModalFechamento({ eventoId, caixaId, onFechar }: { eventoId: string; caixaId: string; onFechar: () => void }) {
+function ModalFechamento({ eventoId, caixaId, isOwner, onFechar }: { eventoId: string; caixaId: string; isOwner: boolean; onFechar: () => void }) {
   const [dinheiro, setDinheiro]     = useState('')
   const [devolvidos, setDevolvidos] = useState('0')
   const [obs, setObs]               = useState('')
@@ -1604,6 +1605,11 @@ function ModalFechamento({ eventoId, caixaId, onFechar }: { eventoId: string; ca
               ok={apuracao.diferenca_ingressos === 0}
               sign={apuracao.diferenca_ingressos > 0 ? 'falta' : apuracao.diferenca_ingressos < 0 ? 'sobra' : ''} />
           </div>
+          {!isOwner && (
+            <p className="text-[#888] text-xs text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Contagem enviada — isso não fecha o caixa ainda. O organizador precisa validar quando você entregar o dinheiro.
+            </p>
+          )}
           <a href={`/bilheteria/${eventoId}`}
             className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] hover:brightness-110"
             style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
@@ -1663,7 +1669,9 @@ function ModalFechamento({ eventoId, caixaId, onFechar }: { eventoId: string; ca
         <button type="button" onClick={fechar} disabled={salvando || !dinheiro}
           className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] disabled:opacity-50 hover:brightness-110 active:scale-[0.98] transition-all"
           style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-          {salvando ? <><Loader2 size={18} className="animate-spin" /> Fechando...</> : 'Fechar caixa e ver apuração'}
+          {salvando
+            ? <><Loader2 size={18} className="animate-spin" /> Enviando...</>
+            : isOwner ? 'Fechar caixa e ver apuração' : 'Enviar contagem e ver apuração'}
         </button>
       </div>
     </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { QRCodeCanvas } from 'qrcode.react'
 import {
@@ -174,9 +174,13 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   const bannerInputRef = useRef<HTMLInputElement>(null)
   const qrCanvasRef    = useRef<HTMLCanvasElement>(null)
 
-  const eventUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/evento/${evento.id}`
-    : `/evento/${evento.id}`
+  // Começa com o caminho relativo (igual ao que o servidor renderiza) e só
+  // troca pra URL absoluta depois de montar — evita mismatch de hidratação
+  // (window.location não existe durante o SSR).
+  const [eventUrl, setEventUrl] = useState(`/evento/${evento.id}`)
+  useEffect(() => {
+    setEventUrl(`${window.location.origin}/evento/${evento.id}`)
+  }, [evento.id])
 
   const copiarLink = async () => {
     await navigator.clipboard.writeText(eventUrl)

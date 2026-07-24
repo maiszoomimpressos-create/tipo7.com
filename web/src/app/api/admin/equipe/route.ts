@@ -24,9 +24,9 @@ export async function POST(req: NextRequest) {
   const admin = createServiceClient()
 
   // Busca o usuário pelo email
-  const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
-  const target = users.find(u => u.email === email)
-  if (!target) return NextResponse.json({ error: 'Usuário não encontrado. Ele precisa ter uma conta na Tipo7.' }, { status: 404 })
+  const { data: targetId } = await admin.rpc('find_user_id_by_email', { p_email: email })
+  if (!targetId) return NextResponse.json({ error: 'Usuário não encontrado. Ele precisa ter uma conta na Tipo7.' }, { status: 404 })
+  const target = { id: targetId as string }
 
   // Garante que existe um perfil
   const { data: profile } = await admin.from('profiles').select('full_name').eq('id', target.id).single()

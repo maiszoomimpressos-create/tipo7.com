@@ -49,9 +49,9 @@ export async function GET(
   const userIds = (staff ?? []).map((s: { user_id: string }) => s.user_id)
   const emailMap: Record<string, string> = {}
   if (userIds.length > 0) {
-    const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
-    for (const u of users) {
-      if (userIds.includes(u.id)) emailMap[u.id] = u.email ?? ''
+    const { data: emails } = await admin.rpc('get_user_emails', { p_ids: userIds })
+    for (const u of (emails ?? []) as { id: string; email: string }[]) {
+      emailMap[u.id] = u.email ?? ''
     }
   }
 
@@ -105,10 +105,8 @@ export async function POST(
       .maybeSingle()
     targetUserId = perfil?.id ?? null
   } else {
-    // Busca por email — listUsers com filtro para não carregar toda a base
-    const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
-    const found = users.find(u => u.email?.toLowerCase() === busca.toLowerCase())
-    targetUserId = found?.id ?? null
+    const { data: id } = await admin.rpc('find_user_id_by_email', { p_email: busca })
+    targetUserId = (id as string | null) ?? null
   }
 
   if (!targetUserId) {

@@ -46,10 +46,18 @@ export async function GET(_req: NextRequest, { params }: Params) {
       nomeMap[p.id]  = p.full_name  ?? ''
       codeMap[p.id]  = p.user_code  ?? ''
     }
-    const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
-    for (const u of users) {
-      if (operadorIds.includes(u.id)) emailMap[u.id] = u.email ?? ''
+    const { data: emails } = await admin.rpc('get_user_emails', { p_ids: operadorIds })
+    for (const u of (emails ?? []) as { id: string; email: string }[]) {
+      emailMap[u.id] = u.email ?? ''
     }
+  }
+
+  // Nome do estacionamento vinculado (quando o caixa é de um local específico)
+  const estacionamentoIds = [...new Set((caixas ?? []).map(c => c.estacionamento_id).filter(Boolean))]
+  const estacionamentoNomeMap: Record<string, string> = {}
+  if (estacionamentoIds.length > 0) {
+    const { data: locais } = await admin.from('estacionamentos').select('id, nome').in('id', estacionamentoIds)
+    for (const l of locais ?? []) estacionamentoNomeMap[l.id] = l.nome
   }
 
   const result = await Promise.all((caixas ?? []).map(async (c) => {
@@ -88,6 +96,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       operadorName:  (c.operador_id ? nomeMap[c.operador_id] : null) ?? (c as { nome_operador?: string }).nome_operador ?? null,
       operadorEmail: c.operador_id ? (emailMap[c.operador_id] ?? null) : null,
       operadorCode:  c.operador_id ? (codeMap[c.operador_id]  ?? null) : null,
+      estacionamentoNome: c.estacionamento_id ? (estacionamentoNomeMap[c.estacionamento_id] ?? null) : null,
       saldoIngressos: c.ingressos_alocados + recebidos - enviados - vendidos,
       vendidos, recebidos, enviados,
       totalDinheiro, totalPix, totalCartao,
