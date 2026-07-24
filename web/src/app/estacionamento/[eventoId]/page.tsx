@@ -37,10 +37,10 @@ export default async function EstacionamentoPage({ params }: Props) {
     return <GerenciadorEstacionamentos eventoId={eventoId} eventoTitle={evento.title ?? 'Evento'} />
   }
 
-  // Staff com permissão gerenciar_estacionamento
+  // Staff com permissão de entrada e/ou saída do estacionamento
   const { data: staff } = await admin
     .from('event_staff')
-    .select('id, event_positions(event_position_permissions(permission))')
+    .select('id, portao_id, event_positions(event_position_permissions(permission))')
     .eq('event_id', eventoId)
     .eq('user_id', user.id)
     .eq('status', 'active')
@@ -49,9 +49,12 @@ export default async function EstacionamentoPage({ params }: Props) {
   const pos = staff?.event_positions as unknown as {
     event_position_permissions: { permission: string }[]
   } | null
-  const temPermissao = (pos?.event_position_permissions ?? []).some(p => p.permission === 'gerenciar_estacionamento')
+  const permissoes    = pos?.event_position_permissions ?? []
+  const podeEntrada   = permissoes.some(p => p.permission === 'estacionamento_entrada')
+  const podeSaida     = permissoes.some(p => p.permission === 'estacionamento_saida')
+  const portaoRestrito = staff?.portao_id ?? null
 
-  if (!temPermissao) {
+  if (!podeEntrada && !podeSaida) {
     return <SemPermissao mensagem="Você não tem permissão para acessar o estacionamento deste evento." />
   }
 
@@ -66,7 +69,7 @@ export default async function EstacionamentoPage({ params }: Props) {
 
   const { data: estacionamentos } = await admin
     .from('estacionamentos')
-    .select('*')
+    .select('*, estacionamento_portoes(*)')
     .eq('event_id', eventoId)
     .eq('ativo', true)
     .order('created_at')
@@ -78,6 +81,9 @@ export default async function EstacionamentoPage({ params }: Props) {
       estacionamentos={estacionamentos ?? []}
       caixaId={caixaAberto?.id ?? null}
       caixaNome={caixaAberto?.nome ?? null}
+      podeEntrada={podeEntrada}
+      podeSaida={podeSaida}
+      portaoRestrito={portaoRestrito}
     />
   )
 }

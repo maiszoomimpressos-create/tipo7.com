@@ -5,6 +5,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLocation } from '@/contexts/LocationContext'
+import { PROFILE_UPDATED_EVENT } from '@/hooks/useProfileStatus'
 import { Loader2, CheckCircle, AlertCircle, Camera, MapPin, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -138,6 +139,7 @@ export function ProfileForm({ userId, initial }: Props) {
   const [addrSearching,  setAddrSearching]  = useState(false)
   const [showAddrDropdown, setShowAddrDropdown] = useState(false)
   const [addrSearchError, setAddrSearchError] = useState<string | null>(null)
+  const [addrHighlight,  setAddrHighlight]  = useState(-1)   // índice destacado via teclado
   const addrDropdownRef = useRef<HTMLDivElement>(null)
   const addrDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -189,6 +191,7 @@ export function ProfileForm({ userId, initial }: Props) {
   // ── Busca sugestões de endereço no Google Places ────────────────────────────
   const buscarEnderecoSugestoes = useCallback((valor: string) => {
     if (addrDebounceRef.current) clearTimeout(addrDebounceRef.current)
+    setAddrHighlight(-1)
     if (!valor || valor.length < 3) { setAddrSuggestions([]); setShowAddrDropdown(false); setAddrSearchError(null); return }
     addrDebounceRef.current = setTimeout(async () => {
       setAddrSearching(true)
@@ -208,6 +211,7 @@ export function ProfileForm({ userId, initial }: Props) {
         setAddrSearchError(null)
         setAddrSuggestions(data.suggestions ?? [])
         setShowAddrDropdown((data.suggestions ?? []).length > 0)
+        setAddrHighlight(-1)
       } catch {
         setAddrSearchError('Busca de endereço indisponível no momento. Preencha manualmente abaixo.')
         setAddrSuggestions([])
@@ -221,6 +225,7 @@ export function ProfileForm({ userId, initial }: Props) {
     setAddrQuery(s.nomePrincipal)
     setShowAddrDropdown(false)
     setAddrSuggestions([])
+    setAddrHighlight(-1)
     try {
       const res  = await fetch(`/api/places/details?place_id=${s.placeId}`)
       const data = await res.json()
@@ -231,6 +236,27 @@ export function ProfileForm({ userId, initial }: Props) {
       if (data.cidade) setCity(data.cidade)
       if (data.estado) setUf(data.estado.slice(0, 2).toUpperCase())
     } catch { /* usuário pode preencher manualmente */ }
+  }
+
+  // ── Navegação por teclado nas sugestões de endereço ─────────────────────────
+  const handleAddrKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showAddrDropdown || addrSuggestions.length === 0) return
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setAddrHighlight(prev => (prev + 1) % addrSuggestions.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setAddrHighlight(prev => (prev - 1 + addrSuggestions.length) % addrSuggestions.length)
+    } else if (e.key === 'Enter') {
+      if (addrHighlight >= 0) {
+        e.preventDefault()
+        selecionarEndereco(addrSuggestions[addrHighlight])
+      }
+    } else if (e.key === 'Escape') {
+      setShowAddrDropdown(false)
+      setAddrHighlight(-1)
+    }
   }
 
   // ── Manipula mudança no campo CEP ───────────────────────────────────────────
@@ -346,6 +372,9 @@ export function ProfileForm({ userId, initial }: Props) {
       // Atualiza a URL do avatar no estado para refletir a foto salva
       if (novaAvatarUrl) setAvatarUrl(novaAvatarUrl)
       setAvatarFile(null)   // limpa o arquivo selecionado
+
+      // Avisa o Header (e qualquer outro componente) pra revalidar na hora
+      window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT))
 
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)
@@ -540,10 +569,15 @@ export function ProfileForm({ userId, initial }: Props) {
                 value={addrQuery}
                 onChange={e => { setAddrQuery(e.target.value); buscarEnderecoSugestoes(e.target.value) }}
                 onFocus={() => addrSuggestions.length > 0 && setShowAddrDropdown(true)}
+                onKeyDown={handleAddrKeyDown}
                 placeholder="Digite sua rua, bairro ou cidade..."
                 className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 pr-10 text-white text-sm outline-none transition-all duration-200 focus:border-[#E8B84B]/40 focus:bg-[#131313] placeholder:text-[#383838]"
                 style={{ fontFamily: 'var(--font-dm-sans)' }}
                 autoComplete="off"
+                role="combobox"
+                aria-expanded={showAddrDropdown}
+                aria-controls="addr-suggestions-perfil"
+                aria-activedescendant={addrHighlight >= 0 ? `addr-suggestion-perfil-${addrHighlight}` : undefined}
               />
               <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444]">
                 {addrSearching
@@ -552,13 +586,18 @@ export function ProfileForm({ userId, initial }: Props) {
                 }
               </div>
               {showAddrDropdown && addrSuggestions.length > 0 && (
-                <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-[#111] border border-[#222] rounded-xl overflow-hidden shadow-2xl shadow-black/60">
+                <div id="addr-suggestions-perfil" role="listbox" className="absolute z-50 top-full left-0 right-0 mt-1 bg-[#111] border border-[#222] rounded-xl overflow-hidden shadow-2xl shadow-black/60">
                   {addrSuggestions.map((s, i) => (
                     <button key={s.placeId} type="button"
+                      id={`addr-suggestion-perfil-${i}`}
+                      role="option"
+                      aria-selected={i === addrHighlight}
                       onMouseDown={() => selecionarEndereco(s)}
+                      onMouseEnter={() => setAddrHighlight(i)}
                       className={cn(
-                        'w-full text-left px-4 py-3 hover:bg-[#1a1a1a] transition-colors flex flex-col gap-0.5',
-                        i > 0 && 'border-t border-[#1a1a1a]'
+                        'w-full text-left px-4 py-3 transition-colors flex flex-col gap-0.5',
+                        i > 0 && 'border-t border-[#1a1a1a]',
+                        i === addrHighlight ? 'bg-[#1a1a1a]' : 'hover:bg-[#1a1a1a]'
                       )}
                     >
                       <span className="text-white text-sm font-medium truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>{s.nomePrincipal}</span>

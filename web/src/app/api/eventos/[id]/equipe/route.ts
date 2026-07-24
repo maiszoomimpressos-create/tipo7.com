@@ -37,9 +37,10 @@ export async function GET(
   const { data: staff } = await admin
     .from('event_staff')
     .select(`
-      id, status, created_at, user_id,
+      id, status, created_at, user_id, portao_id,
       profiles:user_id (id, full_name, user_code),
-      event_positions:event_position_id (id, name, event_position_permissions(permission))
+      event_positions:event_position_id (id, name, event_position_permissions(permission)),
+      estacionamento_portoes:portao_id (id, nome)
     `)
     .eq('event_id', id)
     .order('created_at')
@@ -84,6 +85,7 @@ export async function POST(
   const body = await req.json() as {
     emailOuCodigo: string
     funcaoId:      string   // ID de uma função já criada no evento
+    portaoId?:     string   // opcional — restringe o membro a um portão específico
   }
 
   if (!body.emailOuCodigo || !body.funcaoId) {
@@ -138,6 +140,19 @@ export async function POST(
     return NextResponse.json({ error: 'Função não encontrada neste evento' }, { status: 404 })
   }
 
+  // Se um portão foi informado, confirma que ele pertence a um estacionamento deste evento
+  let portaoId: string | null = null
+  if (body.portaoId) {
+    const { data: portao } = await admin
+      .from('estacionamento_portoes')
+      .select('id, estacionamentos!inner(event_id)')
+      .eq('id', body.portaoId)
+      .eq('estacionamentos.event_id', id)
+      .maybeSingle()
+    if (!portao) return NextResponse.json({ error: 'Portão não encontrado neste evento' }, { status: 404 })
+    portaoId = body.portaoId
+  }
+
   // Cria o vínculo do membro com o evento — fica pendente até o convidado aceitar
   const { error: staffErr } = await admin
     .from('event_staff')
@@ -145,6 +160,7 @@ export async function POST(
       event_id:          id,
       user_id:           targetUser.id,
       event_position_id: funcao.id,
+      portao_id:         portaoId,
       status:            'pending',
       invited_by:        user.id,
     }, { onConflict: 'event_id,user_id' })
@@ -173,7 +189,11 @@ export async function PATCH(
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
-  const { staffId, funcaoId } = await req.json() as { staffId: string; funcaoId: string }
+  const { staffId, funcaoId, portaoId } = await req.json() as {
+    staffId:   string
+    funcaoId:  string
+    portaoId?: string | null   // undefined = não mexe; null = remove restrição; string = define
+  }
 
   if (!staffId || !funcaoId) {
     return NextResponse.json({ error: 'staffId e funcaoId são obrigatórios' }, { status: 400 })
@@ -191,9 +211,26 @@ export async function PATCH(
     return NextResponse.json({ error: 'Função não encontrada neste evento' }, { status: 404 })
   }
 
+  const updates: Record<string, unknown> = { event_position_id: funcaoId }
+
+  if (portaoId !== undefined) {
+    if (portaoId === null) {
+      updates.portao_id = null
+    } else {
+      const { data: portao } = await admin
+        .from('estacionamento_portoes')
+        .select('id, estacionamentos!inner(event_id)')
+        .eq('id', portaoId)
+        .eq('estacionamentos.event_id', id)
+        .maybeSingle()
+      if (!portao) return NextResponse.json({ error: 'Portão não encontrado neste evento' }, { status: 404 })
+      updates.portao_id = portaoId
+    }
+  }
+
   const { error } = await admin
     .from('event_staff')
-    .update({ event_position_id: funcaoId })
+    .update(updates)
     .eq('id', staffId)
     .eq('event_id', id)
 

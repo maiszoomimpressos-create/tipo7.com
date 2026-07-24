@@ -5,7 +5,7 @@ import { redirect }      from 'next/navigation'
 import { Header }        from '@/components/layout/Header'
 import { ProfileForm }   from './ProfileForm'
 import { CodigoOrg }     from './CodigoOrg'
-import { AlertCircle }   from 'lucide-react'
+import { PerfilBanner }  from './PerfilBanner'
 
 export default async function PerfilPage() {
   const supabase = await createClient()
@@ -81,19 +81,7 @@ export default async function PerfilPage() {
         </div>
 
         {/* Banner de perfil incompleto — exibe quais campos ainda faltam */}
-        {camposFaltando.length > 0 && (
-          <div className="flex items-start gap-3 bg-red-500/8 border border-red-500/20 rounded-2xl px-5 py-4 mb-6">
-            <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-red-400 text-sm font-medium mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Complete seu perfil para aproveitar todos os recursos
-              </p>
-              <p className="text-red-400/60 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Faltam: {camposFaltando.join(', ')}
-              </p>
-            </div>
-          </div>
-        )}
+        <PerfilBanner initialFaltando={camposFaltando} />
 
         {/* Bloco de identificação: avatar + email (não editável) */}
         <div className="flex items-center gap-4 mb-8 p-5 bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl">

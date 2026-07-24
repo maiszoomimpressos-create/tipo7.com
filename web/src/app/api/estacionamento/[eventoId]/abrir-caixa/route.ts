@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { isEventOwner } from '@/lib/eventPermissions'
+import { isEventOwner, hasEventPermission } from '@/lib/eventPermissions'
 
 // POST /api/estacionamento/[eventoId]/abrir-caixa
 // Abre um caixa "de estacionamento" reaproveitando a mesma tabela `caixas` usada pela bilheteria.
@@ -48,17 +48,9 @@ export async function POST(
       return NextResponse.json({ error: 'Operador não encontrado. Verifique o email ou código T7-USR.' }, { status: 404 })
     }
 
-    // Confirma que esse usuário já está ativo como staff com gerenciar_estacionamento neste evento
-    const { data: staff } = await admin
-      .from('event_staff')
-      .select('id, event_positions(event_position_permissions(permission))')
-      .eq('event_id', eventoId)
-      .eq('user_id', operadorId)
-      .eq('status', 'active')
-      .maybeSingle()
-    const pos = staff?.event_positions as unknown as { event_position_permissions: { permission: string }[] } | null
-    const temPermissao = (pos?.event_position_permissions ?? []).some(p => p.permission === 'gerenciar_estacionamento')
-    if (!temPermissao) {
+    // Confirma que esse usuário já está ativo como staff com permissão de
+    // cobrar na saída do estacionamento neste evento — é quem vai operar o caixa.
+    if (!(await hasEventPermission(operadorId, eventoId, 'estacionamento_saida'))) {
       return NextResponse.json(
         { error: 'Esse usuário ainda não é equipe ativa com permissão de estacionamento neste evento. Convide-o primeiro pela equipe do evento.' },
         { status: 400 }

@@ -60,7 +60,7 @@ export default async function TrabalhoPage({ params }: Props) {
   } | null
 
   const permissoes = isOwner
-    ? ['validar_ingresso', 'vender_ingresso', 'ver_lista_convidados', 'ver_relatorios', 'gerenciar_checkin', 'gerenciar_equipe', 'gerenciar_estacionamento']
+    ? ['validar_ingresso', 'vender_ingresso', 'ver_lista_convidados', 'ver_relatorios', 'gerenciar_checkin', 'gerenciar_equipe', 'estacionamento_entrada', 'estacionamento_saida']
     : (cargo?.event_position_permissions ?? []).map(p => p.permission)
 
   // Busca caixa designado para este usuário

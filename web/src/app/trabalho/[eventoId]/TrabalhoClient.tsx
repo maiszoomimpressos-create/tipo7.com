@@ -10,7 +10,7 @@ import { TrabalhoDashboard } from './TrabalhoDashboard'
 const ACCENT = '#E8B84B'
 
 interface AcessoItem {
-  perm:  string
+  perm:  string[]  // basta ter QUALQUER uma dessas permissões
   label: string
   desc:  string
   icon:  React.ElementType
@@ -21,7 +21,7 @@ interface AcessoItem {
 function buildAcessos(eventoId: string, permissoes: string[], isOwner: boolean): AcessoItem[] {
   const mapa: AcessoItem[] = [
     {
-      perm:  'vender_ingresso',
+      perm:  ['vender_ingresso'],
       label: 'Bilheteria',
       desc:  'Vender ingressos presencialmente',
       icon:  ShoppingCart,
@@ -29,7 +29,7 @@ function buildAcessos(eventoId: string, permissoes: string[], isOwner: boolean):
       cor:   '#E8B84B',
     },
     {
-      perm:  'validar_ingresso',
+      perm:  ['validar_ingresso'],
       label: 'Scanner',
       desc:  'Escanear e validar ingressos na entrada',
       icon:  ScanQrCode,
@@ -37,7 +37,7 @@ function buildAcessos(eventoId: string, permissoes: string[], isOwner: boolean):
       cor:   '#4ade80',
     },
     {
-      perm:  'ver_lista_convidados',
+      perm:  ['ver_lista_convidados'],
       label: 'Lista de compradores',
       desc:  'Ver quem comprou ingresso',
       icon:  ClipboardList,
@@ -45,7 +45,7 @@ function buildAcessos(eventoId: string, permissoes: string[], isOwner: boolean):
       cor:   '#60a5fa',
     },
     {
-      perm:  'ver_relatorios',
+      perm:  ['ver_relatorios'],
       label: 'Relatórios',
       desc:  'Vendas e presença do evento',
       icon:  BarChart2,
@@ -53,9 +53,11 @@ function buildAcessos(eventoId: string, permissoes: string[], isOwner: boolean):
       cor:   '#a78bfa',
     },
     {
-      perm:  'gerenciar_estacionamento',
+      // Basta ter entrada OU saída — a própria tela do estacionamento mostra
+      // só a parte que a permissão da pessoa cobre.
+      perm:  ['estacionamento_entrada', 'estacionamento_saida'],
       label: 'Estacionamento',
-      desc:  'Registrar entrada/saída de veículos',
+      desc:  'Registrar entrada e/ou saída de veículos',
       icon:  Car,
       href:  `/estacionamento/${eventoId}`,
       cor:   '#38bdf8',
@@ -64,7 +66,7 @@ function buildAcessos(eventoId: string, permissoes: string[], isOwner: boolean):
 
   if (isOwner) {
     mapa.push({
-      perm:  'gerenciar_equipe',
+      perm:  ['gerenciar_equipe'],
       label: 'Painel do evento',
       desc:  'Configurações e gestão completa',
       icon:  Settings,
@@ -73,7 +75,7 @@ function buildAcessos(eventoId: string, permissoes: string[], isOwner: boolean):
     })
   }
 
-  const visiveis = mapa.filter(a => permissoes.includes(a.perm))
+  const visiveis = mapa.filter(a => a.perm.some(p => permissoes.includes(p)))
   return visiveis.filter((a, i, arr) => arr.findIndex(b => b.href === a.href) === i)
 }
 
@@ -104,7 +106,7 @@ export function TrabalhoClient({
   cargoNome, permissoes, ingressos, isOwner, caixaDesignado,
 }: Props) {
   const acessos = buildAcessos(eventoId, permissoes, isOwner)
-    .filter(a => !(a.perm === 'vender_ingresso' && caixaDesignado))
+    .filter(a => !(a.perm.includes('vender_ingresso') && caixaDesignado))
 
   const dataFormatada = eventoDate
     ? new Date(eventoDate).toLocaleDateString('pt-BR', {
@@ -216,7 +218,7 @@ export function TrabalhoClient({
               const Icon = a.icon
               return (
                 <a
-                  key={a.perm}
+                  key={a.href}
                   href={a.href}
                   className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all hover:brightness-110 active:scale-[0.98]"
                   style={{ background: `${a.cor}08`, border: `1px solid ${a.cor}18` }}
@@ -342,7 +344,7 @@ export function TrabalhoClient({
                 const Icon = a.icon
                 return (
                   <a
-                    key={a.perm}
+                    key={a.href}
                     href={a.href}
                     className="flex items-center justify-between px-4 py-4 rounded-2xl transition-all hover:brightness-110 active:scale-[0.98]"
                     style={{ background: `${a.cor}08`, border: `1px solid ${a.cor}20` }}

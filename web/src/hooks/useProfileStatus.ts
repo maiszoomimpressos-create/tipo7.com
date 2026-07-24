@@ -18,6 +18,12 @@ interface ProfileStatus {
   carregando:      boolean
 }
 
+// Evento global disparado sempre que o perfil é salvo em qualquer lugar da
+// aplicação (ex: ProfileForm), pra todo hook ativo revalidar na hora — sem
+// esse evento, o badge de "perfil incompleto" no Header só sumia após um
+// reload manual da página.
+export const PROFILE_UPDATED_EVENT = 'tipo7:profile-updated'
+
 export function useProfileStatus(): ProfileStatus {
   const { user } = useAuth()
   const supabase  = createClient()
@@ -28,28 +34,34 @@ export function useProfileStatus(): ProfileStatus {
   useEffect(() => {
     if (!user) { setCarregando(false); return }
 
-    supabase
-      .from('profiles')
-      .select('full_name, phone, cpf, birth_date, zip_code, street, street_number, neighborhood, address_type')
-      .eq('id', user.id)
-      .single()
-      .then(({ data }) => {
-        const faltando: CampoFaltando[] = []
+    const buscarStatus = () => {
+      supabase
+        .from('profiles')
+        .select('full_name, phone, cpf, birth_date, zip_code, street, street_number, neighborhood, address_type')
+        .eq('id', user.id)
+        .single()
+        .then(({ data }) => {
+          const faltando: CampoFaltando[] = []
 
-        // Campos verificados agora — adicione mais abaixo conforme necessário
-        if (!data?.full_name)     faltando.push({ campo: 'full_name',     label: 'Nome completo' })
-        if (!data?.phone)         faltando.push({ campo: 'phone',         label: 'Telefone' })
-        if (!data?.cpf)           faltando.push({ campo: 'cpf',           label: 'CPF' })
-        if (!data?.birth_date)    faltando.push({ campo: 'birth_date',    label: 'Data de nascimento' })
-        if (!data?.zip_code)      faltando.push({ campo: 'zip_code',      label: 'CEP' })
-        if (!data?.street)        faltando.push({ campo: 'street',        label: 'Rua' })
-        if (!data?.street_number) faltando.push({ campo: 'street_number', label: 'Número do endereço' })
-        if (!data?.neighborhood)  faltando.push({ campo: 'neighborhood',  label: 'Bairro' })
-        if (!data?.address_type)  faltando.push({ campo: 'address_type',  label: 'Tipo de residência' })
+          // Campos verificados agora — adicione mais abaixo conforme necessário
+          if (!data?.full_name)     faltando.push({ campo: 'full_name',     label: 'Nome completo' })
+          if (!data?.phone)         faltando.push({ campo: 'phone',         label: 'Telefone' })
+          if (!data?.cpf)           faltando.push({ campo: 'cpf',           label: 'CPF' })
+          if (!data?.birth_date)    faltando.push({ campo: 'birth_date',    label: 'Data de nascimento' })
+          if (!data?.zip_code)      faltando.push({ campo: 'zip_code',      label: 'CEP' })
+          if (!data?.street)        faltando.push({ campo: 'street',        label: 'Rua' })
+          if (!data?.street_number) faltando.push({ campo: 'street_number', label: 'Número do endereço' })
+          if (!data?.neighborhood)  faltando.push({ campo: 'neighborhood',  label: 'Bairro' })
+          if (!data?.address_type)  faltando.push({ campo: 'address_type',  label: 'Tipo de residência' })
 
-        setCamposFaltando(faltando)
-        setCarregando(false)
-      })
+          setCamposFaltando(faltando)
+          setCarregando(false)
+        })
+    }
+
+    buscarStatus()
+    window.addEventListener(PROFILE_UPDATED_EVENT, buscarStatus)
+    return () => window.removeEventListener(PROFILE_UPDATED_EVENT, buscarStatus)
   }, [user])
 
   return {

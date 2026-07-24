@@ -16,7 +16,7 @@ export async function GET(
   const admin = createServiceClient()
   const { data: estacionamentos } = await admin
     .from('estacionamentos')
-    .select('*')
+    .select('*, estacionamento_portoes(*)')
     .eq('event_id', id)
     .order('created_at')
 

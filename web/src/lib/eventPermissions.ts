@@ -11,8 +11,13 @@ export async function isEventOwner(userId: string, eventoId: string): Promise<bo
   return org?.owner_id === userId
 }
 
-// Dono do evento OU staff ativo com a permissão informada (event_permission enum)
-export async function hasEventPermission(userId: string, eventoId: string, permission: string): Promise<boolean> {
+// Dono do evento OU staff ativo com a permissão informada (event_permission enum).
+// Aceita uma permissão só ou uma lista — nesse caso basta ter QUALQUER uma delas
+// (ex: leitura de sessões de estacionamento serve tanto pra quem só faz entrada
+// quanto pra quem só faz saída).
+export async function hasEventPermission(
+  userId: string, eventoId: string, permission: string | string[]
+): Promise<boolean> {
   if (await isEventOwner(userId, eventoId)) return true
 
   const admin = createServiceClient()
@@ -28,5 +33,24 @@ export async function hasEventPermission(userId: string, eventoId: string, permi
   const pos = staff.event_positions as unknown as {
     event_position_permissions: { permission: string }[]
   } | null
-  return (pos?.event_position_permissions ?? []).some(p => p.permission === permission)
+  const required = Array.isArray(permission) ? permission : [permission]
+  return (pos?.event_position_permissions ?? []).some(p => required.includes(p.permission))
+}
+
+// Portão ao qual esse membro da equipe está restrito (null = sem restrição,
+// pode operar qualquer portão do estacionamento em que tiver permissão).
+// Dono do evento nunca tem restrição de portão.
+export async function getStaffPortao(userId: string, eventoId: string): Promise<string | null> {
+  if (await isEventOwner(userId, eventoId)) return null
+
+  const admin = createServiceClient()
+  const { data: staff } = await admin
+    .from('event_staff')
+    .select('portao_id')
+    .eq('event_id', eventoId)
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .single()
+
+  return staff?.portao_id ?? null
 }

@@ -17,6 +17,8 @@ const PERMISSOES = [
   { value: 'ver_lista_convidados', label: 'Ver lista'            },
   { value: 'ver_relatorios',       label: 'Ver relatórios'       },
   { value: 'gerenciar_checkin',    label: 'Gerenciar check-in'   },
+  { value: 'estacionamento_entrada', label: 'Estacionamento — Entrada' },
+  { value: 'estacionamento_saida',   label: 'Estacionamento — Saída'   },
 ]
 
 type Template = {
@@ -111,6 +113,7 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
     validar_ingresso: 'Validar', vender_ingresso: 'Bilheteria',
     ver_lista_convidados: 'Ver lista', ver_relatorios: 'Relatórios',
     gerenciar_checkin: 'Check-in',
+    estacionamento_entrada: 'Estac. entrada', estacionamento_saida: 'Estac. saída',
   }
 
   return (

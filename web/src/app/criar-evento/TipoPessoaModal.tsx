@@ -248,7 +248,12 @@ export function TipoPessoaModal({ promotorId, tipoPessoaAtual, nomeUsuario, orgA
 
     let finalOrgId = orgId
     if (!finalOrgId) {
-      const { data: orgExistente } = await supabase.from('organizations').select('id').eq('owner_id', user.id).maybeSingle()
+      // Filtra por type também — um usuário pode ter uma organização
+      // promotora E uma estabelecimento ao mesmo tempo, mas nunca duas do
+      // mesmo tipo (constraint organizations_owner_type_unique no banco).
+      const { data: orgExistente, error: errBusca } = await supabase
+        .from('organizations').select('id').eq('owner_id', user.id).eq('type', tipo).maybeSingle()
+      if (errBusca) throw errBusca
       if (orgExistente) {
         finalOrgId = orgExistente.id
         await supabase.from('organizations').update({ type: tipo, name: nomeUsuario, ...dadosPJ, ...camposNicho }).eq('id', finalOrgId)

@@ -12,7 +12,9 @@ export async function GET(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  if (!(await hasEventPermission(user.id, eventoId, 'gerenciar_estacionamento'))) {
+  // Entrada e saída precisam ler a ocupação (contagem de vagas), mesmo quem
+  // só registra entrada precisa saber se está lotado.
+  if (!(await hasEventPermission(user.id, eventoId, ['estacionamento_entrada', 'estacionamento_saida']))) {
     return NextResponse.json({ error: 'Sem permissão para este evento' }, { status: 403 })
   }
 

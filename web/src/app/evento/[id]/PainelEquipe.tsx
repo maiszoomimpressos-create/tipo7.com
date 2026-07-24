@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import {
   Users, UserPlus, Trash2, Loader2, Check, AlertTriangle,
-  Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X,
+  Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X, DoorOpen,
 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
@@ -14,7 +14,8 @@ const PERMISSOES = [
   { value: 'ver_lista_convidados',    label: 'Ver lista',            desc: 'Lista de compradores'           },
   { value: 'ver_relatorios',          label: 'Ver relatórios',       desc: 'Vendas e presença'              },
   { value: 'gerenciar_checkin',       label: 'Gerenciar check-in',   desc: 'Controlar entrada/saída'        },
-  { value: 'gerenciar_estacionamento', label: 'Estacionamento',      desc: 'Registrar entrada/saída de veículos' },
+  { value: 'estacionamento_entrada',  label: 'Estacionamento — Entrada', desc: 'Registrar entrada de veículos' },
+  { value: 'estacionamento_saida',    label: 'Estacionamento — Saída',   desc: 'Registrar saída e cobrar'      },
 ]
 
 type Funcao = {
@@ -34,13 +35,25 @@ type Membro = {
   status: string
   email:    string | null
   userCode: string | null
+  portao_id: string | null
   profiles: { id: string; full_name: string | null; user_code?: string | null } | null
   event_positions: { id: string; name: string; event_position_permissions: { permission: string }[] } | null
+  estacionamento_portoes: { id: string; nome: string } | null
+}
+
+type Portao = {
+  id:   string
+  nome: string
+  tipo: 'entrada' | 'saida' | 'ambos'
+  estacionamentoNome: string
 }
 
 interface Props {
   eventoId: string
 }
+
+// Permissões que tornam relevante escolher um portão específico pro membro
+const PERMISSOES_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_saida']
 
 // ── Seletor de permissões reutilizável ────────────────────────────────────────
 
@@ -95,6 +108,40 @@ function SeletorPermissoes({
   )
 }
 
+// ── Seletor de portão reutilizável — só relevante quando a função escolhida
+//    tem permissão de estacionamento e há portões cadastrados no evento ──────
+function SeletorPortao({
+  portoes, selecionado, onChange,
+}: {
+  portoes: Portao[]
+  selecionado: string
+  onChange: (id: string) => void
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5">
+        <DoorOpen size={11} style={{ color: ACCENT }} />
+        <p className="text-[#555] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          Portão (opcional — restringe a esse portão específico)
+        </p>
+      </div>
+      <select
+        value={selecionado}
+        onChange={e => onChange(e.target.value)}
+        className="w-full bg-[#111] border border-[#222] rounded-xl px-3 py-2.5 text-white text-xs outline-none focus:border-[#E8B84B]/40"
+        style={{ fontFamily: 'var(--font-dm-sans)' }}
+      >
+        <option value="">Sem restrição — pode operar qualquer portão</option>
+        {portoes.map(p => (
+          <option key={p.id} value={p.id}>
+            {p.estacionamentoNome} — {p.nome} ({p.tipo === 'entrada' ? 'só entrada' : p.tipo === 'saida' ? 'só saída' : 'entrada e saída'})
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 // ── Painel principal ──────────────────────────────────────────────────────────
 
 export function PainelEquipe({ eventoId }: Props) {
@@ -126,6 +173,9 @@ export function PainelEquipe({ eventoId }: Props) {
   const [salvando,       setSalvando]       = useState(false)
   const [errConvite,     setErrConvite]     = useState<string | null>(null)
   const [sucesso,        setSucesso]        = useState(false)
+  const [portaoSel,      setPortaoSel]      = useState('')       // '' = sem restrição
+  const [portaoEditando, setPortaoEditando] = useState('')
+  const [portoes,        setPortoes]        = useState<Portao[]>([])
 
   async function carregarMembros() {
     setLoadingMem(true)
@@ -134,6 +184,19 @@ export function PainelEquipe({ eventoId }: Props) {
       const data = await res.json()
       setMembros(data.staff ?? [])
     } finally { setLoadingMem(false) }
+  }
+
+  async function carregarPortoes() {
+    try {
+      const res  = await fetch(`/api/eventos/${eventoId}/estacionamentos`)
+      const data = await res.json() as {
+        estacionamentos?: { nome: string; estacionamento_portoes?: { id: string; nome: string; tipo: Portao['tipo'] }[] }[]
+      }
+      const lista = (data.estacionamentos ?? []).flatMap(e =>
+        (e.estacionamento_portoes ?? []).map(p => ({ ...p, estacionamentoNome: e.nome }))
+      )
+      setPortoes(lista)
+    } catch { /* silencioso — portão é opcional */ }
   }
 
   async function carregarFuncoes() {
@@ -149,7 +212,7 @@ export function PainelEquipe({ eventoId }: Props) {
     } finally { setLoadingFun(false) }
   }
 
-  useEffect(() => { carregarMembros(); carregarFuncoes() }, [eventoId])
+  useEffect(() => { carregarMembros(); carregarFuncoes(); carregarPortoes() }, [eventoId])
 
   // ── Funções ──
 
@@ -220,11 +283,15 @@ export function PainelEquipe({ eventoId }: Props) {
       const res  = await fetch(`/api/eventos/${eventoId}/equipe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailOuCodigo: emailOuCodigo.trim(), funcaoId: funcaoSel }),
+        body: JSON.stringify({
+          emailOuCodigo: emailOuCodigo.trim(),
+          funcaoId:      funcaoSel,
+          portaoId:      portaoSel || undefined,
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao adicionar')
-      setSucesso(true); setEmailOuCodigo(''); setFuncaoSel(''); setAdicionando(false)
+      setSucesso(true); setEmailOuCodigo(''); setFuncaoSel(''); setPortaoSel(''); setAdicionando(false)
       await carregarMembros()
     } catch (e: unknown) {
       setErrConvite(e instanceof Error ? e.message : 'Erro ao adicionar')
@@ -242,6 +309,7 @@ export function PainelEquipe({ eventoId }: Props) {
   function abrirEdicaoMembro(m: Membro) {
     setEditandoMembro(m.id)
     setFuncaoEditando(m.event_positions?.id ?? '')
+    setPortaoEditando(m.portao_id ?? '')
   }
 
   async function salvarEdicaoMembro() {
@@ -251,14 +319,10 @@ export function PainelEquipe({ eventoId }: Props) {
       const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ staffId: editandoMembro, funcaoId: funcaoEditando }),
+        body:    JSON.stringify({ staffId: editandoMembro, funcaoId: funcaoEditando, portaoId: portaoEditando || null }),
       })
       if (!res.ok) return
-      setMembros(prev => prev.map(m => {
-        if (m.id !== editandoMembro) return m
-        const novaFuncao = funcoes.find(f => f.id === funcaoEditando)
-        return { ...m, event_positions: novaFuncao ? { id: novaFuncao.id, name: novaFuncao.name, event_position_permissions: novaFuncao.event_position_permissions } : m.event_positions }
-      }))
+      await carregarMembros()
       setEditandoMembro(null)
     } finally { setSalvandoMembro(false) }
   }
@@ -269,7 +333,8 @@ export function PainelEquipe({ eventoId }: Props) {
     ver_lista_convidados:    'Ver lista',
     ver_relatorios:          'Relatórios',
     gerenciar_checkin:       'Check-in',
-    gerenciar_estacionamento: 'Estacionamento',
+    estacionamento_entrada:  'Estacionamento (entrada)',
+    estacionamento_saida:    'Estacionamento (saída)',
   }
 
   return (
@@ -571,6 +636,13 @@ export function PainelEquipe({ eventoId }: Props) {
             </div>
           )}
 
+          {/* Portão — só aparece se a função escolhida tem permissão de estacionamento e há portões cadastrados */}
+          {portoes.length > 0 && (() => {
+            const funcao = funcoes.find(f => f.id === funcaoSel)
+            const relevante = funcao?.event_position_permissions.some(p => PERMISSOES_ESTACIONAMENTO.includes(p.permission))
+            return relevante ? <SeletorPortao portoes={portoes} selecionado={portaoSel} onChange={setPortaoSel} /> : null
+          })()}
+
           {errConvite && (
             <div className="flex items-center gap-2 text-red-400 text-xs py-2 px-3 rounded-lg bg-red-400/5">
               <AlertTriangle size={12} className="shrink-0" />
@@ -661,6 +733,14 @@ export function PainelEquipe({ eventoId }: Props) {
                           {m.userCode}
                         </span>
                       )}
+                      {m.estacionamento_portoes && (
+                        <span
+                          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px]"
+                          style={{ background: '#111', color: '#888', border: '1px solid #1e1e1e' }}
+                        >
+                          <DoorOpen size={9} /> {m.estacionamento_portoes.nome}
+                        </span>
+                      )}
                       <span
                         className="inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase"
                         style={{
@@ -738,6 +818,13 @@ export function PainelEquipe({ eventoId }: Props) {
                         </button>
                       ))}
                     </div>
+
+                    {portoes.length > 0 && (() => {
+                      const funcao = funcoes.find(f => f.id === funcaoEditando)
+                      const relevante = funcao?.event_position_permissions.some(p => PERMISSOES_ESTACIONAMENTO.includes(p.permission))
+                      return relevante ? <SeletorPortao portoes={portoes} selecionado={portaoEditando} onChange={setPortaoEditando} /> : null
+                    })()}
+
                     <div className="flex gap-2">
                       <button
                         type="button"

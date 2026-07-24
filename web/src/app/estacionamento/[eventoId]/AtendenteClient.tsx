@@ -3,13 +3,20 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Car, Plus, Loader2, Clock, Banknote, CreditCard, Smartphone, Gift, X, ArrowLeft,
+  Car, Plus, Loader2, Clock, Banknote, CreditCard, Smartphone, Gift, X, ArrowLeft, DoorOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
 import { ImpressoraBluetooth } from '@/components/ImpressoraBluetooth'
 
 const ACCENT = '#E8B84B'
+
+interface Portao {
+  id:    string
+  nome:  string
+  tipo:  'entrada' | 'saida' | 'ambos'
+  ativo: boolean
+}
 
 interface Estacionamento {
   id:                    string
@@ -22,6 +29,7 @@ interface Estacionamento {
   tolerancia_minutos:    number
   controla_saida:        boolean
   vagas_totais:          number | null
+  estacionamento_portoes: Portao[]
 }
 
 interface Sessao {
@@ -39,6 +47,9 @@ interface Props {
   estacionamentos: Estacionamento[]
   caixaId:         string | null
   caixaNome:       string | null
+  podeEntrada:     boolean
+  podeSaida:       boolean
+  portaoRestrito:  string | null
 }
 
 const inp = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]'
@@ -55,7 +66,7 @@ function tempoDecorrido(entradaEm: string): string {
   return h > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${m} min`
 }
 
-export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaId, caixaNome }: Props) {
+export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaId, caixaNome, podeEntrada, podeSaida, portaoRestrito }: Props) {
   const router = useRouter()
   const [estacionamentoId, setEstacionamentoId] = useState(estacionamentos[0]?.id ?? '')
   const [placa, setPlaca] = useState('')
@@ -63,6 +74,9 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [telefoneCondutor, setTelefoneCondutor] = useState('')
   const [registrando, setRegistrando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [formaPagamentoEntrada, setFormaPagamentoEntrada] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
+  const [portaoEntradaSel, setPortaoEntradaSel] = useState('')
+  const [portaoSaidaSel,   setPortaoSaidaSel]   = useState('')
 
   const [sessoes, setSessoes] = useState<Sessao[]>([])
   const [carregando, setCarregando] = useState(true)
@@ -98,6 +112,8 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     if (!saidaAlvo) return 0
     const config = estacionamentos.find(e => e.id === saidaAlvo.estacionamento_id)
     if (!config) return 0
+    // Preço fixo já foi cobrado na entrada — na saída não há mais nada a cobrar.
+    if (config.cobra_modo === 'fixo') return 0
     return calcularValorEstacionamento(config, saidaAlvo.entrada_em, new Date())
   }, [saidaAlvo, estacionamentos])
 
@@ -108,8 +124,35 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const vagasTotais   = estacionamentoAtual?.vagas_totais ?? null
   const lotado        = vagasTotais != null && vagasOcupadas >= vagasTotais
 
+  // Preço fixo cobra na entrada — por_tempo continua cobrando só na saída.
+  const precoEntradaFixo   = estacionamentoAtual?.cobra_modo === 'fixo' ? Number(estacionamentoAtual.preco_fixo ?? 0) : 0
+  const precisaPagarEntrada = precoEntradaFixo > 0
+  const precisaCaixaEntrada = precisaPagarEntrada && formaPagamentoEntrada !== 'cortesia'
+
+  // Portões de entrada disponíveis pro estacionamento selecionado — se o
+  // atendente estiver restrito a um portão específico, só esse aparece.
+  const portoesEntradaDisponiveis = useMemo(() => {
+    const todos = (estacionamentoAtual?.estacionamento_portoes ?? []).filter(p => p.ativo && ['entrada', 'ambos'].includes(p.tipo))
+    return portaoRestrito ? todos.filter(p => p.id === portaoRestrito) : todos
+  }, [estacionamentoAtual, portaoRestrito])
+  const precisaPortaoEntrada = (estacionamentoAtual?.estacionamento_portoes?.length ?? 0) > 0
+
+  useEffect(() => {
+    if (portoesEntradaDisponiveis.length === 1) { setPortaoEntradaSel(portoesEntradaDisponiveis[0].id); return }
+    if (!portoesEntradaDisponiveis.some(p => p.id === portaoEntradaSel)) setPortaoEntradaSel('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portoesEntradaDisponiveis])
+
   const handleRegistrarEntrada = async () => {
     if (!estacionamentoId || !placa.trim() || lotado) return
+    if (precisaPortaoEntrada && !portaoEntradaSel) {
+      setErro('Selecione o portão de entrada.')
+      return
+    }
+    if (precisaCaixaEntrada && !caixaId) {
+      setErro('Nenhum caixa aberto designado pra você. Peça pro organizador abrir e designar um caixa.')
+      return
+    }
     setRegistrando(true); setErro(null)
     try {
       const res = await fetch('/api/estacionamento/entrada', {
@@ -120,11 +163,14 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           placa:             placa.trim(),
           nomeCondutor:      nomeCondutor.trim()     || undefined,
           telefoneCondutor:  telefoneCondutor.trim() || undefined,
+          formaPagamento:    precisaPagarEntrada ? formaPagamentoEntrada : undefined,
+          caixaId:           precisaCaixaEntrada ? caixaId ?? undefined : undefined,
+          portaoId:          precisaPortaoEntrada ? portaoEntradaSel : undefined,
         }),
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? 'Erro ao registrar entrada'); return }
-      setPlaca(''); setNomeCondutor(''); setTelefoneCondutor('')
+      setPlaca(''); setNomeCondutor(''); setTelefoneCondutor(''); setFormaPagamentoEntrada('dinheiro')
       await carregarSessoes()
     } catch {
       setErro('Erro ao registrar entrada. Tente novamente.')
@@ -137,13 +183,33 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     setSaidaAlvo(s)
     setFormaPagamento('dinheiro')
     setErro(null)
+    const config = estacionamentos.find(e => e.id === s.estacionamento_id)
+    const disponiveis = (config?.estacionamento_portoes ?? []).filter(p => p.ativo && ['saida', 'ambos'].includes(p.tipo))
+    const filtrados   = portaoRestrito ? disponiveis.filter(p => p.id === portaoRestrito) : disponiveis
+    setPortaoSaidaSel(filtrados.length === 1 ? filtrados[0].id : '')
   }
+
+  // Portões de saída disponíveis pro estacionamento da sessão em confirmação —
+  // o carro pode sair por qualquer portão tipo saída/ambos, não precisa ser
+  // o mesmo por onde entrou.
+  const portoesSaidaDisponiveis = useMemo(() => {
+    if (!saidaAlvo) return []
+    const config = estacionamentos.find(e => e.id === saidaAlvo.estacionamento_id)
+    const todos = (config?.estacionamento_portoes ?? []).filter(p => p.ativo && ['saida', 'ambos'].includes(p.tipo))
+    return portaoRestrito ? todos.filter(p => p.id === portaoRestrito) : todos
+  }, [saidaAlvo, estacionamentos, portaoRestrito])
+  const precisaPortaoSaida = !!saidaAlvo &&
+    ((estacionamentos.find(e => e.id === saidaAlvo.estacionamento_id)?.estacionamento_portoes?.length ?? 0) > 0)
 
   const handleConfirmarSaida = async () => {
     if (!saidaAlvo) return
     const config = estacionamentos.find(e => e.id === saidaAlvo.estacionamento_id)
     const precisaCaixa = config?.cobra_modo !== 'gratis' && formaPagamento !== 'cortesia' && valorPreview > 0
 
+    if (precisaPortaoSaida && !portaoSaidaSel) {
+      setErro('Selecione o portão de saída.')
+      return
+    }
     if (precisaCaixa && !caixaId) {
       setErro('Nenhum caixa aberto designado pra você. Peça pro organizador abrir e designar um caixa.')
       return
@@ -158,6 +224,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           sessaoId:       saidaAlvo.id,
           caixaId:        precisaCaixa ? caixaId : undefined,
           formaPagamento: config?.cobra_modo === 'gratis' ? undefined : formaPagamento,
+          portaoId:       precisaPortaoSaida ? portaoSaidaSel : undefined,
         }),
       })
       const data = await res.json()
@@ -222,7 +289,8 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               </div>
             )}
 
-            {/* Formulário de entrada */}
+            {/* Formulário de entrada — só pra quem tem permissão de registrar entrada */}
+            {podeEntrada && (
             <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl p-5 flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Registrar entrada</p>
@@ -244,6 +312,23 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                   Sem vagas disponíveis neste estacionamento. Assim que um carro sair, libera automaticamente.
                 </p>
               )}
+              {precisaPortaoEntrada && (
+                portoesEntradaDisponiveis.length > 1 ? (
+                  <select value={portaoEntradaSel} onChange={e => setPortaoEntradaSel(e.target.value)}
+                    className={inp} style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    <option value="">Selecione o portão de entrada</option>
+                    {portoesEntradaDisponiveis.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                  </select>
+                ) : portoesEntradaDisponiveis.length === 1 ? (
+                  <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-[#888]" style={{ background: '#111', border: '1px solid #1c1c1c', fontFamily: 'var(--font-dm-sans)' }}>
+                    <DoorOpen size={12} className="text-[#E8B84B]" /> Portão: {portoesEntradaDisponiveis[0].nome}
+                  </div>
+                ) : (
+                  <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Nenhum portão de entrada disponível pra você neste estacionamento.
+                  </p>
+                )
+              )}
               <input type="text" placeholder="Placa *" value={placa} disabled={lotado}
                 onChange={e => setPlaca(e.target.value.toUpperCase())}
                 className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)', textTransform: 'uppercase' }} />
@@ -255,14 +340,53 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                   onChange={e => setTelefoneCondutor(e.target.value)}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
               </div>
-              <button type="button" onClick={handleRegistrarEntrada} disabled={registrando || !placa.trim() || lotado}
+
+              {/* Preço fixo cobra na entrada */}
+              {precisaPagarEntrada && (
+                <div className="rounded-xl p-3" style={{ background: '#111', border: '1px solid #1c1c1c' }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>Preço fixo</p>
+                    <p className="text-white text-sm font-bold" style={{ fontFamily: 'var(--font-outfit)' }}>
+                      {formatBRL(precoEntradaFixo)}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {([
+                      { value: 'dinheiro' as const, icon: Banknote,    label: 'Dinheiro' },
+                      { value: 'pix'      as const, icon: Smartphone,  label: 'PIX'      },
+                      { value: 'cartao'   as const, icon: CreditCard,  label: 'Cartão'   },
+                      { value: 'cortesia' as const, icon: Gift,        label: 'Cortesia' },
+                    ]).map(({ value, icon: Icon, label }) => (
+                      <button key={value} type="button" onClick={() => setFormaPagamentoEntrada(value)}
+                        className={cn(
+                          'flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-medium transition-all',
+                          formaPagamentoEntrada === value
+                            ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white'
+                            : 'bg-[#0d0d0d] border-[#1c1c1c] text-[#777]'
+                        )}>
+                        <Icon size={12} /> {label}
+                      </button>
+                    ))}
+                  </div>
+                  {precisaCaixaEntrada && !caixaId && (
+                    <p className="text-red-400 text-[11px] mt-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Nenhum caixa designado pra você — peça pro organizador abrir e designar um caixa.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <button type="button" onClick={handleRegistrarEntrada}
+                disabled={registrando || !placa.trim() || lotado || (precisaCaixaEntrada && !caixaId) || (precisaPortaoEntrada && !portaoEntradaSel)}
                 className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
                 style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
                 {registrando ? <Loader2 size={15} className="animate-spin" /> : <><Plus size={15} /> Registrar entrada</>}
               </button>
             </div>
+            )}
 
-            {/* Carros estacionados */}
+            {/* Carros estacionados — só pra quem tem permissão de registrar saída */}
+            {podeSaida && (
             <div className="flex flex-col gap-2">
               <p className="text-[#666] text-xs uppercase tracking-widest font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 Carros estacionados {!carregando && `(${sessoes.length})`}
@@ -287,6 +411,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                 </div>
               ))}
             </div>
+            )}
           </>
         )}
 
@@ -305,11 +430,40 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
             </div>
 
             <div className="text-center py-4 mb-4 rounded-xl" style={{ background: '#111' }}>
-              <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>Valor a cobrar</p>
-              <p className="text-white text-2xl font-bold mt-1" style={{ fontFamily: 'var(--font-outfit)' }}>
-                {formatBRL(valorPreview)}
-              </p>
+              {estacionamentos.find(e => e.id === saidaAlvo.estacionamento_id)?.cobra_modo === 'fixo' ? (
+                <>
+                  <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>Preço fixo</p>
+                  <p className="text-white text-lg font-semibold mt-1" style={{ fontFamily: 'var(--font-outfit)' }}>
+                    Já pago na entrada
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>Valor a cobrar</p>
+                  <p className="text-white text-2xl font-bold mt-1" style={{ fontFamily: 'var(--font-outfit)' }}>
+                    {formatBRL(valorPreview)}
+                  </p>
+                </>
+              )}
             </div>
+
+            {precisaPortaoSaida && (
+              portoesSaidaDisponiveis.length > 1 ? (
+                <select value={portaoSaidaSel} onChange={e => setPortaoSaidaSel(e.target.value)}
+                  className={cn(inp, 'mb-4')} style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  <option value="">Selecione o portão de saída</option>
+                  {portoesSaidaDisponiveis.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                </select>
+              ) : portoesSaidaDisponiveis.length === 1 ? (
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-[#888] mb-4" style={{ background: '#111', border: '1px solid #1c1c1c', fontFamily: 'var(--font-dm-sans)' }}>
+                  <DoorOpen size={12} className="text-[#E8B84B]" /> Portão: {portoesSaidaDisponiveis[0].nome}
+                </div>
+              ) : (
+                <p className="text-red-400 text-xs mb-4" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Nenhum portão de saída disponível pra você neste estacionamento.
+                </p>
+              )
+            )}
 
             {valorPreview > 0 && (
               <div className="grid grid-cols-2 gap-2 mb-4">
@@ -334,7 +488,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
 
             {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}
 
-            <button type="button" onClick={handleConfirmarSaida} disabled={confirmandoSaida}
+            <button type="button" onClick={handleConfirmarSaida} disabled={confirmandoSaida || (precisaPortaoSaida && !portaoSaidaSel)}
               className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
               style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
               {confirmandoSaida ? <Loader2 size={15} className="animate-spin" /> : 'Confirmar saída'}
