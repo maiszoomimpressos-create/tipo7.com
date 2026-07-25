@@ -4,7 +4,7 @@ import { hasEventPermission, getStaffPortao } from '@/lib/eventPermissions'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 // POST /api/estacionamento/entrada
-// body: { estacionamentoId, placa, nomeCondutor?, telefoneCondutor?, modelo?, cor?, cpfCondutor?, formaPagamento?, caixaId?, portaoId? }
+// body: { estacionamentoId, placa, modelo, cor, telefoneCondutor, nomeCondutor?, cpfCondutor?, formaPagamento?, caixaId?, portaoId? }
 // formaPagamento/caixaId só se aplicam (e são exigidos) quando o estacionamento
 // é cobra_modo='fixo' — preço fixo cobra sempre na entrada; por_tempo continua
 // cobrando só na saída.
@@ -19,17 +19,19 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as {
     estacionamentoId: string
     placa:            string
+    modelo:           string
+    cor:              string
+    telefoneCondutor: string
     nomeCondutor?:    string
-    telefoneCondutor?: string
-    modelo?:          string
-    cor?:             string
     cpfCondutor?:     string
     formaPagamento?:  'dinheiro' | 'pix' | 'cartao' | 'cortesia'
     caixaId?:         string
     portaoId?:        string
   }
 
-  if (!body.estacionamentoId || !body.placa?.trim()) {
+  // Placa, modelo, cor e WhatsApp são obrigatórios — o WhatsApp é usado pra
+  // enviar o ticket de estacionamento pro condutor.
+  if (!body.estacionamentoId || !body.placa?.trim() || !body.modelo?.trim() || !body.cor?.trim() || !body.telefoneCondutor?.trim()) {
     return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 })
   }
 

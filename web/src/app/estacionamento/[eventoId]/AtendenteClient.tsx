@@ -160,7 +160,11 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   }, [portoesEntradaDisponiveis])
 
   const handleRegistrarEntrada = async () => {
-    if (!estacionamentoId || !placa.trim() || lotado) return
+    if (!estacionamentoId || lotado) return
+    if (!placa.trim() || !modelo.trim() || !cor.trim() || !telefoneCondutor.trim()) {
+      setErro('Preencha placa, modelo, cor e WhatsApp do condutor.')
+      return
+    }
     if (precisaPortaoEntrada && !portaoEntradaSel) {
       setErro('Selecione o portão de entrada.')
       return
@@ -378,10 +382,10 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                 onChange={e => setPlaca(e.target.value.toUpperCase())}
                 className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)', textTransform: 'uppercase' }} />
               <div className="grid grid-cols-2 gap-2">
-                <input type="text" placeholder="Modelo (opcional)" value={modelo} disabled={lotado}
+                <input type="text" placeholder="Modelo *" value={modelo} disabled={lotado}
                   onChange={e => setModelo(e.target.value)}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
-                <input type="text" placeholder="Cor (opcional)" value={cor} disabled={lotado}
+                <input type="text" placeholder="Cor *" value={cor} disabled={lotado}
                   onChange={e => setCor(e.target.value)}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
               </div>
@@ -389,7 +393,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                 <input type="text" placeholder="Nome (opcional)" value={nomeCondutor} disabled={lotado}
                   onChange={e => setNomeCondutor(e.target.value)}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
-                <input type="tel" placeholder="Telefone (opcional)" value={telefoneCondutor} disabled={lotado}
+                <input type="tel" placeholder="WhatsApp *" value={telefoneCondutor} disabled={lotado}
                   onChange={e => setTelefoneCondutor(e.target.value)}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
               </div>
@@ -434,7 +438,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               )}
 
               <button type="button" onClick={handleRegistrarEntrada}
-                disabled={registrando || !placa.trim() || lotado || (precisaCaixaEntrada && !caixaId) || (precisaPortaoEntrada && !portaoEntradaSel)}
+                disabled={registrando || !placa.trim() || !modelo.trim() || !cor.trim() || !telefoneCondutor.trim() || lotado || (precisaCaixaEntrada && !caixaId) || (precisaPortaoEntrada && !portaoEntradaSel)}
                 className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
                 style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
                 {registrando ? <Loader2 size={15} className="animate-spin" /> : <><Plus size={15} /> Registrar entrada</>}
