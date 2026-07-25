@@ -63,6 +63,10 @@ export default async function TrabalhoPage({ params }: Props) {
     ? ['validar_ingresso', 'vender_ingresso', 'ver_lista_convidados', 'ver_relatorios', 'gerenciar_checkin', 'gerenciar_equipe', 'estacionamento_entrada', 'estacionamento_saida']
     : (cargo?.event_position_permissions ?? []).map(p => p.permission)
 
+  console.log('[DEBUG trabalho]', JSON.stringify({
+    userId: user.id, isOwner, staffId: staff?.id, staffRaw: staff, cargo, permissoes,
+  }, null, 2))
+
   // Busca caixa designado para este usuário
   const { data: caixaDesignado } = await admin
     .from('caixas')
