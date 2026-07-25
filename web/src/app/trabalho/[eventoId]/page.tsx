@@ -18,7 +18,7 @@ export default async function TrabalhoPage({ params }: Props) {
   const admin = createServiceClient()
 
   // Busca o vínculo do usuário com o evento
-  const { data: staff } = await admin
+  const { data: staff, error: staffError } = await admin
     .from('event_staff')
     .select(`
       id, status,
@@ -63,9 +63,11 @@ export default async function TrabalhoPage({ params }: Props) {
     ? ['validar_ingresso', 'vender_ingresso', 'ver_lista_convidados', 'ver_relatorios', 'gerenciar_checkin', 'gerenciar_equipe', 'estacionamento_entrada', 'estacionamento_saida']
     : (cargo?.event_position_permissions ?? []).map(p => p.permission)
 
-  console.log('[DEBUG trabalho]', JSON.stringify({
-    userId: user.id, isOwner, staffId: staff?.id, staffRaw: staff, cargo, permissoes,
-  }, null, 2))
+  const debugInfo = {
+    userId: user.id, isOwner, staffId: staff?.id ?? null, staffError: staffError?.message ?? null,
+    staffRaw: staff, cargo, permissoes,
+  }
+  console.log('[DEBUG trabalho]', JSON.stringify(debugInfo, null, 2))
 
   // Busca caixa designado para este usuário
   const { data: caixaDesignado } = await admin
@@ -123,6 +125,9 @@ export default async function TrabalhoPage({ params }: Props) {
 
   return (
     <div className="min-h-dvh bg-[#070707]">
+      <pre style={{ background: '#000', color: '#0f0', fontSize: 11, padding: 12, overflow: 'auto', maxHeight: 300, border: '2px solid red' }}>
+        DEBUG TEMP — {JSON.stringify(debugInfo, null, 2)}
+      </pre>
       <Header />
       <TrabalhoClient
         eventoId={eventoId}
