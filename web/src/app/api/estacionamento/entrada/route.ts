@@ -4,7 +4,7 @@ import { hasEventPermission, getStaffPortao } from '@/lib/eventPermissions'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 // POST /api/estacionamento/entrada
-// body: { estacionamentoId, placa, nomeCondutor?, telefoneCondutor?, formaPagamento?, caixaId?, portaoId? }
+// body: { estacionamentoId, placa, nomeCondutor?, telefoneCondutor?, modelo?, cor?, cpfCondutor?, formaPagamento?, caixaId?, portaoId? }
 // formaPagamento/caixaId só se aplicam (e são exigidos) quando o estacionamento
 // é cobra_modo='fixo' — preço fixo cobra sempre na entrada; por_tempo continua
 // cobrando só na saída.
@@ -21,6 +21,9 @@ export async function POST(req: NextRequest) {
     placa:            string
     nomeCondutor?:    string
     telefoneCondutor?: string
+    modelo?:          string
+    cor?:             string
+    cpfCondutor?:     string
     formaPagamento?:  'dinheiro' | 'pix' | 'cartao' | 'cortesia'
     caixaId?:         string
     portaoId?:        string
@@ -102,6 +105,9 @@ export async function POST(req: NextRequest) {
     p_forma_pagamento:   formaPagamento,
     p_caixa_id:          caixaId,
     p_portao_entrada_id: portaoEntradaId,
+    p_modelo:            body.modelo?.trim()      || null,
+    p_cor:               body.cor?.trim()          || null,
+    p_cpf_condutor:      body.cpfCondutor?.replace(/\D/g, '') || null,
   })
 
   if (rpcError) return NextResponse.json({ error: 'Erro ao registrar entrada' }, { status: 500 })

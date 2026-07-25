@@ -59,6 +59,14 @@ function formatBRL(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+function formatCPF(v: string): string {
+  const d = v.replace(/\D/g, '').slice(0, 11)
+  if (d.length <= 3) return d
+  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`
+}
+
 function tempoDecorrido(entradaEm: string): string {
   const ms  = Date.now() - new Date(entradaEm).getTime()
   const min = Math.max(0, Math.floor(ms / 60_000))
@@ -73,6 +81,9 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [placa, setPlaca] = useState('')
   const [nomeCondutor, setNomeCondutor] = useState('')
   const [telefoneCondutor, setTelefoneCondutor] = useState('')
+  const [modelo, setModelo] = useState('')
+  const [cor, setCor] = useState('')
+  const [cpfCondutor, setCpfCondutor] = useState('')
   const [registrando, setRegistrando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [formaPagamentoEntrada, setFormaPagamentoEntrada] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
@@ -168,6 +179,9 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           placa:             placa.trim(),
           nomeCondutor:      nomeCondutor.trim()     || undefined,
           telefoneCondutor:  telefoneCondutor.trim() || undefined,
+          modelo:            modelo.trim()           || undefined,
+          cor:               cor.trim()              || undefined,
+          cpfCondutor:       cpfCondutor.trim()       || undefined,
           formaPagamento:    precisaPagarEntrada ? formaPagamentoEntrada : undefined,
           caixaId:           precisaCaixaEntrada ? caixaId ?? undefined : undefined,
           portaoId:          precisaPortaoEntrada ? portaoEntradaSel : undefined,
@@ -175,7 +189,8 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? 'Erro ao registrar entrada'); return }
-      setPlaca(''); setNomeCondutor(''); setTelefoneCondutor(''); setFormaPagamentoEntrada('dinheiro')
+      setPlaca(''); setNomeCondutor(''); setTelefoneCondutor('')
+      setModelo(''); setCor(''); setCpfCondutor(''); setFormaPagamentoEntrada('dinheiro')
       await carregarSessoes()
     } catch {
       setErro('Erro ao registrar entrada. Tente novamente.')
@@ -363,6 +378,14 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                 onChange={e => setPlaca(e.target.value.toUpperCase())}
                 className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)', textTransform: 'uppercase' }} />
               <div className="grid grid-cols-2 gap-2">
+                <input type="text" placeholder="Modelo (opcional)" value={modelo} disabled={lotado}
+                  onChange={e => setModelo(e.target.value)}
+                  className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
+                <input type="text" placeholder="Cor (opcional)" value={cor} disabled={lotado}
+                  onChange={e => setCor(e.target.value)}
+                  className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
                 <input type="text" placeholder="Nome (opcional)" value={nomeCondutor} disabled={lotado}
                   onChange={e => setNomeCondutor(e.target.value)}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
@@ -370,6 +393,10 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                   onChange={e => setTelefoneCondutor(e.target.value)}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
               </div>
+              <input type="text" placeholder="CPF do condutor (opcional)" value={cpfCondutor} disabled={lotado}
+                inputMode="numeric" maxLength={14}
+                onChange={e => setCpfCondutor(formatCPF(e.target.value))}
+                className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
 
               {/* Preço fixo cobra na entrada */}
               {precisaPagarEntrada && (
