@@ -4,7 +4,9 @@ import { hasEventPermission, getStaffPortao } from '@/lib/eventPermissions'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 // POST /api/estacionamento/entrada
-// body: { estacionamentoId, placa, modelo, cor, telefoneCondutor, nomeCondutor?, cpfCondutor?, formaPagamento?, caixaId?, portaoId? }
+// body: { estacionamentoId, placa, modelo, cor, telefoneCondutor?, semWhatsapp?, nomeCondutor?, cpfCondutor?, formaPagamento?, caixaId?, portaoId? }
+// telefoneCondutor só é opcional quando semWhatsapp=true — o atendente confirmou
+// explicitamente que o condutor não vai informar o WhatsApp (avisado das consequências).
 // formaPagamento/caixaId só se aplicam (e são exigidos) quando o estacionamento
 // é cobra_modo='fixo' — preço fixo cobra sempre na entrada; por_tempo continua
 // cobrando só na saída.
@@ -21,7 +23,8 @@ export async function POST(req: NextRequest) {
     placa:            string
     modelo:           string
     cor:              string
-    telefoneCondutor: string
+    telefoneCondutor?: string
+    semWhatsapp?:     boolean
     nomeCondutor?:    string
     cpfCondutor?:     string
     formaPagamento?:  'dinheiro' | 'pix' | 'cartao' | 'cortesia'
@@ -29,10 +32,13 @@ export async function POST(req: NextRequest) {
     portaoId?:        string
   }
 
-  // Placa, modelo, cor e WhatsApp são obrigatórios — o WhatsApp é usado pra
-  // enviar o ticket de estacionamento pro condutor.
-  if (!body.estacionamentoId || !body.placa?.trim() || !body.modelo?.trim() || !body.cor?.trim() || !body.telefoneCondutor?.trim()) {
+  // Placa, modelo e cor são sempre obrigatórios. WhatsApp também é, a menos
+  // que o atendente tenha confirmado explicitamente o registro sem ele.
+  if (!body.estacionamentoId || !body.placa?.trim() || !body.modelo?.trim() || !body.cor?.trim()) {
     return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 })
+  }
+  if (!body.telefoneCondutor?.trim() && !body.semWhatsapp) {
+    return NextResponse.json({ error: 'Informe o WhatsApp do condutor ou confirme o registro sem ele' }, { status: 400 })
   }
 
   const admin = createServiceClient()

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Car, Plus, Loader2, Clock, Banknote, CreditCard, Smartphone, Gift, X, ArrowLeft, DoorOpen,
-  Wallet, Lock,
+  Wallet, Lock, AlertTriangle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
@@ -87,6 +87,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [registrando, setRegistrando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [formaPagamentoEntrada, setFormaPagamentoEntrada] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
+  const [modalSemWhats, setModalSemWhats] = useState(false)
   const [portaoEntradaSel, setPortaoEntradaSel] = useState('')
   const [portaoSaidaSel,   setPortaoSaidaSel]   = useState('')
   const [modalFecharCaixa, setModalFecharCaixa] = useState(false)
@@ -159,10 +160,10 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portoesEntradaDisponiveis])
 
-  const handleRegistrarEntrada = async () => {
+  const handleRegistrarEntrada = () => {
     if (!estacionamentoId || lotado) return
-    if (!placa.trim() || !modelo.trim() || !cor.trim() || !telefoneCondutor.trim()) {
-      setErro('Preencha placa, modelo, cor e WhatsApp do condutor.')
+    if (!placa.trim() || !modelo.trim() || !cor.trim()) {
+      setErro('Preencha placa, modelo e cor.')
       return
     }
     if (precisaPortaoEntrada && !portaoEntradaSel) {
@@ -173,6 +174,16 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
       setErro('Nenhum caixa aberto designado pra você. Peça pro organizador abrir e designar um caixa.')
       return
     }
+    if (!telefoneCondutor.trim()) {
+      setErro(null)
+      setModalSemWhats(true)
+      return
+    }
+    executarRegistroEntrada(false)
+  }
+
+  const executarRegistroEntrada = async (semWhatsapp: boolean) => {
+    setModalSemWhats(false)
     setRegistrando(true); setErro(null)
     try {
       const res = await fetch('/api/estacionamento/entrada', {
@@ -186,6 +197,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           modelo:            modelo.trim()           || undefined,
           cor:               cor.trim()              || undefined,
           cpfCondutor:       cpfCondutor.trim()       || undefined,
+          semWhatsapp,
           formaPagamento:    precisaPagarEntrada ? formaPagamentoEntrada : undefined,
           caixaId:           precisaCaixaEntrada ? caixaId ?? undefined : undefined,
           portaoId:          precisaPortaoEntrada ? portaoEntradaSel : undefined,
@@ -393,7 +405,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                 <input type="text" placeholder="Nome (opcional)" value={nomeCondutor} disabled={lotado}
                   onChange={e => setNomeCondutor(e.target.value)}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
-                <input type="tel" placeholder="WhatsApp *" value={telefoneCondutor} disabled={lotado}
+                <input type="tel" placeholder="WhatsApp (envio do ticket) *" value={telefoneCondutor} disabled={lotado}
                   onChange={e => setTelefoneCondutor(e.target.value)}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
               </div>
@@ -438,7 +450,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               )}
 
               <button type="button" onClick={handleRegistrarEntrada}
-                disabled={registrando || !placa.trim() || !modelo.trim() || !cor.trim() || !telefoneCondutor.trim() || lotado || (precisaCaixaEntrada && !caixaId) || (precisaPortaoEntrada && !portaoEntradaSel)}
+                disabled={registrando || !placa.trim() || !modelo.trim() || !cor.trim() || lotado || (precisaCaixaEntrada && !caixaId) || (precisaPortaoEntrada && !portaoEntradaSel)}
                 className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
                 style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
                 {registrando ? <Loader2 size={15} className="animate-spin" /> : <><Plus size={15} /> Registrar entrada</>}
@@ -584,6 +596,36 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
               {salvandoCaixa ? <Loader2 size={15} className="animate-spin" /> : 'Enviar contagem'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — confirmação de entrada sem WhatsApp do condutor */}
+      {modalSemWhats && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4" style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)' }}>
+              <AlertTriangle size={20} className="text-red-400" />
+            </div>
+            <p className="text-white text-sm font-semibold mb-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Registrar sem WhatsApp?
+            </p>
+            <p className="text-[#888] text-xs leading-relaxed mb-5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Sem o WhatsApp, o único comprovante do veículo será o ticket impresso na hora.
+              Se o cliente perder esse ticket, o carro pode ficar retido até confirmação do organizador.
+              Tem certeza que quer continuar sem o WhatsApp do condutor?
+            </p>
+            <div className="flex flex-col gap-2">
+              <button type="button" onClick={() => executarRegistroEntrada(true)} disabled={registrando}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
+                style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                {registrando ? <Loader2 size={15} className="animate-spin" /> : 'Continuar sem WhatsApp'}
+              </button>
+              <button type="button" onClick={() => setModalSemWhats(false)}
+                className="w-full text-center text-[#666] hover:text-[#999] text-xs py-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Voltar e preencher
+              </button>
+            </div>
           </div>
         </div>
       )}
