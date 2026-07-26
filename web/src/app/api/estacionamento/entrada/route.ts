@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { hasEventPermission, getStaffPortao } from '@/lib/eventPermissions'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
+import { salvarVeiculoNaAutosave } from '@/lib/autosave'
 
 // POST /api/estacionamento/entrada
 // body: { estacionamentoId, placa, modelo, cor, telefoneCondutor?, semWhatsapp?, nomeCondutor?, cpfCondutor?, formaPagamento?, caixaId?, portaoId? }
@@ -132,6 +133,14 @@ export async function POST(req: NextRequest) {
   if (!resultado?.sessao_id) {
     return NextResponse.json({ error: 'Erro ao registrar entrada' }, { status: 500 })
   }
+
+  // Enriquece a base da Autosave com o que o atendente registrou — best-effort,
+  // não bloqueia nem atrasa a resposta pro atendente.
+  salvarVeiculoNaAutosave({
+    placa:  body.placa.trim().toUpperCase(),
+    modelo: body.modelo.trim(),
+    cor:    body.cor.trim(),
+  })
 
   return NextResponse.json({ ok: true, sessaoId: resultado.sessao_id })
 }

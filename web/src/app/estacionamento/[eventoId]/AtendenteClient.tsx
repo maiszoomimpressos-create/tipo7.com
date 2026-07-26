@@ -84,6 +84,8 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [modelo, setModelo] = useState('')
   const [cor, setCor] = useState('')
   const [cpfCondutor, setCpfCondutor] = useState('')
+  const [buscandoPlaca, setBuscandoPlaca] = useState(false)
+  const [placaAutopreenchida, setPlacaAutopreenchida] = useState(false)
   const [registrando, setRegistrando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [formaPagamentoEntrada, setFormaPagamentoEntrada] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
@@ -160,6 +162,25 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portoesEntradaDisponiveis])
 
+  const handleBuscarPlaca = async () => {
+    const placaLimpa = placa.trim()
+    if (placaLimpa.length < 7) return
+    setBuscandoPlaca(true)
+    try {
+      const res = await fetch(`/api/estacionamento/placa-lookup?placa=${encodeURIComponent(placaLimpa)}`)
+      const data = await res.json()
+      if (data.found) {
+        if (data.modelo) setModelo(data.modelo)
+        if (data.cor)    setCor(data.cor)
+        setPlacaAutopreenchida(true)
+      }
+    } catch {
+      // Busca é best-effort — se falhar, atendente preenche manualmente.
+    } finally {
+      setBuscandoPlaca(false)
+    }
+  }
+
   const handleRegistrarEntrada = () => {
     if (!estacionamentoId || lotado) return
     if (!placa.trim() || !modelo.trim() || !cor.trim()) {
@@ -207,6 +228,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
       if (!res.ok) { setErro(data.error ?? 'Erro ao registrar entrada'); return }
       setPlaca(''); setNomeCondutor(''); setTelefoneCondutor('')
       setModelo(''); setCor(''); setCpfCondutor(''); setFormaPagamentoEntrada('dinheiro')
+      setPlacaAutopreenchida(false)
       await carregarSessoes()
     } catch {
       setErro('Erro ao registrar entrada. Tente novamente.')
@@ -390,9 +412,20 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                   </p>
                 )
               )}
-              <input type="text" placeholder="Placa *" value={placa} disabled={lotado}
-                onChange={e => setPlaca(e.target.value.toUpperCase())}
-                className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)', textTransform: 'uppercase' }} />
+              <div className="relative">
+                <input type="text" placeholder="Placa *" value={placa} disabled={lotado}
+                  onChange={e => { setPlaca(e.target.value.toUpperCase()); setPlacaAutopreenchida(false) }}
+                  onBlur={handleBuscarPlaca}
+                  className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)', textTransform: 'uppercase' }} />
+                {buscandoPlaca && (
+                  <Loader2 size={14} className="animate-spin absolute right-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
+                )}
+              </div>
+              {placaAutopreenchida && (
+                <p className="text-[10px] -mt-1 flex items-center gap-1" style={{ color: '#4ade80', fontFamily: 'var(--font-dm-sans)' }}>
+                  Modelo e cor preenchidos automaticamente — confira antes de registrar.
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <input type="text" placeholder="Modelo *" value={modelo} disabled={lotado}
                   onChange={e => setModelo(e.target.value)}
