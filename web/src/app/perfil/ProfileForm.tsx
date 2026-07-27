@@ -148,6 +148,85 @@ export function ProfileForm({ userId, initial }: Props) {
   const [success, setSuccess] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
 
+  // ── Estado: pré-preenchimento por CPF (Autosave) ──
+  // Mesma proteção do cadastro: mesmo logado, a pessoa poderia digitar o CPF
+  // de outra — então exige confirmação (telefone/email) antes de revelar dados.
+  const [cpfBuscando,      setCpfBuscando]      = useState(false)
+  const [cpfEncontrado,    setCpfEncontrado]    = useState(false)
+  const [dicaTelefone,     setDicaTelefone]     = useState<string | null>(null)
+  const [dicaEmail,        setDicaEmail]        = useState<string | null>(null)
+  const [valorConfirmacao, setValorConfirmacao] = useState('')
+  const [confirmando,      setConfirmando]      = useState(false)
+  const [erroConfirmacao,  setErroConfirmacao]  = useState<string | null>(null)
+
+  // Preenche só o que estiver vazio — nunca sobrescreve o que o usuário já tem.
+  const preencherSeVazio = (setter: (v: string) => void, atual: string, novo: string | null) => {
+    if (!atual.trim() && novo) setter(novo)
+  }
+
+  const handleBlurCpf = async (value: string) => {
+    setCpfEncontrado(false); setDicaTelefone(null); setDicaEmail(null)
+    setValorConfirmacao(''); setErroConfirmacao(null)
+    if (!isValidCPF(value)) return
+    setCpfBuscando(true)
+    try {
+      const res  = await fetch('/api/auth/cpf-lookup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cpf: value }),
+      })
+      const data = await res.json() as { found: boolean; telefoneMascarado: string | null; emailMascarado: string | null }
+      if (data.found) {
+        setCpfEncontrado(true)
+        setDicaTelefone(data.telefoneMascarado)
+        setDicaEmail(data.emailMascarado)
+      }
+    } catch {
+      // best-effort — segue preenchimento manual
+    } finally {
+      setCpfBuscando(false)
+    }
+  }
+
+  const handleConfirmarCpf = async () => {
+    if (!valorConfirmacao.trim()) return
+    setConfirmando(true); setErroConfirmacao(null)
+    try {
+      const res  = await fetch('/api/auth/cpf-confirmar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cpf, valor: valorConfirmacao }),
+      })
+      const data = await res.json() as {
+        ok: boolean
+        dados?: {
+          fullName: string | null; phone: string | null; birthDate: string | null; rg: string | null
+          zipCode: string | null; street: string | null; streetNumber: string | null
+          neighborhood: string | null; city: string | null; state: string | null; complement: string | null
+        }
+      }
+      if (!data.ok || !data.dados) {
+        setErroConfirmacao('Não conseguimos confirmar com esse dado. Confira e tente de novo.')
+        return
+      }
+      const d = data.dados
+      preencherSeVazio(setName,         name,         d.fullName)
+      preencherSeVazio(setPhone,        phone,        d.phone ? formatPhone(d.phone) : null)
+      preencherSeVazio(setRg,           rg,           d.rg)
+      preencherSeVazio(setBirthDate,    birthDate,    d.birthDate ? isoToDisplay(d.birthDate) : null)
+      preencherSeVazio(setZipCode,      zipCode,      d.zipCode ? formatCEP(d.zipCode) : null)
+      preencherSeVazio(setStreet,       street,       d.street)
+      preencherSeVazio(setStreetNumber, streetNumber, d.streetNumber)
+      preencherSeVazio(setNeighborhood, neighborhood, d.neighborhood)
+      preencherSeVazio(setCity,         city,         d.city)
+      preencherSeVazio(setUf,           uf,           d.state)
+      preencherSeVazio(setComplement,   complement,   d.complement)
+      setCpfEncontrado(false)
+    } catch {
+      setErroConfirmacao('Erro ao confirmar. Tente de novo.')
+    } finally {
+      setConfirmando(false)
+    }
+  }
+
   // ── Busca endereço pelo CEP via ViaCEP ──────────────────────────────────────
   const buscarCEP = useCallback(async (cepFormatado: string) => {
     const cepDigitos = cepFormatado.replace(/\D/g, '')
@@ -476,6 +555,69 @@ export function ProfileForm({ userId, initial }: Props) {
 
         <div className="p-6 flex flex-col gap-5">
 
+          {/* CPF — primeiro campo: pré-preenche o resto se achar cadastro na Autosave */}
+          <Field label="CPF" optional>
+            <div className="relative">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={cpf}
+                onChange={e => setCpf(formatCPF(e.target.value))}
+                onBlur={e => handleBlurCpf(e.target.value)}
+                placeholder="000.000.000-00"
+                autoComplete="off"
+                className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-[#E8B84B]/40 focus:bg-[#131313] placeholder:text-[#383838]"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              />
+              {cpfBuscando && (
+                <Loader2 size={14} className="animate-spin absolute right-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
+              )}
+            </div>
+          </Field>
+
+          {/* Confirmação — só aparece se achou um cadastro pra esse CPF */}
+          {cpfEncontrado && (
+            <div className="flex flex-col gap-2 p-3 rounded-xl -mt-2" style={{ background: '#111', border: '1px solid #222' }}>
+              <p className="text-[#999] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Encontramos um cadastro com esse CPF em outro sistema nosso.
+                Pra confirmar que é você, digite seu telefone ou email completo:
+              </p>
+              <p className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                {[dicaTelefone, dicaEmail].filter(Boolean).join(' ou ')}
+              </p>
+              <input
+                type="text"
+                value={valorConfirmacao}
+                onChange={e => setValorConfirmacao(e.target.value)}
+                placeholder="Seu telefone ou email completo"
+                className="w-full bg-[#0a0a0a] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              />
+              {erroConfirmacao && (
+                <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erroConfirmacao}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmarCpf}
+                  disabled={confirmando || !valorConfirmacao.trim()}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-40 flex items-center justify-center gap-2"
+                  style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  {confirmando ? <Loader2 size={15} className="animate-spin" /> : 'Confirmar e preencher'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCpfEncontrado(false)}
+                  className="px-4 text-[#555] hover:text-[#888] text-xs"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  Agora não
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Nome completo */}
           <Field label="Nome completo">
             <input
@@ -497,20 +639,6 @@ export function ProfileForm({ userId, initial }: Props) {
               onChange={e => setPhone(formatPhone(e.target.value))}
               placeholder="(00) 00000-0000"
               autoComplete="tel"
-              className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-[#E8B84B]/40 focus:bg-[#131313] placeholder:text-[#383838]"
-              style={{ fontFamily: 'var(--font-dm-sans)' }}
-            />
-          </Field>
-
-          {/* CPF */}
-          <Field label="CPF" optional>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={cpf}
-              onChange={e => setCpf(formatCPF(e.target.value))}
-              placeholder="000.000.000-00"
-              autoComplete="off"
               className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-[#E8B84B]/40 focus:bg-[#131313] placeholder:text-[#383838]"
               style={{ fontFamily: 'var(--font-dm-sans)' }}
             />
