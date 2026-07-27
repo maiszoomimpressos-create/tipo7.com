@@ -108,6 +108,10 @@ export function TrabalhoClient({
   const acessos = buildAcessos(eventoId, permissoes, isOwner)
     .filter(a => !(a.perm.includes('vender_ingresso') && caixaDesignado))
 
+  // Lista de tipos de ingresso só faz sentido pra quem vende (ou pro
+  // organizador). Quem é só estacionamento/scanner não precisa ver isso.
+  const podeVerIngressos = isOwner || permissoes.includes('vender_ingresso')
+
   const dataFormatada = eventoDate
     ? new Date(eventoDate).toLocaleDateString('pt-BR', {
         weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
@@ -385,8 +389,8 @@ export function TrabalhoClient({
           {/* Dashboard (mobile, só para owner) */}
           {isOwner && <TrabalhoDashboard eventoId={eventoId} />}
 
-          {/* Ingressos (mobile) */}
-          {ingressos.length > 0 && !isOwner && (
+          {/* Ingressos (mobile) — só pra quem vende */}
+          {ingressos.length > 0 && !isOwner && podeVerIngressos && (
             <IngressosSection ingressos={ingressos} />
           )}
         </div>
@@ -397,7 +401,7 @@ export function TrabalhoClient({
             <TrabalhoDashboard eventoId={eventoId} />
           ) : (
             <div className="flex flex-col gap-6">
-              {ingressos.length > 0 && <IngressosSection ingressos={ingressos} />}
+              {ingressos.length > 0 && podeVerIngressos && <IngressosSection ingressos={ingressos} />}
               {acessos.length === 0 && (
                 <div
                   className="flex flex-col items-center justify-center py-16 rounded-2xl text-center"
