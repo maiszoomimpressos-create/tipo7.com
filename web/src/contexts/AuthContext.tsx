@@ -13,6 +13,16 @@ interface SignUpData {
   phone?:    string  // opcional — pode preencher depois no perfil
   cpf?:      string  // opcional — obrigatório só na hora do pagamento
   birthDate?: string // opcional — formato ISO: YYYY-MM-DD
+  // Campos extras — só preenchidos quando vêm de um match confirmado na
+  // Autosave durante o cadastro (ver /api/auth/cpf-confirmar)
+  rg?:            string
+  zipCode?:       string
+  street?:        string
+  streetNumber?:  string
+  neighborhood?:  string
+  city?:          string
+  state?:         string
+  complement?:    string
 }
 
 interface AuthContextValue {
@@ -59,17 +69,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Cria uma nova conta e envia email de confirmação
   // Todos os dados extras são salvos via trigger no banco (tabela profiles)
-  const signUp = async ({ name, email, password, phone, cpf, birthDate }: SignUpData) => {
+  const signUp = async ({
+    name, email, password, phone, cpf, birthDate,
+    rg, zipCode, street, streetNumber, neighborhood, city, state, complement,
+  }: SignUpData) => {
     try {
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
-            full_name:  name,
-            phone:      phone     || null,
-            cpf:        cpf       || null,
-            birth_date: birthDate || null,
+            full_name:     name,
+            phone:         phone         || null,
+            cpf:           cpf           || null,
+            birth_date:    birthDate     || null,
+            rg:            rg            || null,
+            zip_code:      zipCode       || null,
+            street:        street        || null,
+            street_number: streetNumber  || null,
+            neighborhood:  neighborhood  || null,
+            city:          city          || null,
+            state:         state         || null,
+            complement:    complement    || null,
           },
           emailRedirectTo: `${location.origin}/auth/callback`,
         },

@@ -29,6 +29,23 @@ function montarModelo(v: AutosaveVehicle): string | null {
   return partes.length > 0 ? partes.join(' ') : null
 }
 
+export interface AutosaveCustomer {
+  external_id?:   string
+  full_name?:     string
+  email?:         string
+  cpf?:           string
+  phone?:         string
+  rg?:            string
+  birth_date?:    string
+  zip_code?:      string
+  street?:        string
+  street_number?: string
+  neighborhood?:  string
+  city?:          string
+  state?:         string
+  complement?:    string
+}
+
 async function fetchComTimeout(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), AUTOSAVE_TIMEOUT_MS)
@@ -62,6 +79,31 @@ export async function buscarVeiculoPorPlaca(placa: string): Promise<VeiculoConsu
     const exato = data.vehicles.find(v => v.plate?.toUpperCase() === placa.toUpperCase()) ?? data.vehicles[0]
 
     return { modelo: montarModelo(exato), cor: exato.color?.trim() || null }
+  } catch {
+    return null
+  }
+}
+
+// Consulta um cliente por CPF na Autosave — usado no cadastro do Tipo7 pra
+// pré-preencher dados de quem já tem cadastro em outro sistema do grupo.
+// Retorna null em qualquer falha (Autosave fora do ar, não configurada, CPF
+// não encontrado) — nunca lança erro.
+export async function buscarClientePorCpf(cpf: string): Promise<AutosaveCustomer | null> {
+  const baseUrl = process.env.AUTOSAVE_API_URL
+  const apiKey  = process.env.AUTOSAVE_API_KEY
+  if (!baseUrl || !apiKey) return null
+
+  try {
+    const res = await fetchComTimeout(
+      `${baseUrl}/customers?cpf=${encodeURIComponent(cpf)}`,
+      { headers: { 'x-api-key': apiKey } },
+    )
+    if (!res.ok) return null
+
+    const data = await res.json() as { found?: boolean; customer?: AutosaveCustomer }
+    if (!data.found || !data.customer) return null
+
+    return data.customer
   } catch {
     return null
   }

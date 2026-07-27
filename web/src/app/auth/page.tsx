@@ -129,6 +129,22 @@ export default function AuthPage() {
   const [regSuccess,    setRegSuccess]    = useState(false)
   const [termosAceitos, setTermosAceitos] = useState(false)
 
+  // ── Pré-preenchimento por CPF (Autosave) ────────────────────
+  // Ao digitar um CPF já conhecido em outro sistema do grupo, pede uma
+  // confirmação (telefone ou email completo) antes de liberar o resto.
+  const [cpfBuscando,       setCpfBuscando]       = useState(false)
+  const [cpfEncontrado,     setCpfEncontrado]     = useState(false)
+  const [dicaTelefone,      setDicaTelefone]      = useState<string | null>(null)
+  const [dicaEmail,         setDicaEmail]         = useState<string | null>(null)
+  const [valorConfirmacao,  setValorConfirmacao]  = useState('')
+  const [confirmando,       setConfirmando]       = useState(false)
+  const [erroConfirmacao,   setErroConfirmacao]   = useState<string | null>(null)
+  const [cpfConfirmado,     setCpfConfirmado]     = useState(false)
+  const [dadosExtras,       setDadosExtras]       = useState<{
+    rg: string; zipCode: string; street: string; streetNumber: string
+    neighborhood: string; city: string; state: string; complement: string
+  } | null>(null)
+
   // ── Validações em tempo real no cadastro ────────────────────
   const [fields, setFields] = useState<Record<string, FieldState>>({
     regName:      { touched: false, error: null },
@@ -242,6 +258,76 @@ export default function AuthPage() {
     }
   }
 
+  // Ao sair do campo CPF (se válido), consulta se já existe cadastro em
+  // outro sistema do grupo — só mostra uma dica mascarada, nunca o dado cru.
+  const handleBlurCpf = async (value: string) => {
+    touch('regCPF', value)
+    setCpfEncontrado(false); setDicaTelefone(null); setDicaEmail(null)
+    setValorConfirmacao(''); setErroConfirmacao(null); setCpfConfirmado(false); setDadosExtras(null)
+    if (!isValidCPF(value)) return
+    setCpfBuscando(true)
+    try {
+      const res  = await fetch('/api/auth/cpf-lookup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cpf: value }),
+      })
+      const data = await res.json() as { found: boolean; telefoneMascarado: string | null; emailMascarado: string | null }
+      if (data.found) {
+        setCpfEncontrado(true)
+        setDicaTelefone(data.telefoneMascarado)
+        setDicaEmail(data.emailMascarado)
+      }
+    } catch {
+      // Busca é best-effort — se falhar, segue cadastro manual normal.
+    } finally {
+      setCpfBuscando(false)
+    }
+  }
+
+  // Confirma posse do telefone/email pra liberar o preenchimento automático.
+  const handleConfirmarCpf = async () => {
+    if (!valorConfirmacao.trim()) return
+    setConfirmando(true); setErroConfirmacao(null)
+    try {
+      const res  = await fetch('/api/auth/cpf-confirmar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cpf: regCPF, valor: valorConfirmacao }),
+      })
+      const data = await res.json() as {
+        ok: boolean
+        dados?: {
+          fullName: string | null; email: string | null; phone: string | null; birthDate: string | null
+          rg: string | null; zipCode: string | null; street: string | null; streetNumber: string | null
+          neighborhood: string | null; city: string | null; state: string | null; complement: string | null
+        }
+      }
+      if (!data.ok || !data.dados) {
+        setErroConfirmacao('Não conseguimos confirmar com esse dado. Confira e tente de novo, ou preencha manualmente.')
+        return
+      }
+      const d = data.dados
+      if (d.fullName)  setRegName(d.fullName)
+      if (d.email)     setRegEmail(d.email)
+      if (d.phone)     setRegPhone(formatPhone(d.phone))
+      if (d.birthDate) setRegBirthDate(formatBirthDate(d.birthDate.split('-').reverse().join('')))
+      setDadosExtras({
+        rg:           d.rg           ?? '',
+        zipCode:      d.zipCode      ?? '',
+        street:       d.street       ?? '',
+        streetNumber: d.streetNumber ?? '',
+        neighborhood: d.neighborhood ?? '',
+        city:         d.city         ?? '',
+        state:        d.state        ?? '',
+        complement:   d.complement   ?? '',
+      })
+      setCpfConfirmado(true)
+    } catch {
+      setErroConfirmacao('Erro ao confirmar. Tente de novo.')
+    } finally {
+      setConfirmando(false)
+    }
+  }
+
   // ── Submit: Cadastro ────────────────────────────────────────
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -280,6 +366,16 @@ export default function AuthPage() {
         phone:     regPhone,
         cpf:       regCPF,
         birthDate: displayToISO(regBirthDate),
+        ...(dadosExtras && {
+          rg:           dadosExtras.rg           || undefined,
+          zipCode:      dadosExtras.zipCode      || undefined,
+          street:       dadosExtras.street       || undefined,
+          streetNumber: dadosExtras.streetNumber || undefined,
+          neighborhood: dadosExtras.neighborhood || undefined,
+          city:         dadosExtras.city         || undefined,
+          state:        dadosExtras.state        || undefined,
+          complement:   dadosExtras.complement   || undefined,
+        }),
       })
       if (error) {
         // Supabase às vezes retorna '{}' ou '[]' quando o erro é interno/trigger
@@ -535,6 +631,87 @@ export default function AuthPage() {
             {tab === 'cadastrar' && !regSuccess && (
               <form onSubmit={handleRegister} className="flex flex-col gap-4" noValidate>
 
+                {/* CPF — primeiro campo: se já existir cadastro em outro
+                    sistema do grupo, pede confirmação e pré-preenche o resto */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[#666] text-[11px] font-medium tracking-widest uppercase" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    CPF
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={regCPF}
+                      disabled={cpfConfirmado}
+                      onChange={e => setRegCPF(formatCPF(e.target.value))}
+                      onBlur={e => handleBlurCpf(e.target.value)}
+                      placeholder="000.000.000-00"
+                      autoComplete="off"
+                      className={cn(
+                        'w-full bg-[#111] border rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:bg-[#131313] placeholder:text-[#383838] disabled:opacity-60',
+                        fields.regCPF.touched && fields.regCPF.error
+                          ? 'border-red-500/50 focus:border-red-500/70'
+                          : fields.regCPF.touched && !fields.regCPF.error && regCPF
+                          ? 'border-green-500/30 focus:border-green-500/50'
+                          : 'border-[#222] focus:border-[#E8B84B]/40'
+                      )}
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}
+                    />
+                    {cpfBuscando && (
+                      <Loader2 size={14} className="animate-spin absolute right-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
+                    )}
+                  </div>
+                  {fields.regCPF.touched && fields.regCPF.error && (
+                    <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{fields.regCPF.error}</p>
+                  )}
+                  {cpfConfirmado && (
+                    <p className="text-[11px]" style={{ color: '#4ade80', fontFamily: 'var(--font-dm-sans)' }}>
+                      Encontramos seu cadastro e preenchemos seus dados automaticamente.
+                    </p>
+                  )}
+                </div>
+
+                {/* Confirmação — só aparece se achou um cadastro pra esse CPF */}
+                {cpfEncontrado && !cpfConfirmado && (
+                  <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: '#111', border: '1px solid #222' }}>
+                    <p className="text-[#999] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Encontramos um cadastro com esse CPF em outro sistema nosso.
+                      Pra confirmar que é você, digite seu telefone ou email completo:
+                    </p>
+                    <p className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {[dicaTelefone, dicaEmail].filter(Boolean).join(' ou ')}
+                    </p>
+                    <input
+                      type="text"
+                      value={valorConfirmacao}
+                      onChange={e => setValorConfirmacao(e.target.value)}
+                      placeholder="Seu telefone ou email completo"
+                      className="w-full bg-[#0a0a0a] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}
+                    />
+                    {erroConfirmacao && (
+                      <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erroConfirmacao}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleConfirmarCpf}
+                      disabled={confirmando || !valorConfirmacao.trim()}
+                      className="w-full py-2.5 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-40 flex items-center justify-center gap-2"
+                      style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}
+                    >
+                      {confirmando ? <Loader2 size={15} className="animate-spin" /> : 'Confirmar'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setCpfEncontrado(false); setDicaTelefone(null); setDicaEmail(null) }}
+                      className="text-[#555] hover:text-[#888] text-xs"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}
+                    >
+                      Prefiro preencher manualmente
+                    </button>
+                  </div>
+                )}
+
                 {/* Nome completo */}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[#666] text-[11px] font-medium tracking-widest uppercase" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -615,34 +792,6 @@ export default function AuthPage() {
                   />
                   {fields.regPhone.touched && fields.regPhone.error && (
                     <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{fields.regPhone.error}</p>
-                  )}
-                </div>
-
-                {/* CPF — obrigatório */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[#666] text-[11px] font-medium tracking-widest uppercase" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    CPF
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={regCPF}
-                    onChange={e => setRegCPF(formatCPF(e.target.value))}
-                    onBlur={e => touch('regCPF', e.target.value)}
-                    placeholder="000.000.000-00"
-                    autoComplete="off"
-                    className={cn(
-                      'w-full bg-[#111] border rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:bg-[#131313] placeholder:text-[#383838]',
-                      fields.regCPF.touched && fields.regCPF.error
-                        ? 'border-red-500/50 focus:border-red-500/70'
-                        : fields.regCPF.touched && !fields.regCPF.error && regCPF
-                        ? 'border-green-500/30 focus:border-green-500/50'
-                        : 'border-[#222] focus:border-[#E8B84B]/40'
-                    )}
-                    style={{ fontFamily: 'var(--font-dm-sans)' }}
-                  />
-                  {fields.regCPF.touched && fields.regCPF.error && (
-                    <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{fields.regCPF.error}</p>
                   )}
                 </div>
 
