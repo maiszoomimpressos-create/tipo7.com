@@ -70,9 +70,11 @@ const PERMISSOES_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_sai
 function SeletorPermissoes({
   selecionadas,
   onChange,
+  temEstacionamento,
 }: {
   selecionadas: string[]
   onChange: (p: string[]) => void
+  temEstacionamento: boolean
 }) {
   function toggle(value: string) {
     onChange(
@@ -82,9 +84,16 @@ function SeletorPermissoes({
     )
   }
 
+  // Permissões de estacionamento só aparecem se o evento tiver estacionamento
+  // configurado — é um produto à parte. Sem pátio cadastrado, nem faz sentido
+  // atribuir. (Futuro: trocar o gatilho por "contratou o plano de estacionamento".)
+  const permissoesVisiveis = PERMISSOES.filter(
+    p => temEstacionamento || !PERMISSOES_ESTACIONAMENTO.includes(p.value)
+  )
+
   return (
     <div className="grid grid-cols-2 gap-1.5">
-      {PERMISSOES.map(p => (
+      {permissoesVisiveis.map(p => (
         <button
           key={p.value}
           type="button"
@@ -568,7 +577,7 @@ export function PainelEquipe({ eventoId }: Props) {
                   className="w-full bg-[#0d0d0d] border border-[#222] rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
                   style={{ fontFamily: 'var(--font-dm-sans)' }}
                 />
-                <SeletorPermissoes selecionadas={permsFuncao} onChange={setPermsFuncao} />
+                <SeletorPermissoes selecionadas={permsFuncao} onChange={setPermsFuncao} temEstacionamento={estacionamentosList.length > 0} />
                 {errFuncao && (
                   <p className="text-red-400 text-xs flex items-center gap-1">
                     <AlertTriangle size={11} /> {errFuncao}

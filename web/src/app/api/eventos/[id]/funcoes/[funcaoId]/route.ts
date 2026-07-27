@@ -9,6 +9,21 @@ async function assertOwner(userId: string, eventoId: string) {
   return org?.owner_id === userId
 }
 
+const PERMISSOES_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_saida']
+
+// Estacionamento é produto à parte: sem pátio cadastrado, remove as permissões
+// de estacionamento (impede burlar por request forjado). (Futuro: "plano".)
+async function filtrarPorProduto(eventoId: string, permissoes: string[]): Promise<string[]> {
+  if (!permissoes?.some(p => PERMISSOES_ESTACIONAMENTO.includes(p))) return permissoes ?? []
+  const admin = createServiceClient()
+  const { count } = await admin
+    .from('estacionamentos')
+    .select('id', { count: 'exact', head: true })
+    .eq('event_id', eventoId)
+  if ((count ?? 0) > 0) return permissoes
+  return permissoes.filter(p => !PERMISSOES_ESTACIONAMENTO.includes(p))
+}
+
 // DELETE — remove função (só se não houver membros ativos com ela)
 export async function DELETE(
   _req: NextRequest,
@@ -58,10 +73,11 @@ export async function PATCH(
   }
 
   if (permissoes !== undefined) {
+    const permsValidas = await filtrarPorProduto(id, permissoes)
     await admin.from('event_position_permissions').delete().eq('event_position_id', funcaoId)
-    if (permissoes.length > 0) {
+    if (permsValidas.length > 0) {
       await admin.from('event_position_permissions').insert(
-        permissoes.map(p => ({ event_position_id: funcaoId, permission: p }))
+        permsValidas.map(p => ({ event_position_id: funcaoId, permission: p }))
       )
     }
   }

@@ -9,6 +9,22 @@ async function assertOwner(userId: string, eventoId: string) {
   return org?.owner_id === userId
 }
 
+const PERMISSOES_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_saida']
+
+// Estacionamento é produto à parte: sem pátio cadastrado no evento, remove
+// as permissões de estacionamento — impede atribuir por request forjado ou
+// via template importado. (Futuro: trocar por "contratou o plano".)
+async function filtrarPorProduto(eventoId: string, permissoes: string[]): Promise<string[]> {
+  if (!permissoes?.some(p => PERMISSOES_ESTACIONAMENTO.includes(p))) return permissoes ?? []
+  const admin = createServiceClient()
+  const { count } = await admin
+    .from('estacionamentos')
+    .select('id', { count: 'exact', head: true })
+    .eq('event_id', eventoId)
+  if ((count ?? 0) > 0) return permissoes
+  return permissoes.filter(p => !PERMISSOES_ESTACIONAMENTO.includes(p))
+}
+
 // GET — lista funções do evento com suas permissões
 export async function GET(
   _req: NextRequest,
@@ -46,6 +62,8 @@ export async function POST(
 
   const admin = createServiceClient()
 
+  const permsValidas = await filtrarPorProduto(id, permissoes)
+
   const { data: funcao, error } = await admin
     .from('event_positions')
     .insert({ event_id: id, name: nome.trim() })
@@ -54,9 +72,9 @@ export async function POST(
 
   if (error || !funcao) return NextResponse.json({ error: 'Erro ao criar função' }, { status: 500 })
 
-  if (permissoes?.length > 0) {
+  if (permsValidas.length > 0) {
     await admin.from('event_position_permissions').insert(
-      permissoes.map(p => ({ event_position_id: funcao.id, permission: p }))
+      permsValidas.map(p => ({ event_position_id: funcao.id, permission: p }))
     )
   }
 
