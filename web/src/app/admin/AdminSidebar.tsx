@@ -6,6 +6,7 @@ import Link from 'next/link'
 import {
   LayoutDashboard, UsersRound, Users, UserCheck, Building2, Calendar, DollarSign,
   Shield, FileText, ChevronDown, Landmark, ReceiptText, Layers, Clapperboard, Megaphone,
+  Globe, Ticket, Tent,
 } from 'lucide-react'
 import type { AdminRole } from '@/lib/adminAuth'
 
@@ -31,8 +32,11 @@ const PLAYERS_SUB = [
 ]
 
 const FIN_SUB = [
-  { href: '/admin/financeiro',        label: 'Tarifas', icon: ReceiptText },
-  { href: '/admin/financeiro/bancos', label: 'Bancos',  icon: Landmark    },
+  { href: '/admin/financeiro',                  label: 'Tarifas',          icon: ReceiptText },
+  { href: '/admin/financeiro/ingressos-online', label: 'Ingressos on-line', icon: Globe       },
+  { href: '/admin/financeiro/bilheteria',       label: 'Bilheteria',       icon: Ticket      },
+  { href: '/admin/financeiro/tenda',            label: 'Tenda',            icon: Tent        },
+  { href: '/admin/financeiro/bancos',           label: 'Bancos',           icon: Landmark    },
 ]
 
 interface Props {
