@@ -242,8 +242,10 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
 
                 {/* Tarifas com submenu aninhado */}
                 <div>
-                  <div
-                    className="flex items-center rounded-xl text-xs transition-all"
+                  <button
+                    type="button"
+                    onClick={() => setTarifasExpanded(v => !v)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all"
                     style={{
                       background: tarifasOpen ? `${ACCENT}12` : 'transparent',
                       color:      tarifasOpen ? ACCENT : '#555',
@@ -251,23 +253,14 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
                       fontWeight: tarifasOpen ? 600 : 400,
                     }}
                   >
-                    <Link href="/admin/financeiro/ingressos-online" className="flex-1 flex items-center gap-2.5 px-3 py-2">
-                      <ReceiptText size={12} />
-                      Tarifas
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => setTarifasExpanded(v => !v)}
-                      className="pr-3 pl-1 py-2"
-                      aria-label="Expandir Tarifas"
-                    >
-                      <ChevronDown
-                        size={12}
-                        className="transition-transform duration-200"
-                        style={{ transform: tarifasExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                      />
-                    </button>
-                  </div>
+                    <ReceiptText size={12} />
+                    <span className="flex-1 text-left">Tarifas</span>
+                    <ChevronDown
+                      size={12}
+                      className="transition-transform duration-200"
+                      style={{ transform: tarifasExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                    />
+                  </button>
 
                   {tarifasExpanded && (
                     <div className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
