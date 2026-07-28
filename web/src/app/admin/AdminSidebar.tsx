@@ -243,7 +243,7 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
                       fontWeight: tarifasOpen ? 600 : 400,
                     }}
                   >
-                    <Link href="/admin/financeiro" className="flex-1 flex items-center gap-2.5 px-3 py-2">
+                    <Link href="/admin/financeiro/ingressos-online" className="flex-1 flex items-center gap-2.5 px-3 py-2">
                       <ReceiptText size={12} />
                       Tarifas
                     </Link>
