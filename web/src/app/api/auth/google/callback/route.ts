@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 export async function GET(req: NextRequest) {
+  const origin = process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin
   const { searchParams } = req.nextUrl
   const code  = searchParams.get('code')
   const state = searchParams.get('state')
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
   const next        = req.cookies.get('google_oauth_next')?.value ?? '/'
 
   const fail = (msg: string) =>
-    NextResponse.redirect(new URL(`/auth?erro=${msg}`, req.url))
+    NextResponse.redirect(new URL(`/auth?erro=${msg}`, origin))
 
   if (error || !code)               return fail('google_cancelled')
   if (!storedState || storedState !== state) return fail('csrf')
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
       client_id:     process.env.GOOGLE_CLIENT_ID!,
       client_secret: process.env.GOOGLE_CLIENT_SECRET!,
       code,
-      redirect_uri:  `${process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin}/api/auth/google/callback`,
+      redirect_uri:  `${origin}/api/auth/google/callback`,
       grant_type:    'authorization_code',
     }),
   })
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
 
   if (signInError) return fail('supabase')
 
-  const response = NextResponse.redirect(new URL(next, req.url))
+  const response = NextResponse.redirect(new URL(next, origin))
   response.cookies.delete('google_oauth_state')
   response.cookies.delete('google_oauth_next')
   return response
