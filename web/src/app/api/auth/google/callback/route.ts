@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
       client_id:     process.env.GOOGLE_CLIENT_ID!,
       client_secret: process.env.GOOGLE_CLIENT_SECRET!,
       code,
-      redirect_uri:  `${req.nextUrl.origin}/api/auth/google/callback`,
+      redirect_uri:  `${process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin}/api/auth/google/callback`,
       grant_type:    'authorization_code',
     }),
   })
