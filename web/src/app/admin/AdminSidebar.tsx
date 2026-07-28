@@ -32,11 +32,13 @@ const PLAYERS_SUB = [
 ]
 
 const FIN_SUB = [
-  { href: '/admin/financeiro',                  label: 'Tarifas',          icon: ReceiptText },
-  { href: '/admin/financeiro/ingressos-online', label: 'Ingressos on-line', icon: Globe       },
-  { href: '/admin/financeiro/bilheteria',       label: 'Bilheteria',       icon: Ticket      },
-  { href: '/admin/financeiro/tenda',            label: 'Tenda',            icon: Tent        },
-  { href: '/admin/financeiro/bancos',           label: 'Bancos',           icon: Landmark    },
+  { href: '/admin/financeiro/bancos', label: 'Bancos', icon: Landmark },
+]
+
+const TARIFAS_SUB = [
+  { href: '/admin/financeiro/ingressos-online', label: 'Ingressos on-line', icon: Globe  },
+  { href: '/admin/financeiro/bilheteria',       label: 'Bilheteria',       icon: Ticket },
+  { href: '/admin/financeiro/tenda',            label: 'Tenda',            icon: Tent   },
 ]
 
 interface Props {
@@ -51,10 +53,12 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
   const playersOpen = pathname.startsWith('/admin/usuarios') || pathname.startsWith('/admin/promotores') || pathname.startsWith('/admin/estabelecimentos')
   const entOpen     = pathname.startsWith('/admin/eventos') || pathname.startsWith('/admin/atributos') || pathname.startsWith('/admin/funcoes')
   const finOpen     = pathname.startsWith('/admin/financeiro')
+  const tarifasOpen = TARIFAS_SUB.some(item => pathname.startsWith(item.href)) || pathname === '/admin/financeiro'
 
   const [playersExpanded, setPlayersExpanded] = useState(playersOpen)
   const [entExpanded,     setEntExpanded]     = useState(entOpen)
   const [finExpanded,     setFinExpanded]     = useState(finOpen)
+  const [tarifasExpanded, setTarifasExpanded] = useState(tarifasOpen)
 
   function canSee(perm: string | null) {
     if (!perm) return true
@@ -227,6 +231,61 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
 
             {finExpanded && (
               <div className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
+
+                {/* Tarifas com submenu aninhado */}
+                <div>
+                  <div
+                    className="flex items-center rounded-xl text-xs transition-all"
+                    style={{
+                      background: tarifasOpen ? `${ACCENT}12` : 'transparent',
+                      color:      tarifasOpen ? ACCENT : '#555',
+                      fontFamily: 'var(--font-dm-sans)',
+                      fontWeight: tarifasOpen ? 600 : 400,
+                    }}
+                  >
+                    <Link href="/admin/financeiro" className="flex-1 flex items-center gap-2.5 px-3 py-2">
+                      <ReceiptText size={12} />
+                      Tarifas
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setTarifasExpanded(v => !v)}
+                      className="pr-3 pl-1 py-2"
+                      aria-label="Expandir Tarifas"
+                    >
+                      <ChevronDown
+                        size={12}
+                        className="transition-transform duration-200"
+                        style={{ transform: tarifasExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                      />
+                    </button>
+                  </div>
+
+                  {tarifasExpanded && (
+                    <div className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
+                      {TARIFAS_SUB.map(({ href, label, icon: Icon }) => {
+                        const active = pathname.startsWith(href)
+                        return (
+                          <Link
+                            key={href}
+                            href={href}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] transition-all"
+                            style={{
+                              background: active ? `${ACCENT}12` : 'transparent',
+                              color:      active ? ACCENT : '#555',
+                              fontFamily: 'var(--font-dm-sans)',
+                              fontWeight: active ? 600 : 400,
+                            }}
+                          >
+                            <Icon size={11} />
+                            {label}
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 {FIN_SUB.map(({ href, label, icon: Icon }) => {
                   const active = pathname === href
                   return (
