@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -59,6 +59,14 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
   const [entExpanded,     setEntExpanded]     = useState(entOpen)
   const [finExpanded,     setFinExpanded]     = useState(finOpen)
   const [tarifasExpanded, setTarifasExpanded] = useState(tarifasOpen)
+
+  // Navegação client-side não remonta a sidebar — sem isso, entrar numa
+  // seção pelo link não expande o grupo automaticamente (só o destaque
+  // de cor mudava, o submenu continuava fechado até clicar na seta).
+  useEffect(() => { if (playersOpen) setPlayersExpanded(true) }, [playersOpen])
+  useEffect(() => { if (entOpen)     setEntExpanded(true)     }, [entOpen])
+  useEffect(() => { if (finOpen)     setFinExpanded(true)     }, [finOpen])
+  useEffect(() => { if (tarifasOpen) setTarifasExpanded(true) }, [tarifasOpen])
 
   function canSee(perm: string | null) {
     if (!perm) return true
