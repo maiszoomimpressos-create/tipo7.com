@@ -69,6 +69,16 @@ export default async function IngressosOnlinePage() {
       <FinanceiroClient
         defaultFeePct={Number(settingsMap['default_fee_pct'] ?? 10)}
         minFeePct={Number(settingsMap['min_fee_pct'] ?? 0)}
+        extraFee1={{
+          label: settingsMap['extra_fee_1_label'] ?? '',
+          value: settingsMap['extra_fee_1_value'] ?? '0',
+          type:  (settingsMap['extra_fee_1_type'] as 'fixed' | 'percent') ?? 'percent',
+        }}
+        extraFee2={{
+          label: settingsMap['extra_fee_2_label'] ?? '',
+          value: settingsMap['extra_fee_2_value'] ?? '0',
+          type:  (settingsMap['extra_fee_2_type'] as 'fixed' | 'percent') ?? 'percent',
+        }}
         feePixPct={Number(settingsMap['fee_pct_pix'] ?? 0.99)}
         feeCredito1xPct={Number(settingsMap['fee_pct_credito_1x'] ?? 4.98)}
         feeCredito6xPct={Number(settingsMap['fee_pct_credito_6x'] ?? 5.98)}

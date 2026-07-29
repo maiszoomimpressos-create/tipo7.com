@@ -1,6 +1,7 @@
-import { redirect }            from 'next/navigation'
-import { createClient }        from '@/lib/supabase/server'
-import { getAdminMember, can } from '@/lib/adminAuth'
+import { redirect }              from 'next/navigation'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getAdminMember, can }   from '@/lib/adminAuth'
+import { TarifaModuloClient }    from '@/components/admin/TarifaModuloClient'
 
 export default async function BilheteriaFinanceiroPage() {
   const supabase = await createClient()
@@ -9,6 +10,12 @@ export default async function BilheteriaFinanceiroPage() {
 
   const member = await getAdminMember(user.id)
   if (!member || !can(member, 'gerenciar_financeiro')) redirect('/admin')
+
+  const admin = createServiceClient()
+  const { data: settings } = await admin.from('platform_settings').select('key, value')
+
+  const settingsMap: Record<string, string> = {}
+  for (const s of settings ?? []) settingsMap[s.key] = s.value
 
   return (
     <div className="p-8 max-w-2xl">
@@ -21,12 +28,22 @@ export default async function BilheteriaFinanceiroPage() {
         </p>
       </div>
 
-      <div
-        className="rounded-2xl p-6 text-sm text-[#666]"
-        style={{ background: '#0f0f0f', border: '1px solid #1c1c1c', fontFamily: 'var(--font-dm-sans)' }}
-      >
-        Em construção — em breve as configurações específicas de bilheteria ficam aqui.
-      </div>
+      <TarifaModuloClient
+        keyPrefix="bilheteria_"
+        defaultFeePct={Number(settingsMap['bilheteria_default_fee_pct'] ?? 10)}
+        minFeePct={Number(settingsMap['bilheteria_min_fee_pct'] ?? 0)}
+        extraFee1={{
+          label: settingsMap['bilheteria_extra_fee_1_label'] ?? '',
+          value: settingsMap['bilheteria_extra_fee_1_value'] ?? '0',
+          type:  (settingsMap['bilheteria_extra_fee_1_type'] as 'fixed' | 'percent') ?? 'percent',
+        }}
+        extraFee2={{
+          label: settingsMap['bilheteria_extra_fee_2_label'] ?? '',
+          value: settingsMap['bilheteria_extra_fee_2_value'] ?? '0',
+          type:  (settingsMap['bilheteria_extra_fee_2_type'] as 'fixed' | 'percent') ?? 'percent',
+        }}
+        descricao="Percentual padrão cobrado pela plataforma sobre as vendas feitas na bilheteria."
+      />
     </div>
   )
 }

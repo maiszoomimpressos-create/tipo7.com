@@ -2,12 +2,15 @@
 
 import { useState } from 'react'
 import { Check, Loader2, DollarSign, Percent } from 'lucide-react'
+import { TaxaPadraoCard, TaxaMinimaCard, type ExtraFeeState } from '@/components/admin/TaxaCards'
 
 const ACCENT = '#E8B84B'
 
 interface Props {
   defaultFeePct:    number
   minFeePct:        number
+  extraFee1:        ExtraFeeState
+  extraFee2:        ExtraFeeState
   feePixPct:        number
   feeCredito1xPct:  number
   feeCredito6xPct:  number
@@ -17,12 +20,14 @@ interface Props {
 }
 
 export function FinanceiroClient({
-  defaultFeePct, minFeePct,
+  defaultFeePct, minFeePct, extraFee1, extraFee2,
   feePixPct, feeCredito1xPct, feeCredito6xPct, feeCredito12xPct,
   totalConectados, mediaFee,
 }: Props) {
   const [fee,           setFee]           = useState(String(defaultFeePct))
   const [minFee,        setMinFee]        = useState(String(minFeePct))
+  const [extra1,        setExtra1]        = useState<ExtraFeeState>(extraFee1)
+  const [extra2,        setExtra2]        = useState<ExtraFeeState>(extraFee2)
   const [pixPct,        setPixPct]        = useState(String(feePixPct))
   const [cred1xPct,     setCred1xPct]     = useState(String(feeCredito1xPct))
   const [cred6xPct,     setCred6xPct]     = useState(String(feeCredito6xPct))
@@ -40,8 +45,14 @@ export function FinanceiroClient({
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          default_fee_pct: parseFloat(fee),
-          min_fee_pct:     parseFloat(minFee),
+          default_fee_pct:    parseFloat(fee),
+          min_fee_pct:        parseFloat(minFee),
+          extra_fee_1_label:  extra1.label,
+          extra_fee_1_value:  parseFloat(extra1.value || '0'),
+          extra_fee_1_type:   extra1.type,
+          extra_fee_2_label:  extra2.label,
+          extra_fee_2_value:  parseFloat(extra2.value || '0'),
+          extra_fee_2_type:   extra2.type,
         }),
       })
       setSaved(true)
@@ -101,53 +112,15 @@ export function FinanceiroClient({
         </div>
       </div>
 
-      {/* Configuração da taxa padrão */}
-      <div className="rounded-2xl p-6" style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
-        <p className="text-white text-sm font-medium mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          Taxa padrão da plataforma
-        </p>
-        <p className="text-[#444] text-xs mb-5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          Aplicada automaticamente para novos promotores que conectarem o Mercado Pago.
-          Não altera taxas já configuradas individualmente.
-        </p>
-
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <input
-              type="number" min="0" max="100" step="0.5"
-              value={fee} onChange={e => setFee(e.target.value)}
-              className="w-28 bg-[#111] border border-[#222] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40"
-              style={{ fontFamily: 'var(--font-dm-sans)' }}
-            />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#555] text-sm">%</span>
-          </div>
-        </div>
-      </div>
+      {/* Configuração da taxa padrão + taxas específicas */}
+      <TaxaPadraoCard
+        fee={fee} setFee={setFee}
+        extra1={extra1} setExtra1={setExtra1}
+        extra2={extra2} setExtra2={setExtra2}
+      />
 
       {/* Taxa mínima mesmo com desconto */}
-      <div className="rounded-2xl p-6" style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
-        <p className="text-white text-sm font-medium mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          Taxa mínima garantida
-        </p>
-        <p className="text-[#444] text-xs mb-5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          Mesmo com isenção total nas regras abaixo, a Tipo7 nunca cobra menos que este valor.
-          Use 0% para isenção total real. Exemplo: 1% garante cobertura mínima dos custos.
-        </p>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <input
-              type="number" min="0" max="100" step="0.5"
-              value={minFee} onChange={e => setMinFee(e.target.value)}
-              className="w-28 bg-[#111] border border-[#222] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40"
-              style={{ fontFamily: 'var(--font-dm-sans)' }}
-            />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#555] text-sm">%</span>
-          </div>
-          <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            {parseFloat(minFee) === 0 ? 'Isenção total permitida' : `Mínimo de ${minFee}% sempre cobrado`}
-          </p>
-        </div>
-      </div>
+      <TaxaMinimaCard minFee={minFee} setMinFee={setMinFee} />
 
       {/* Botão salvar taxas da plataforma */}
       <div className="flex justify-end">

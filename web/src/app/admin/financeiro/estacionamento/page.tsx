@@ -3,10 +3,10 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAdminMember, can }   from '@/lib/adminAuth'
 import { TarifaModuloClient }    from '@/components/admin/TarifaModuloClient'
 
-export default async function TendaFinanceiroPage() {
+export default async function EstacionamentoFinanceiroPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth?next=/admin/financeiro/tenda')
+  if (!user) redirect('/auth?next=/admin/financeiro/estacionamento')
 
   const member = await getAdminMember(user.id)
   if (!member || !can(member, 'gerenciar_financeiro')) redirect('/admin')
@@ -21,28 +21,28 @@ export default async function TendaFinanceiroPage() {
     <div className="p-8 max-w-2xl">
       <div className="mb-8">
         <h1 className="text-2xl text-white font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
-          Tenda
+          Estacionamento
         </h1>
         <p className="text-[#444] text-sm mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          Tarifas e políticas de vendas na tenda
+          Tarifas e políticas de cobrança do estacionamento
         </p>
       </div>
 
       <TarifaModuloClient
-        keyPrefix="tenda_"
-        defaultFeePct={Number(settingsMap['tenda_default_fee_pct'] ?? 10)}
-        minFeePct={Number(settingsMap['tenda_min_fee_pct'] ?? 0)}
+        keyPrefix="estacionamento_"
+        defaultFeePct={Number(settingsMap['estacionamento_default_fee_pct'] ?? 10)}
+        minFeePct={Number(settingsMap['estacionamento_min_fee_pct'] ?? 0)}
         extraFee1={{
-          label: settingsMap['tenda_extra_fee_1_label'] ?? '',
-          value: settingsMap['tenda_extra_fee_1_value'] ?? '0',
-          type:  (settingsMap['tenda_extra_fee_1_type'] as 'fixed' | 'percent') ?? 'percent',
+          label: settingsMap['estacionamento_extra_fee_1_label'] ?? '',
+          value: settingsMap['estacionamento_extra_fee_1_value'] ?? '0',
+          type:  (settingsMap['estacionamento_extra_fee_1_type'] as 'fixed' | 'percent') ?? 'percent',
         }}
         extraFee2={{
-          label: settingsMap['tenda_extra_fee_2_label'] ?? '',
-          value: settingsMap['tenda_extra_fee_2_value'] ?? '0',
-          type:  (settingsMap['tenda_extra_fee_2_type'] as 'fixed' | 'percent') ?? 'percent',
+          label: settingsMap['estacionamento_extra_fee_2_label'] ?? '',
+          value: settingsMap['estacionamento_extra_fee_2_value'] ?? '0',
+          type:  (settingsMap['estacionamento_extra_fee_2_type'] as 'fixed' | 'percent') ?? 'percent',
         }}
-        descricao="Percentual padrão cobrado pela plataforma sobre as vendas feitas na tenda."
+        descricao="Percentual padrão cobrado pela plataforma sobre as vendas do estacionamento."
       />
     </div>
   )
