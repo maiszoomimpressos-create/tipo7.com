@@ -31,6 +31,7 @@ export default async function EstacionamentoFinanceiroPage() {
       <TarifaModuloClient
         keyPrefix="estacionamento_"
         defaultFeePct={Number(settingsMap['estacionamento_default_fee_pct'] ?? 10)}
+        defaultFeeType={(settingsMap['estacionamento_default_fee_type'] as 'fixed' | 'percent') ?? 'percent'}
         minFeePct={Number(settingsMap['estacionamento_min_fee_pct'] ?? 0)}
         extraFee1={{
           label: settingsMap['estacionamento_extra_fee_1_label'] ?? '',

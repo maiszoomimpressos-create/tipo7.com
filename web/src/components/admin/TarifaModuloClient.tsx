@@ -2,21 +2,22 @@
 
 import { useState } from 'react'
 import { Check, Loader2 } from 'lucide-react'
-import { TaxaPadraoCard, TaxaMinimaCard, type ExtraFeeState } from './TaxaCards'
+import { TaxaPadraoCard, TaxaMinimaCard, type ExtraFeeState, type FeeValueState } from './TaxaCards'
 
 const ACCENT = '#E8B84B'
 
 interface Props {
   keyPrefix:      string
   defaultFeePct:  number
+  defaultFeeType: 'fixed' | 'percent'
   minFeePct:      number
   extraFee1:      ExtraFeeState
   extraFee2:      ExtraFeeState
   descricao?:     string
 }
 
-export function TarifaModuloClient({ keyPrefix, defaultFeePct, minFeePct, extraFee1, extraFee2, descricao }: Props) {
-  const [fee,    setFee]    = useState(String(defaultFeePct))
+export function TarifaModuloClient({ keyPrefix, defaultFeePct, defaultFeeType, minFeePct, extraFee1, extraFee2, descricao }: Props) {
+  const [fee,    setFee]    = useState<FeeValueState>({ value: String(defaultFeePct), type: defaultFeeType })
   const [minFee, setMinFee] = useState(String(minFeePct))
   const [extra1, setExtra1] = useState<ExtraFeeState>(extraFee1)
   const [extra2, setExtra2] = useState<ExtraFeeState>(extraFee2)
@@ -31,7 +32,8 @@ export function TarifaModuloClient({ keyPrefix, defaultFeePct, minFeePct, extraF
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          [`${keyPrefix}default_fee_pct`]:   parseFloat(fee),
+          [`${keyPrefix}default_fee_pct`]:   parseFloat(fee.value || '0'),
+          [`${keyPrefix}default_fee_type`]:  fee.type,
           [`${keyPrefix}min_fee_pct`]:       parseFloat(minFee),
           [`${keyPrefix}extra_fee_1_label`]: extra1.label,
           [`${keyPrefix}extra_fee_1_value`]: parseFloat(extra1.value || '0'),

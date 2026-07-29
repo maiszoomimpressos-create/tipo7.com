@@ -85,15 +85,23 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
 
   const body = await req.json() as {
-    name:             string
-    type:             string
-    event_id?:        string
-    user_id?:         string
-    discount_pct?:    number
-    quota_limit?:     number
-    quota_period?:    string
-    bypass_minimum?:  boolean
-    notes?:           string
+    name:              string
+    type:              string
+    event_id?:         string
+    user_id?:          string
+    discount_pct?:     number
+    quota_limit?:      number
+    quota_period?:     string
+    bypass_minimum?:   boolean
+    notes?:            string
+    fee_type?:         'fixed' | 'percent'
+    fee_value?:        number
+    extra_fee_1_label?: string
+    extra_fee_1_value?: number
+    extra_fee_1_type?:  'fixed' | 'percent'
+    extra_fee_2_label?: string
+    extra_fee_2_value?: number
+    extra_fee_2_type?:  'fixed' | 'percent'
   }
 
   const TIPOS_VALIDOS = ['event', 'promoter_quota', 'global_quota']
@@ -106,21 +114,42 @@ export async function POST(req: NextRequest) {
   if (body.discount_pct !== undefined && (body.discount_pct < 0 || body.discount_pct > 100)) {
     return NextResponse.json({ error: 'discount_pct deve ser entre 0 e 100' }, { status: 400 })
   }
+  if (body.type === 'event' && body.fee_type !== undefined) {
+    if (body.fee_type !== 'fixed' && body.fee_type !== 'percent') {
+      return NextResponse.json({ error: 'fee_type deve ser "fixed" ou "percent"' }, { status: 400 })
+    }
+    if (typeof body.fee_value !== 'number' || body.fee_value < 0 || body.fee_value > 1000000) {
+      return NextResponse.json({ error: 'fee_value deve ser um número entre 0 e 1000000' }, { status: 400 })
+    }
+    for (const t of [body.extra_fee_1_type, body.extra_fee_2_type]) {
+      if (t !== undefined && t !== 'fixed' && t !== 'percent') {
+        return NextResponse.json({ error: 'extra_fee_N_type deve ser "fixed" ou "percent"' }, { status: 400 })
+      }
+    }
+  }
 
   const admin = createServiceClient()
   const { data, error } = await admin
     .from('fee_rules')
     .insert({
-      name:            body.name,
-      type:            body.type,
-      event_id:        body.event_id        || null,
-      user_id:         body.user_id         || null,
-      discount_pct:    body.discount_pct    ?? 100,
-      quota_limit:     body.quota_limit     || null,
-      quota_period:    body.quota_period    || null,
-      bypass_minimum:  body.bypass_minimum  ?? false,
-      notes:           body.notes           || null,
-      created_by:      user.id,
+      name:               body.name,
+      type:               body.type,
+      event_id:           body.event_id         || null,
+      user_id:            body.user_id          || null,
+      discount_pct:       body.discount_pct     ?? 100,
+      quota_limit:        body.quota_limit      || null,
+      quota_period:       body.quota_period     || null,
+      bypass_minimum:     body.bypass_minimum   ?? false,
+      notes:              body.notes            || null,
+      created_by:         user.id,
+      fee_type:           body.fee_type           ?? null,
+      fee_value:          body.fee_value          ?? null,
+      extra_fee_1_label:  body.extra_fee_1_label  ?? null,
+      extra_fee_1_value:  body.extra_fee_1_value  ?? null,
+      extra_fee_1_type:   body.extra_fee_1_type   ?? null,
+      extra_fee_2_label:  body.extra_fee_2_label  ?? null,
+      extra_fee_2_value:  body.extra_fee_2_value  ?? null,
+      extra_fee_2_type:   body.extra_fee_2_type   ?? null,
     })
     .select('*')
     .single()

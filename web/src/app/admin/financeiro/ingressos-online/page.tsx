@@ -68,6 +68,7 @@ export default async function IngressosOnlinePage() {
 
       <FinanceiroClient
         defaultFeePct={Number(settingsMap['default_fee_pct'] ?? 10)}
+        defaultFeeType={(settingsMap['default_fee_type'] as 'fixed' | 'percent') ?? 'percent'}
         minFeePct={Number(settingsMap['min_fee_pct'] ?? 0)}
         extraFee1={{
           label: settingsMap['extra_fee_1_label'] ?? '',

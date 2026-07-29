@@ -31,6 +31,7 @@ export default async function BilheteriaFinanceiroPage() {
       <TarifaModuloClient
         keyPrefix="bilheteria_"
         defaultFeePct={Number(settingsMap['bilheteria_default_fee_pct'] ?? 10)}
+        defaultFeeType={(settingsMap['bilheteria_default_fee_type'] as 'fixed' | 'percent') ?? 'percent'}
         minFeePct={Number(settingsMap['bilheteria_min_fee_pct'] ?? 0)}
         extraFee1={{
           label: settingsMap['bilheteria_extra_fee_1_label'] ?? '',

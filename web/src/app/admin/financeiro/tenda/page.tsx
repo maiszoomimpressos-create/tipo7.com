@@ -31,6 +31,7 @@ export default async function TendaFinanceiroPage() {
       <TarifaModuloClient
         keyPrefix="tenda_"
         defaultFeePct={Number(settingsMap['tenda_default_fee_pct'] ?? 10)}
+        defaultFeeType={(settingsMap['tenda_default_fee_type'] as 'fixed' | 'percent') ?? 'percent'}
         minFeePct={Number(settingsMap['tenda_min_fee_pct'] ?? 0)}
         extraFee1={{
           label: settingsMap['tenda_extra_fee_1_label'] ?? '',

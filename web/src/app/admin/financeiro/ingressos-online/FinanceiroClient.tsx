@@ -2,12 +2,13 @@
 
 import { useState } from 'react'
 import { Check, Loader2, DollarSign, Percent } from 'lucide-react'
-import { TaxaPadraoCard, TaxaMinimaCard, type ExtraFeeState } from '@/components/admin/TaxaCards'
+import { TaxaPadraoCard, TaxaMinimaCard, type ExtraFeeState, type FeeValueState } from '@/components/admin/TaxaCards'
 
 const ACCENT = '#E8B84B'
 
 interface Props {
   defaultFeePct:    number
+  defaultFeeType:   'fixed' | 'percent'
   minFeePct:        number
   extraFee1:        ExtraFeeState
   extraFee2:        ExtraFeeState
@@ -20,11 +21,11 @@ interface Props {
 }
 
 export function FinanceiroClient({
-  defaultFeePct, minFeePct, extraFee1, extraFee2,
+  defaultFeePct, defaultFeeType, minFeePct, extraFee1, extraFee2,
   feePixPct, feeCredito1xPct, feeCredito6xPct, feeCredito12xPct,
   totalConectados, mediaFee,
 }: Props) {
-  const [fee,           setFee]           = useState(String(defaultFeePct))
+  const [fee,           setFee]           = useState<FeeValueState>({ value: String(defaultFeePct), type: defaultFeeType })
   const [minFee,        setMinFee]        = useState(String(minFeePct))
   const [extra1,        setExtra1]        = useState<ExtraFeeState>(extraFee1)
   const [extra2,        setExtra2]        = useState<ExtraFeeState>(extraFee2)
@@ -45,7 +46,8 @@ export function FinanceiroClient({
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          default_fee_pct:    parseFloat(fee),
+          default_fee_pct:    parseFloat(fee.value || '0'),
+          default_fee_type:   fee.type,
           min_fee_pct:        parseFloat(minFee),
           extra_fee_1_label:  extra1.label,
           extra_fee_1_value:  parseFloat(extra1.value || '0'),

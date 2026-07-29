@@ -6,8 +6,16 @@ const MODULE_PREFIXES = ['', 'bilheteria_', 'tenda_', 'estacionamento_'] as cons
 
 const PERCENT_KEYS = new Set([
   'fee_pct_pix', 'fee_pct_credito_1x', 'fee_pct_credito_6x', 'fee_pct_credito_12x',
-  ...MODULE_PREFIXES.flatMap(p => [`${p}default_fee_pct`, `${p}min_fee_pct`]),
+  ...MODULE_PREFIXES.flatMap(p => [`${p}min_fee_pct`]),
 ])
+
+// A taxa padrão pode ser fixa (R$) ou percentual — por isso não fica limitada a 0-100.
+const BASE_VALUE_KEYS = new Set(
+  MODULE_PREFIXES.flatMap(p => [`${p}default_fee_pct`])
+)
+const BASE_TYPE_KEYS = new Set(
+  MODULE_PREFIXES.flatMap(p => [`${p}default_fee_type`])
+)
 
 const EXTRA_VALUE_KEYS = new Set(
   MODULE_PREFIXES.flatMap(p => [1, 2].map(n => `${p}extra_fee_${n}_value`))
@@ -40,6 +48,16 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: `${key} deve ser um número entre 0 e 100` }, { status: 400 })
       }
       rows.push({ key, value: String(val) })
+    } else if (BASE_VALUE_KEYS.has(key)) {
+      if (typeof val !== 'number' || val < 0 || val > 1000000) {
+        return NextResponse.json({ error: `${key} deve ser um número entre 0 e 1000000` }, { status: 400 })
+      }
+      rows.push({ key, value: String(val) })
+    } else if (BASE_TYPE_KEYS.has(key)) {
+      if (val !== 'fixed' && val !== 'percent') {
+        return NextResponse.json({ error: `${key} deve ser "fixed" ou "percent"` }, { status: 400 })
+      }
+      rows.push({ key, value: val })
     } else if (EXTRA_VALUE_KEYS.has(key)) {
       if (typeof val !== 'number' || val < 0 || val > 1000000) {
         return NextResponse.json({ error: `${key} deve ser um número entre 0 e 1000000` }, { status: 400 })

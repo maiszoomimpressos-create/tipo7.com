@@ -18,7 +18,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { calcularTaxaPlataforma } from '@/lib/feeRules'
+import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
 import { getMpToken } from '@/lib/mpToken'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
@@ -142,24 +142,17 @@ export async function POST(req: NextRequest) {
     const orgData = (Array.isArray(orgRaw) ? orgRaw[0] : orgRaw) as { owner_id: string } | null
     const ownerId = orgData?.owner_id
 
-    // Busca taxa mínima da plataforma
-    const { data: minFeeSetting } = await admin
-      .from('platform_settings').select('value').eq('key', 'min_fee_pct').maybeSingle()
-    const minFeePct = Number(minFeeSetting?.value ?? 0)
+    // Busca a config de taxa da plataforma (Financeiro > Tarifas > Ingressos on-line)
+    const config = await buscarConfigTaxaIngressosOnline(admin)
 
-    let mpToken      = process.env.MP_ACCESS_TOKEN!
-    let mpAccountFee: number | undefined = undefined
+    let mpToken           = process.env.MP_ACCESS_TOKEN!
+    let temContaConectada = false
 
     if (ownerId) {
       const tokenPromotor = await getMpToken(ownerId, admin)
-      const { data: mpAccount } = await admin
-        .from('promotor_mp_accounts')
-        .select('fee_pct')
-        .eq('user_id', ownerId)
-        .single()
-      if (mpAccount && tokenPromotor) {
-        mpToken      = tokenPromotor
-        mpAccountFee = Number(mpAccount.fee_pct)
+      if (tokenPromotor) {
+        mpToken           = tokenPromotor
+        temContaConectada = true
       }
     }
 
@@ -185,16 +178,15 @@ export async function POST(req: NextRequest) {
       // Fallback: usa faceValue (equivale a 1× sem juros)
     }
 
-    // application_fee = faceValue × taxa_plataforma% (modelo Sympla — simples e previsível)
+    // application_fee = taxa configurada em Financeiro > Tarifas > Ingressos on-line
     let applicationFee: number | undefined = undefined
-    if (ownerId && mpAccountFee !== undefined) {
+    if (ownerId && temContaConectada) {
       applicationFee = await calcularTaxaPlataforma({
         eventoId,
         ownerId,
-        total:      faceValue,
+        total:       faceValue,
         ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
-        feePct:     mpAccountFee,
-        minFeePct,
+        config,
         admin,
       })
     }

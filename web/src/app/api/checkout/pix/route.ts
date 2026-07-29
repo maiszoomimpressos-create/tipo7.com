@@ -18,7 +18,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { calcularTaxaPlataforma } from '@/lib/feeRules'
+import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
 import { getMpToken } from '@/lib/mpToken'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
@@ -115,10 +115,8 @@ export async function POST(req: NextRequest) {
 
     const orderId = resultado.order_id as string
 
-    // Busca taxa mínima da plataforma
-    const { data: minFeeSetting } = await admin
-      .from('platform_settings').select('value').eq('key', 'min_fee_pct').maybeSingle()
-    const minFeePct = Number(minFeeSetting?.value ?? 0)
+    // Busca a config de taxa da plataforma (Financeiro > Tarifas > Ingressos on-line)
+    const config = await buscarConfigTaxaIngressosOnline(admin)
 
     // Busca conta MP do promotor do evento (split de pagamento)
     const { data: eventOwnerInfo } = await admin
@@ -139,22 +137,15 @@ export async function POST(req: NextRequest) {
     if (ownerId2) {
       const tokenPromotor2 = await getMpToken(ownerId2, admin)
 
-      const { data: mpAccount2 } = await admin
-        .from('promotor_mp_accounts')
-        .select('fee_pct')
-        .eq('user_id', ownerId2)
-        .single()
-
-      if (mpAccount2 && tokenPromotor2) {
+      if (tokenPromotor2) {
         mpToken2 = tokenPromotor2
-        // application_fee = faceValue × taxa_plataforma% (modelo Sympla)
+        // application_fee = taxa configurada em Financeiro > Tarifas > Ingressos on-line
         applicationFee = await calcularTaxaPlataforma({
           eventoId,
-          ownerId:    ownerId2,
-          total:      faceValue,
+          ownerId:     ownerId2,
+          total:       faceValue,
           ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
-          feePct:     Number(mpAccount2.fee_pct),
-          minFeePct,
+          config,
           admin,
         })
       }

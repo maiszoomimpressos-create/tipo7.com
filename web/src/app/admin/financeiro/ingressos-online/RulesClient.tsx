@@ -3,25 +3,35 @@
 import { useState } from 'react'
 import { Plus, Trash2, Loader2, Check, Tag, Users, Globe, AlertTriangle, ShieldAlert, Eye, EyeOff } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { FeeValueField, ExtraFeeField, type FeeValueState, type ExtraFeeState } from '@/components/admin/TaxaCards'
 
 const ACCENT = '#E8B84B'
 
 type RuleType = 'event' | 'promoter_quota' | 'global_quota'
+type FeeType  = 'fixed' | 'percent'
 
 interface Rule {
-  id:              string
-  name:            string
-  type:            RuleType
-  discount_pct:    number
-  quota_limit:     number | null
-  quota_period:    'total' | 'monthly' | null
-  bypass_minimum:  boolean
-  active:          boolean
-  notes:           string | null
-  created_at:      string
-  event_title?:    string | null
-  promoter_name?:  string | null
-  quota_used?:     number
+  id:                  string
+  name:                string
+  type:                RuleType
+  discount_pct:        number
+  quota_limit:         number | null
+  quota_period:        'total' | 'monthly' | null
+  bypass_minimum:      boolean
+  active:              boolean
+  notes:               string | null
+  created_at:          string
+  event_title?:        string | null
+  promoter_name?:      string | null
+  quota_used?:         number
+  fee_type?:           FeeType | null
+  fee_value?:          number | null
+  extra_fee_1_label?:  string | null
+  extra_fee_1_value?:  number | null
+  extra_fee_1_type?:   FeeType | null
+  extra_fee_2_label?:  string | null
+  extra_fee_2_value?:  number | null
+  extra_fee_2_type?:   FeeType | null
 }
 
 interface Evento   { id: string; title: string }
@@ -49,6 +59,19 @@ const TYPE_COLOR: Record<RuleType, string> = {
   global_quota:   '#22c55e',
 }
 
+// Descreve a taxa efetiva da regra sem assumir uma base fixa (a taxa geral
+// pode ser fixo ou % hoje, então não dá mais pra calcular "% efetivo" sem
+// saber a config real -- mostra o que a regra de fato tem gravado.
+function descreverTaxa(rule: Rule): string {
+  if (rule.type === 'event' && rule.fee_value != null && rule.fee_type) {
+    const base = rule.fee_type === 'percent' ? `${rule.fee_value}%` : `R$ ${rule.fee_value.toFixed(2)}`
+    const extras = [rule.extra_fee_1_value, rule.extra_fee_2_value].filter(v => v && v > 0).length
+    return extras > 0 ? `${base} + ${extras} específica${extras > 1 ? 's' : ''}` : base
+  }
+  if (rule.discount_pct >= 100) return 'isenção total'
+  return `desconto de ${rule.discount_pct}%`
+}
+
 export function RulesClient({ initialRules, eventos, promotores }: Props) {
   const [rules,     setRules]     = useState<Rule[]>(initialRules)
   const [criando,   setCriando]   = useState(false)
@@ -63,6 +86,9 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
   const [eventoId,    setEventoId]    = useState('')
   const [promotorId,  setPromotorId]  = useState('')
   const [desconto,    setDesconto]    = useState('100')
+  const [feeValue,    setFeeValue]    = useState<FeeValueState>({ value: '10', type: 'percent' })
+  const [extra1,      setExtra1]      = useState<ExtraFeeState>({ label: '', value: '0', type: 'percent' })
+  const [extra2,      setExtra2]      = useState<ExtraFeeState>({ label: '', value: '0', type: 'percent' })
   const [quotaLimit,  setQuotaLimit]  = useState('100')
   const [quotaPeriod, setQuotaPeriod] = useState<'total' | 'monthly'>('total')
   const [notas,       setNotas]       = useState('')
@@ -78,6 +104,9 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
   function resetForm() {
     setNome(''); setTipo('event'); setEventoId(''); setPromotorId('')
     setDesconto('100'); setQuotaLimit('100'); setQuotaPeriod('total'); setNotas('')
+    setFeeValue({ value: '10', type: 'percent' })
+    setExtra1({ label: '', value: '0', type: 'percent' })
+    setExtra2({ label: '', value: '0', type: 'percent' })
     setBypassMin(false); setSenha(''); setErrSenha(null); setErr(null)
   }
 
@@ -111,15 +140,25 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name:            nome.trim(),
-          type:            tipo,
-          event_id:        tipo === 'event'          ? eventoId   : undefined,
-          user_id:         tipo === 'promoter_quota' ? promotorId : undefined,
-          discount_pct:    parseFloat(desconto) || 100,
-          quota_limit:     tipo !== 'event' ? parseInt(quotaLimit) || null : null,
-          quota_period:    tipo !== 'event' ? quotaPeriod : null,
-          bypass_minimum:  bypassMin,
-          notes:           notas.trim() || undefined,
+          name:               nome.trim(),
+          type:               tipo,
+          event_id:           tipo === 'event'          ? eventoId   : undefined,
+          user_id:            tipo === 'promoter_quota' ? promotorId : undefined,
+          discount_pct:       tipo === 'event' ? 100 : (parseFloat(desconto) || 100),
+          quota_limit:        tipo !== 'event' ? parseInt(quotaLimit) || null : null,
+          quota_period:       tipo !== 'event' ? quotaPeriod : null,
+          bypass_minimum:     bypassMin,
+          notes:              notas.trim() || undefined,
+          ...(tipo === 'event' ? {
+            fee_type:           feeValue.type,
+            fee_value:          parseFloat(feeValue.value) || 0,
+            extra_fee_1_label:  extra1.label,
+            extra_fee_1_value:  parseFloat(extra1.value) || 0,
+            extra_fee_1_type:   extra1.type,
+            extra_fee_2_label:  extra2.label,
+            extra_fee_2_value:  parseFloat(extra2.value) || 0,
+            extra_fee_2_type:   extra2.type,
+          } : {}),
         }),
       })
       const data = await res.json()
@@ -330,29 +369,51 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
             </div>
           )}
 
-          {/* Desconto */}
-          <div>
-            <p className="text-[#555] text-[10px] uppercase tracking-wider mb-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              Desconto na taxa ({desconto}% → taxa cobrada: {(10 * (1 - parseFloat(desconto || '0') / 100)).toFixed(1)}%)
-            </p>
-            <div className="flex gap-2">
-              {['100', '50', '25'].map(v => (
-                <button key={v} type="button" onClick={() => setDesconto(v)}
-                  className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all"
-                  style={{
-                    background: desconto === v ? `${ACCENT}18` : '#111',
-                    border:     `1px solid ${desconto === v ? ACCENT + '50' : '#222'}`,
-                    color:      desconto === v ? ACCENT : '#555',
-                    fontFamily: 'var(--font-dm-sans)',
-                  }}>
-                  {v === '100' ? 'Isenção total' : `${v}% off`}
-                </button>
-              ))}
-              <input type="number" min="0" max="100" value={desconto} onChange={e => setDesconto(e.target.value)}
-                placeholder="%" className="w-20 bg-[#111] border border-[#222] rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-[#E8B84B]/40 text-center"
-                style={{ fontFamily: 'var(--font-dm-sans)' }} />
+          {/* Taxa desse evento: fixo/% + 2 específicas (evento) ou desconto % (quota) */}
+          {tipo === 'event' ? (
+            <div>
+              <p className="text-[#555] text-[10px] uppercase tracking-wider mb-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Taxa customizada pra este evento (substitui a taxa geral)
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <p className="text-[#666] text-[10px] mb-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Taxa base</p>
+                  <FeeValueField fee={feeValue} setFee={setFeeValue} width="w-20" />
+                </div>
+                <div>
+                  <p className="text-[#666] text-[10px] mb-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Taxa específica 1</p>
+                  <ExtraFeeField extra={extra1} setExtra={setExtra1} />
+                </div>
+                <div>
+                  <p className="text-[#666] text-[10px] mb-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>Taxa específica 2</p>
+                  <ExtraFeeField extra={extra2} setExtra={setExtra2} />
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div>
+              <p className="text-[#555] text-[10px] uppercase tracking-wider mb-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Desconto na taxa geral ({desconto}% off)
+              </p>
+              <div className="flex gap-2">
+                {['100', '50', '25'].map(v => (
+                  <button key={v} type="button" onClick={() => setDesconto(v)}
+                    className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all"
+                    style={{
+                      background: desconto === v ? `${ACCENT}18` : '#111',
+                      border:     `1px solid ${desconto === v ? ACCENT + '50' : '#222'}`,
+                      color:      desconto === v ? ACCENT : '#555',
+                      fontFamily: 'var(--font-dm-sans)',
+                    }}>
+                    {v === '100' ? 'Isenção total' : `${v}% off`}
+                  </button>
+                ))}
+                <input type="number" min="0" max="100" value={desconto} onChange={e => setDesconto(e.target.value)}
+                  placeholder="%" className="w-20 bg-[#111] border border-[#222] rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-[#E8B84B]/40 text-center"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }} />
+              </div>
+            </div>
+          )}
 
           {/* Notas */}
           <input type="text" placeholder="Observação interna (opcional)" value={notas} onChange={e => setNotas(e.target.value)}
@@ -418,7 +479,6 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
           const Icon  = TYPE_ICON[rule.type]
           const color = TYPE_COLOR[rule.type]
           const isQuota = rule.type !== 'event'
-          const pctEfetiva = 10 * (1 - rule.discount_pct / 100)
 
           return (
             <div key={rule.id} className="flex items-center justify-between px-5 py-4 rounded-2xl"
@@ -447,7 +507,7 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
                       </span>
                     )}
                     <span className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      · taxa {pctEfetiva.toFixed(1)}%
+                      · {descreverTaxa(rule)}
                     </span>
                     {isQuota && rule.quota_limit && (
                       <span className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -489,7 +549,6 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
           </div>
           <div style={{ background: '#070707' }}>
             {rules.filter(r => r.type === 'event').map((rule, i, arr) => {
-              const pctEfetiva = 10 * (1 - rule.discount_pct / 100)
               return (
                 <div key={rule.id}
                      className="flex items-center justify-between px-5 py-3"
@@ -510,7 +569,7 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
                             style={{ background: '#ef444415', color: '#ef4444', border: '1px solid #ef444430', fontFamily: 'var(--font-dm-sans)' }}>
                         0% total
                       </span>
-                    ) : rule.discount_pct === 100 ? (
+                    ) : rule.fee_value == null && rule.discount_pct === 100 ? (
                       <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
                             style={{ background: '#E8B84B15', color: '#E8B84B', border: '1px solid #E8B84B30', fontFamily: 'var(--font-dm-sans)' }}>
                         Isento
@@ -518,7 +577,7 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
                     ) : (
                       <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
                             style={{ background: '#a855f715', color: '#a855f7', border: '1px solid #a855f730', fontFamily: 'var(--font-dm-sans)' }}>
-                        {pctEfetiva.toFixed(1)}% taxa
+                        {descreverTaxa(rule)}
                       </span>
                     )}
                   </div>

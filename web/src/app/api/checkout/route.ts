@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { calcularTaxaPlataforma } from '@/lib/feeRules'
+import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
 import { getMpToken } from '@/lib/mpToken'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
@@ -89,10 +89,8 @@ export async function POST(req: NextRequest) {
 
     const orderId = resultado.order_id as string
 
-    // Busca taxa mínima da plataforma
-    const { data: minFeeSetting } = await admin
-      .from('platform_settings').select('value').eq('key', 'min_fee_pct').maybeSingle()
-    const minFeePct = Number(minFeeSetting?.value ?? 0)
+    // Busca a config de taxa da plataforma (Financeiro > Tarifas > Ingressos on-line)
+    const config = await buscarConfigTaxaIngressosOnline(admin)
 
     // Busca conta MP do promotor do evento (split de pagamento)
     const { data: eventInfo } = await admin
@@ -111,22 +109,15 @@ export async function POST(req: NextRequest) {
     if (ownerId) {
       const tokenPromotor = await getMpToken(ownerId, admin)
 
-      const { data: mpAccount } = await admin
-        .from('promotor_mp_accounts')
-        .select('fee_pct')
-        .eq('user_id', ownerId)
-        .single()
-
-      if (mpAccount && tokenPromotor) {
+      if (tokenPromotor) {
         mpToken        = tokenPromotor
-        // marketplace_fee = total × taxa_plataforma% (modelo Sympla)
+        // marketplace_fee = taxa configurada em Financeiro > Tarifas > Ingressos on-line
         marketplaceFee = await calcularTaxaPlataforma({
           eventoId,
           ownerId,
           total,
           ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
-          feePct:      Number(mpAccount.fee_pct),
-          minFeePct,
+          config,
           admin,
         })
       }
