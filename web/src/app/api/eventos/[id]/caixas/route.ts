@@ -104,9 +104,16 @@ export async function GET(_req: NextRequest, { params }: Params) {
     }
   }))
 
+  const { data: saldoBilheteria } = await admin
+    .from('saldo_bilheteria')
+    .select('ativo, saldo_atual, meta_reserva, aviso_disparado, bloqueio_ativo')
+    .eq('event_id', eventoId)
+    .maybeSingle()
+
   return NextResponse.json({
     caixas:                    result,
     vendas_online_pausadas:    evento.vendas_online_pausadas,
     transferencia_requer_senha: evento.transferencia_requer_senha,
+    saldoBilheteria,
   })
 }

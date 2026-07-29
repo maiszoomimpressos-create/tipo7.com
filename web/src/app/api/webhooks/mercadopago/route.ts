@@ -3,6 +3,7 @@ import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getMpToken } from '@/lib/mpToken'
 import { issueTickets } from '@/lib/issueTickets'
+import { processarSaldoAposAprovacao } from '@/lib/saldoBilheteria'
 import { createHmac } from 'crypto'
 
 const STATUS_MAP: Record<string, string> = {
@@ -128,6 +129,7 @@ export async function POST(req: NextRequest) {
 
   if (newStatus === 'approved') {
     await issueTickets(orderId, admin)
+    await processarSaldoAposAprovacao(admin, orderId)
   }
 
   return NextResponse.json({ ok: true })

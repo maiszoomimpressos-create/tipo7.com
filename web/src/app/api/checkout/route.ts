@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
+import { buscarSaldoBilheteria, calcularContribuicaoSaldo } from '@/lib/saldoBilheteria'
 import { getMpToken } from '@/lib/mpToken'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
@@ -120,6 +121,15 @@ export async function POST(req: NextRequest) {
           config,
           admin,
         })
+
+        // Se o evento tem saldo de bilheteria ativo, retém uma contribuição
+        // extra pra formar a reserva -- só é lançada no saldo quando o
+        // pagamento for aprovado de verdade (webhook), aqui só reflete no
+        // valor cobrado do promotor.
+        const saldo = await buscarSaldoBilheteria(admin, eventoId)
+        if (saldo?.ativo) {
+          marketplaceFee += calcularContribuicaoSaldo(total, marketplaceFee, saldo.retencao_pct)
+        }
       }
     }
 

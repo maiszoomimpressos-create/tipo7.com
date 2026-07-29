@@ -6,6 +6,8 @@ import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getMpToken } from '@/lib/mpToken'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
+import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
+import { debitarSaldoBilheteria } from '@/lib/saldoBilheteria'
 
 async function checkPermissaoBilheteria(userId: string, eventoId: string) {
   const admin = createServiceClient()
@@ -78,6 +80,23 @@ export async function POST(req: NextRequest) {
 
   const orderId = resultado.order_id as string
 
+  // Debita do saldo de bilheteria a taxa devida nessa venda -- feito antes de
+  // gerar o QR (não tem como reverter depois que o comprador já escaneou).
+  // Se saldo insuficiente e o bloqueio do evento estiver ligado, recusa aqui.
+  const configPix   = await buscarConfigTaxaIngressosOnline(admin)
+  const taxaPixVenda = await calcularTaxaPlataforma({
+    eventoId, ownerId, total, ticketCount: quantidade, config: configPix, admin,
+  })
+
+  const { bloqueado } = await debitarSaldoBilheteria(admin, eventoId, taxaPixVenda, orderId)
+  if (bloqueado) {
+    await admin.from('orders').update({ status: 'cancelled' }).eq('id', orderId)
+    return NextResponse.json(
+      { error: 'Saldo de bilheteria insuficiente pra cobrir a taxa desta venda. Peça ao promotor pra reforçar o saldo.' },
+      { status: 409 }
+    )
+  }
+
   // Gera QR PIX via Mercado Pago
   const mpClient = new MercadoPagoConfig({ accessToken: mpToken })
   const payment  = new Payment(mpClient)
@@ -113,6 +132,7 @@ export async function POST(req: NextRequest) {
         },
         notification_url:   'https://www.tipo7.com/api/webhooks/mercadopago',
         external_reference: orderId,
+        application_fee:    taxaPixVenda > 0 ? taxaPixVenda : undefined,
       },
     })
 

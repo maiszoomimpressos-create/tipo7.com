@@ -3,6 +3,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { gerarQrToken } from '@/lib/qrToken'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 import { logAudit } from '@/lib/audit'
+import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
+import { debitarSaldoBilheteria } from '@/lib/saldoBilheteria'
 
 // Verifica se o usuário tem permissão de bilheteria para o evento
 async function checkPermissaoBilheteria(userId: string, eventoId: string): Promise<boolean> {
@@ -108,6 +110,30 @@ export async function POST(req: NextRequest) {
   }
 
   const orderId = resultado.order_id as string
+
+  // Debita do saldo de bilheteria a taxa que seria devida nessa venda -- se o
+  // saldo não estiver ativo pro evento, a chamada retorna skip e segue normal.
+  // Se o bloqueio estiver ligado e o saldo for insuficiente, recusa a venda.
+  const { data: eventoOrg } = await admin
+    .from('events').select('organization_id, organizations(owner_id)').eq('id', eventoId).single()
+  const orgRawV  = eventoOrg?.organizations as unknown
+  const orgDataV = (Array.isArray(orgRawV) ? orgRawV[0] : orgRawV) as { owner_id: string } | null
+  const ownerIdV = orgDataV?.owner_id ?? null
+
+  const totalVenda = Number(ticket.price ?? 0) * quantidade
+  const configV    = await buscarConfigTaxaIngressosOnline(admin)
+  const taxaVenda  = await calcularTaxaPlataforma({
+    eventoId, ownerId: ownerIdV, total: totalVenda, ticketCount: quantidade, config: configV, admin,
+  })
+
+  const { bloqueado } = await debitarSaldoBilheteria(admin, eventoId, taxaVenda, orderId)
+  if (bloqueado) {
+    await admin.from('orders').update({ status: 'cancelled' }).eq('id', orderId)
+    return NextResponse.json(
+      { error: 'Saldo de bilheteria insuficiente pra cobrir a taxa desta venda. Peça ao promotor pra reforçar o saldo.' },
+      { status: 409 }
+    )
+  }
 
   // Marca pedido como aprovado (pagamento presencial) e vincula ao caixa
   await admin

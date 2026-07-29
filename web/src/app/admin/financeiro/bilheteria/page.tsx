@@ -2,6 +2,7 @@ import { redirect }              from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAdminMember, can }   from '@/lib/adminAuth'
 import { TarifaModuloClient }    from '@/components/admin/TarifaModuloClient'
+import { SaldoBilheteriaAdmin }  from '@/components/admin/SaldoBilheteriaAdmin'
 
 export default async function BilheteriaFinanceiroPage() {
   const supabase = await createClient()
@@ -45,6 +46,10 @@ export default async function BilheteriaFinanceiroPage() {
         }}
         descricao="Percentual padrão cobrado pela plataforma sobre as vendas feitas na bilheteria."
       />
+
+      <div className="mt-8">
+        <SaldoBilheteriaAdmin />
+      </div>
     </div>
   )
 }

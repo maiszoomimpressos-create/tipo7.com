@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { ativarSaldoBilheteria } from '@/lib/saldoBilheteria'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -7,7 +8,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
   const body = await req.json()
-  const { eventoId, caixas, transferencia_requer_senha } = body as {
+  const { eventoId, caixas, transferencia_requer_senha, ativarSaldoBilheteria: ativarSaldo } = body as {
     eventoId: string
     caixas: {
       nome:               string
@@ -18,6 +19,7 @@ export async function POST(req: NextRequest) {
       nomeOperador?:      string
     }[]
     transferencia_requer_senha: boolean
+    ativarSaldoBilheteria?: boolean
   }
 
   if (!eventoId || !Array.isArray(caixas) || caixas.length === 0)
@@ -111,6 +113,10 @@ export async function POST(req: NextRequest) {
     .from('events')
     .update({ vendas_online_pausadas: false, transferencia_requer_senha })
     .eq('id', eventoId)
+
+  if (ativarSaldo) {
+    await ativarSaldoBilheteria(admin, eventoId, user.id)
+  }
 
   return NextResponse.json({ caixas: criados })
 }

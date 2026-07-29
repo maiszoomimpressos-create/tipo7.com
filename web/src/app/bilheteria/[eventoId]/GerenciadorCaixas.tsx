@@ -6,7 +6,7 @@ import {
   Plus, Trash2, ArrowLeft, Loader2, AlertTriangle, CheckCircle2,
   ShoppingBag, Lock, Unlock, Users, TrendingUp,
   Banknote, Smartphone, CreditCard, RefreshCw, ChevronRight,
-  Calculator, Pencil,
+  Calculator, Pencil, PiggyBank,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 
@@ -58,7 +58,11 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
   const [fase, setFase] = useState<'carregando' | 'semCaixas' | 'configurando' | 'abertos'>('carregando')
   const [pausado, setPausado]     = useState(false)
   const [requerSenha, setRequerSenha] = useState(false)
+  const [ativarSaldo, setAtivarSaldo] = useState(false)
   const [caixas, setCaixas]       = useState<CaixaAberto[]>([])
+  const [saldoBilheteria, setSaldoBilheteria] = useState<{
+    ativo: boolean; saldo_atual: number; meta_reserva: number; aviso_disparado: boolean
+  } | null>(null)
   const [configs, setConfigs]     = useState<CaixaConfig[]>([
     { nome: 'Caixa A', fundo_inicial: 0, ingressos_alocados: 0, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '' },
   ])
@@ -100,6 +104,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
     setCaixas(data.caixas ?? [])
     setPausado(data.vendas_online_pausadas ?? false)
     setRequerSenha(data.transferencia_requer_senha ?? false)
+    setSaldoBilheteria(data.saldoBilheteria ?? null)
     const emAndamento = (data.caixas ?? []).filter((c: CaixaAberto) => c.status !== 'fechado')
     setFase(emAndamento.length > 0 ? 'abertos' : 'semCaixas')
   }, [eventoId])
@@ -208,7 +213,11 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
     }))
     const res = await fetch('/api/caixas/abrir', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventoId, caixas: caixasPayload, transferencia_requer_senha: requerSenha }),
+      body: JSON.stringify({
+        eventoId, caixas: caixasPayload,
+        transferencia_requer_senha: requerSenha,
+        ativarSaldoBilheteria: ativarSaldo,
+      }),
     })
     const data = await res.json()
     if (!res.ok) { setErr(data.error ?? 'Erro ao abrir caixas'); setSalvando(false); return }
@@ -297,6 +306,31 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
               style={{ background: requerSenha ? ACCENT : '#222' }}>
               <div className="absolute top-1 w-4 h-4 rounded-full bg-white transition-all"
                    style={{ left: requerSenha ? '26px' : '4px' }} />
+            </button>
+          </div>
+
+          {/* Opt-in: saldo de bilheteria */}
+          <div className="rounded-2xl p-4 flex items-start gap-3"
+               style={{ background: '#0d0d0d', border: `1px solid ${ativarSaldo ? ACCENT + '40' : '#1a1a1a'}` }}>
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                 style={{ background: `${ACCENT}12` }}>
+              <PiggyBank size={16} style={{ color: ACCENT }} />
+            </div>
+            <div className="flex-1">
+              <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Formar saldo de bilheteria
+              </p>
+              <p className="text-[#555] text-xs mt-0.5 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Vendas em dinheiro/maquininha própria não descontam a taxa da plataforma automaticamente.
+                Ativando isso, cada venda online do evento retém um pouco a mais até formar o saldo que cobre
+                essa taxa nas vendas presenciais.
+              </p>
+            </div>
+            <button type="button" onClick={() => setAtivarSaldo(v => !v)}
+              className="w-12 h-6 rounded-full transition-colors relative shrink-0 mt-1"
+              style={{ background: ativarSaldo ? ACCENT : '#222' }}>
+              <div className="absolute top-1 w-4 h-4 rounded-full bg-white transition-all"
+                   style={{ left: ativarSaldo ? '26px' : '4px' }} />
             </button>
           </div>
 
@@ -503,6 +537,16 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
   return (
     <div className="min-h-dvh bg-[#070707] flex flex-col">
       <Header eventoTitle={eventoTitle} eventoId={eventoId} onRefresh={carregarCaixas} />
+
+      {saldoBilheteria?.ativo && saldoBilheteria.aviso_disparado && (
+        <div className="px-6 py-3 flex items-center gap-3"
+             style={{ background: 'rgba(248,113,113,0.08)', borderBottom: '1px solid rgba(248,113,113,0.2)' }}>
+          <PiggyBank size={14} className="text-red-400 shrink-0" />
+          <p className="text-[11px] text-red-400" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Saldo de bilheteria baixo (R$ {saldoBilheteria.saldo_atual.toFixed(2).replace('.', ',')} de R$ {saldoBilheteria.meta_reserva.toFixed(2).replace('.', ',')} previstos) — reforce o saldo pra não travar as vendas presenciais.
+          </p>
+        </div>
+      )}
 
       {pausado && (
         <div className="px-6 py-3 flex items-center justify-between gap-3"

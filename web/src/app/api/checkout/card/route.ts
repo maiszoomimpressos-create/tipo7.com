@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
+import { buscarSaldoBilheteria, calcularContribuicaoSaldo } from '@/lib/saldoBilheteria'
 import { getMpToken } from '@/lib/mpToken'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
@@ -189,6 +190,11 @@ export async function POST(req: NextRequest) {
         config,
         admin,
       })
+
+      const saldo = await buscarSaldoBilheteria(admin, eventoId)
+      if (saldo?.ativo) {
+        applicationFee += calcularContribuicaoSaldo(faceValue, applicationFee, saldo.retencao_pct)
+      }
     }
 
     // Cria pagamento no Mercado Pago
