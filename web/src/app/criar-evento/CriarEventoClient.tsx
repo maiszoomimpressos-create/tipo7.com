@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   CalendarPlus, Plus, Pencil, Trash2,
   ExternalLink, ImageIcon, Ticket, Settings, AlertTriangle, X, Car,
@@ -111,11 +112,14 @@ function ConfirmDeleteModal({
 
 // ── Componente principal ────────────────────────────────────────────────────
 export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, orgAtual, profile, eventos: inicial }: Props) {
+  const router = useRouter()
   const [modalAberto,    setModalAberto]    = useState(false)
   const [lista,          setLista]          = useState<EventoItem[]>(inicial)
   const [excluindo,      setExcluindo]      = useState<string | null>(null)
   const [confirmarId,    setConfirmarId]    = useState<string | null>(null)
   const supabase = createClient()
+
+  const abrirTrabalho = (id: string) => router.push(`/trabalho/${id}`)
 
   const abrirConfirmar = (id: string, e: React.MouseEvent) => {
     e.preventDefault()
@@ -160,8 +164,14 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, or
         {lista.length > 0 && (
           <div className="grid grid-cols-2 gap-4">
             {lista.map(ev => (
-              <a key={ev.id} href={`/trabalho/${ev.id}`}
-                className="group relative bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden hover:border-[#E8B84B]/30 transition-colors block">
+              <div
+                key={ev.id}
+                role="link"
+                tabIndex={0}
+                onClick={() => abrirTrabalho(ev.id)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirTrabalho(ev.id) } }}
+                className="group relative bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden hover:border-[#E8B84B]/30 transition-colors block cursor-pointer"
+              >
 
                 <div className="relative w-full h-[200px] bg-[#0a0a0a] flex items-center justify-center overflow-hidden">
                   {ev.banner_url
@@ -177,12 +187,22 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, or
                       style={{ fontFamily: 'var(--font-dm-sans)' }}>
                       <Settings size={11} /> Informações
                     </a>
-                    <a href={`/criar-evento/${ev.id}/ingressos`}
-                      onClick={e => e.stopPropagation()}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors"
-                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      <Ticket size={11} /> Ingressos
-                    </a>
+                    {ev.modulo_ingressos && (
+                      <a href={`/criar-evento/${ev.id}/ingressos`}
+                        onClick={e => e.stopPropagation()}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors"
+                        style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        <Ticket size={11} /> Ingressos
+                      </a>
+                    )}
+                    {ev.modulo_estacionamento && (
+                      <a href={`/estacionamento/${ev.id}`}
+                        onClick={e => e.stopPropagation()}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#38bdf8]/10 hover:bg-[#38bdf8]/20 text-[#38bdf8] text-xs font-medium transition-colors"
+                        style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        <Car size={11} /> Estacionamento
+                      </a>
+                    )}
                     <a href={`/criar-evento/${ev.id}/imagens`}
                       onClick={e => e.stopPropagation()}
                       className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors"
@@ -236,7 +256,7 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, or
                   </div>
                 </div>
 
-              </a>
+              </div>
             ))}
           </div>
         )}

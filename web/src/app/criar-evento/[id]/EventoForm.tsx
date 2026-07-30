@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, Loader2, Check, Lock, User, MapPin, Search, ArrowRight } from 'lucide-react'
+import { ArrowLeft, Loader2, Check, Lock, User, MapPin, Search, ArrowRight, ShoppingBag } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface PlaceSuggestion {
@@ -29,6 +29,8 @@ interface Inicial {
 interface Props {
   eventoId:        string
   herdaDadosDoPai?: boolean
+  isChild?:        boolean
+  permitirVendaNoCaixaPaiInicial?: boolean
   tipoPessoa:      'pf' | 'pj' | null
   responsavel:     Responsavel | null
   inicial:         Inicial
@@ -117,7 +119,7 @@ function DateTimeInput24h({ value, onChange, className }: { value: string; onCha
   )
 }
 
-export function EventoForm({ eventoId, herdaDadosDoPai, tipoPessoa, responsavel, inicial, perfilCidade, perfilEstado }: Props) {
+export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNoCaixaPaiInicial, tipoPessoa, responsavel, inicial, perfilCidade, perfilEstado }: Props) {
   const router   = useRouter()
   const supabase = createClient()
 
@@ -179,6 +181,7 @@ export function EventoForm({ eventoId, herdaDadosDoPai, tipoPessoa, responsavel,
   const [complemento, setComplemento] = useState(inicial.complemento)
   const [capacidade,  setCapacidade]  = useState(inicial.capacidade)
   const [feeMode,     setFeeMode]     = useState<'promotor' | 'comprador' | 'mista'>(inicial.feeMode)
+  const [permitirVendaNoCaixaPai, setPermitirVendaNoCaixaPai] = useState(permitirVendaNoCaixaPaiInicial ?? true)
   const [cepLoading,  setCepLoading]  = useState(false)
   const [cepError,    setCepError]    = useState<string | null>(null)
 
@@ -353,6 +356,7 @@ export function EventoForm({ eventoId, herdaDadosDoPai, tipoPessoa, responsavel,
         complement:    complemento           || null,
         capacity:      capacidade ? parseInt(capacidade, 10) : null,
         fee_mode:      feeMode,
+        ...(isChild ? { permitir_venda_no_caixa_pai: permitirVendaNoCaixaPai } : {}),
       }).eq('id', eventoId)
 
       if (continuar) {
@@ -375,6 +379,30 @@ export function EventoForm({ eventoId, herdaDadosDoPai, tipoPessoa, responsavel,
         <ArrowLeft size={15} />
         Voltar para meus eventos
       </button>
+
+      {/* ── Venda no caixa compartilhado do evento principal (só eventos filhos) ── */}
+      {isChild && (
+        <button type="button" onClick={() => setPermitirVendaNoCaixaPai(v => !v)}
+          className="w-full flex items-center gap-3 p-4 rounded-2xl text-left transition-all"
+          style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#E8B84B12' }}>
+            <ShoppingBag size={16} className="text-[#E8B84B]" />
+          </div>
+          <div className="flex-1">
+            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Vender no mesmo caixa do evento principal
+            </p>
+            <p className="text-[#555] text-xs mt-0.5 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Quando ligado, os caixas abertos no evento principal também vendem ingresso deste evento. Desligue se preferir um caixa dedicado só pra este espaço.
+            </p>
+          </div>
+          <div className="w-12 h-6 rounded-full transition-colors relative shrink-0"
+               style={{ background: permitirVendaNoCaixaPai ? '#E8B84B' : '#222' }}>
+            <div className="absolute top-1 w-4 h-4 rounded-full bg-white transition-all"
+                 style={{ left: permitirVendaNoCaixaPai ? '26px' : '4px' }} />
+          </div>
+        </button>
+      )}
 
       {/* ── SEÇÃO 1: Informações gerais ── */}
       <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
