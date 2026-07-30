@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Layers, Plus, Loader2, ArrowUpRight, X, Ticket, Car } from 'lucide-react'
+import { Layers, Plus, Loader2, ArrowUpRight, X, Ticket, Car, Tent } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const ACCENT = '#E8B84B'
@@ -96,10 +96,20 @@ function CriarEventoFilhoModal({ eventoId, onFechar }: { eventoId: string; onFec
   const [titulo, setTitulo] = useState('')
   const [moduloIngressos, setModuloIngressos] = useState(true)
   const [moduloEstacionamento, setModuloEstacionamento] = useState(false)
+  const [moduloTenda, setModuloTenda] = useState(false)
+  const [permitirVendaNoCaixaPai, setPermitirVendaNoCaixaPai] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
-  const nenhumModulo = !moduloIngressos && !moduloEstacionamento
+  const nenhumModulo = !moduloIngressos && !moduloEstacionamento && !moduloTenda
+
+  // Tenda paga quase sempre também quer venda on-line — marca Ingressos junto,
+  // mas o promotor pode desmarcar se quiser só venda presencial.
+  function toggleTenda() {
+    const ligando = !moduloTenda
+    setModuloTenda(ligando)
+    if (ligando) setModuloIngressos(true)
+  }
 
   const salvar = async () => {
     if (!titulo.trim() || nenhumModulo) return
@@ -108,7 +118,10 @@ function CriarEventoFilhoModal({ eventoId, onFechar }: { eventoId: string; onFec
       const res = await fetch(`/api/eventos/${eventoId}/criar-filho`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ titulo: titulo.trim(), moduloIngressos, moduloEstacionamento }),
+        body:    JSON.stringify({
+          titulo: titulo.trim(), moduloIngressos, moduloEstacionamento, moduloTenda,
+          permitirVendaNoCaixaPai: moduloTenda ? permitirVendaNoCaixaPai : undefined,
+        }),
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? 'Erro ao criar evento filho'); return }
@@ -134,12 +147,13 @@ function CriarEventoFilhoModal({ eventoId, onFechar }: { eventoId: string; onFec
         <p className="text-[#444] text-[11px] uppercase tracking-wider mb-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
           O que esse evento filho vai ter
         </p>
-        <div className="flex flex-col gap-2 mb-4">
+        <div className="flex flex-col gap-2 mb-2">
           {([
-            { checked: moduloIngressos,      onChange: setModuloIngressos,      icon: Ticket, label: 'Ingressos' },
-            { checked: moduloEstacionamento, onChange: setModuloEstacionamento, icon: Car,    label: 'Estacionamento' },
+            { checked: moduloIngressos,      onChange: () => setModuloIngressos(v => !v), icon: Ticket, label: 'Ingressos' },
+            { checked: moduloEstacionamento, onChange: () => setModuloEstacionamento(v => !v), icon: Car, label: 'Estacionamento' },
+            { checked: moduloTenda,          onChange: toggleTenda, icon: Tent, label: 'Tenda' },
           ]).map(({ checked, onChange, icon: Icon, label }) => (
-            <button key={label} type="button" onClick={() => onChange(!checked)}
+            <button key={label} type="button" onClick={onChange}
               className={cn(
                 'flex items-center gap-3 p-3 rounded-xl border text-left transition-all',
                 checked ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35' : 'bg-[#111] border-[#1c1c1c]'
@@ -151,6 +165,21 @@ function CriarEventoFilhoModal({ eventoId, onFechar }: { eventoId: string; onFec
             </button>
           ))}
         </div>
+
+        {moduloTenda && (
+          <button type="button" onClick={() => setPermitirVendaNoCaixaPai(v => !v)}
+            className="w-full flex items-center gap-3 p-3 rounded-xl mb-4 text-left transition-all"
+            style={{ background: '#111', border: '1px solid #1c1c1c' }}>
+            <div className="w-9 h-5 rounded-full transition-colors relative shrink-0"
+                 style={{ background: permitirVendaNoCaixaPai ? '#E8B84B' : '#222' }}>
+              <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
+                   style={{ left: permitirVendaNoCaixaPai ? '18px' : '2px' }} />
+            </div>
+            <span className="text-[#999] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Vender no mesmo caixa do evento principal
+            </span>
+          </button>
+        )}
 
         {nenhumModulo && <p className="text-red-400 text-xs text-center mb-3">Selecione ao menos um item acima</p>}
         {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}

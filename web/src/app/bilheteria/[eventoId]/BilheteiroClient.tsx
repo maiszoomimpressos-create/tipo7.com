@@ -28,10 +28,12 @@ const PRINT_FORMATS: { value: PrintFormat; label: string; sub: string; Icon: Rea
 ]
 
 interface Ingresso {
-  id:         string
-  name:       string
-  price:      number
-  disponivel: number
+  id:          string
+  name:        string
+  price:       number
+  disponivel:  number
+  eventoId?:   string   // evento real desse ingresso — pode ser diferente do eventoId do caixa (caixa compartilhado)
+  eventoTitle?: string
 }
 
 interface TicketGerado {
@@ -366,7 +368,7 @@ if exist "%CHROME%" (
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({
-            eventoId,
+            eventoId: ingressoSelecionado?.eventoId ?? eventoId,
             ticketId,
             quantidade,
             caixaId: caixaId ?? null,
@@ -403,7 +405,7 @@ if exist "%CHROME%" (
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          eventoId,
+          eventoId: ingressoSelecionado?.eventoId ?? eventoId,
           ticketId,
           quantidade,
           caixaId: caixaId ?? null,
@@ -1164,34 +1166,51 @@ if exist "%CHROME%" (
                   Nenhum ingresso disponível
                 </p>
               ) : (
-                ingressos.map((i, idx) => (
-                  <button
-                    key={i.id}
-                    type="button"
-                    disabled={i.disponivel === 0}
-                    onClick={() => { setTicketId(i.id); setDropdownAberto(false) }}
-                    className="w-full flex items-center justify-between px-4 py-3.5 text-left transition-colors disabled:opacity-40"
-                    style={{
-                      background: ticketId === i.id ? `${ACCENT}10` : 'transparent',
-                      borderTop: idx > 0 ? '1px solid #1a1a1a' : 'none',
-                      fontFamily: 'var(--font-dm-sans)',
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      {ticketId === i.id && <Check size={12} style={{ color: ACCENT }} />}
-                      {ticketId !== i.id && <div className="w-3" />}
-                      <div>
-                        <p className="text-white text-sm">{i.name}</p>
-                        <p className="text-[#555] text-[11px] mt-0.5">
-                          {i.disponivel === 0 ? 'Esgotado' : `${i.disponivel} disponíveis`}
-                        </p>
+                (() => {
+                  const gruposDistintos = new Set(ingressos.map(i => i.eventoId ?? eventoId))
+                  const mostrarGrupo = gruposDistintos.size > 1
+                  let ultimoGrupo: string | null = null
+                  return ingressos.map((i, idx) => {
+                    const grupoAtual = i.eventoId ?? eventoId
+                    const novoGrupo  = mostrarGrupo && grupoAtual !== ultimoGrupo
+                    ultimoGrupo = grupoAtual
+                    return (
+                      <div key={i.id}>
+                        {novoGrupo && (
+                          <p className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-wider text-[#555]"
+                             style={{ fontFamily: 'var(--font-dm-sans)', borderTop: idx > 0 ? '1px solid #1a1a1a' : 'none' }}>
+                            {i.eventoTitle ?? 'Evento'}
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          disabled={i.disponivel === 0}
+                          onClick={() => { setTicketId(i.id); setDropdownAberto(false) }}
+                          className="w-full flex items-center justify-between px-4 py-3.5 text-left transition-colors disabled:opacity-40"
+                          style={{
+                            background: ticketId === i.id ? `${ACCENT}10` : 'transparent',
+                            borderTop: idx > 0 && !novoGrupo ? '1px solid #1a1a1a' : 'none',
+                            fontFamily: 'var(--font-dm-sans)',
+                          }}
+                        >
+                          <div className="flex items-center gap-2">
+                            {ticketId === i.id && <Check size={12} style={{ color: ACCENT }} />}
+                            {ticketId !== i.id && <div className="w-3" />}
+                            <div>
+                              <p className="text-white text-sm">{i.name}</p>
+                              <p className="text-[#555] text-[11px] mt-0.5">
+                                {i.disponivel === 0 ? 'Esgotado' : `${i.disponivel} disponíveis`}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="font-semibold text-sm" style={{ color: ACCENT }}>
+                            {i.price === 0 ? 'Grátis' : `R$ ${i.price.toFixed(2).replace('.', ',')}`}
+                          </span>
+                        </button>
                       </div>
-                    </div>
-                    <span className="font-semibold text-sm" style={{ color: ACCENT }}>
-                      {i.price === 0 ? 'Grátis' : `R$ ${i.price.toFixed(2).replace('.', ',')}`}
-                    </span>
-                  </button>
-                ))
+                    )
+                  })
+                })()
               )}
             </div>
           )}

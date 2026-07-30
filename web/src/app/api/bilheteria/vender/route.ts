@@ -6,26 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
 import { debitarSaldoBilheteria } from '@/lib/saldoBilheteria'
 
-// Verifica se o usuário tem permissão de bilheteria para o evento
-async function checkPermissaoBilheteria(userId: string, eventoId: string): Promise<boolean> {
-  const admin = createServiceClient()
-
-  // Organizador sempre tem acesso
-  const { data: evento } = await admin
-    .from('events')
-    .select('organization_id')
-    .eq('id', eventoId)
-    .single()
-  if (!evento) return false
-
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento.organization_id)
-    .single()
-  if (org?.owner_id === userId) return true
-
-  // Staff com permissão vender_ingresso
+async function temPermissaoVenderNoEvento(admin: ReturnType<typeof createServiceClient>, userId: string, eventoId: string): Promise<boolean> {
   const { data: staff } = await admin
     .from('event_staff')
     .select('id, event_positions(event_position_permissions(permission))')
@@ -39,6 +20,31 @@ async function checkPermissaoBilheteria(userId: string, eventoId: string): Promi
     event_position_permissions: { permission: string }[]
   } | null
   return (pos?.event_position_permissions ?? []).some(p => p.permission === 'vender_ingresso')
+}
+
+// Verifica se o usuário tem permissão de bilheteria para o evento. Quando o
+// evento é um filho vendido no caixa compartilhado do pai, equipe convidada
+// no PAI também tem acesso — sem precisar de convite duplicado por filho.
+async function checkPermissaoBilheteria(userId: string, eventoId: string): Promise<boolean> {
+  const admin = createServiceClient()
+
+  const { data: evento } = await admin
+    .from('events')
+    .select('organization_id, parent_event_id')
+    .eq('id', eventoId)
+    .single()
+  if (!evento) return false
+
+  const { data: org } = await admin
+    .from('organizations')
+    .select('owner_id')
+    .eq('id', evento.organization_id)
+    .single()
+  if (org?.owner_id === userId) return true
+
+  if (await temPermissaoVenderNoEvento(admin, userId, eventoId)) return true
+  if (evento.parent_event_id) return temPermissaoVenderNoEvento(admin, userId, evento.parent_event_id)
+  return false
 }
 
 // POST /api/bilheteria/vender

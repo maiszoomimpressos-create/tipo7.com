@@ -27,12 +27,13 @@ interface Inicial {
 }
 
 interface Props {
-  eventoId:     string
-  tipoPessoa:   'pf' | 'pj' | null
-  responsavel:  Responsavel | null
-  inicial:      Inicial
-  perfilCidade: string | null
-  perfilEstado: string | null
+  eventoId:        string
+  herdaDadosDoPai?: boolean
+  tipoPessoa:      'pf' | 'pj' | null
+  responsavel:     Responsavel | null
+  inicial:         Inicial
+  perfilCidade:    string | null
+  perfilEstado:    string | null
 }
 
 const CATEGORIAS = [
@@ -116,7 +117,7 @@ function DateTimeInput24h({ value, onChange, className }: { value: string; onCha
   )
 }
 
-export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial, perfilCidade, perfilEstado }: Props) {
+export function EventoForm({ eventoId, herdaDadosDoPai, tipoPessoa, responsavel, inicial, perfilCidade, perfilEstado }: Props) {
   const router   = useRouter()
   const supabase = createClient()
 
@@ -418,7 +419,16 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial, perfilC
         </div>
       </div>
 
-      {/* ── SEÇÃO 2: Data e horário ── */}
+      {/* ── SEÇÃO 2: Data e horário (Tenda/Estacionamento herdam do pai — os dias
+           específicos são escolhidos depois, na etapa de ingressos) ── */}
+      {herdaDadosDoPai ? (
+        <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl px-6 py-4">
+          <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Data e horário</p>
+          <p className="text-[#444] text-xs mt-1 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Este evento roda em dias específicos do evento principal — escolha quais dias e horários na próxima etapa (Ingressos).
+          </p>
+        </div>
+      ) : (
       <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-[#141414]">
           <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Data e horário</p>
@@ -508,6 +518,7 @@ export function EventoForm({ eventoId, tipoPessoa, responsavel, inicial, perfilC
           </div>
         </div>
       </div>
+      )}
 
       {/* ── SEÇÃO 3: Local do evento ── */}
       <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">

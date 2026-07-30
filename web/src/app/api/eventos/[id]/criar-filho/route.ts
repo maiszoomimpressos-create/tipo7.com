@@ -40,7 +40,11 @@ export async function POST(
 
   const { data: pai } = await admin
     .from('events')
-    .select('id, organization_id, parent_event_id')
+    .select(`
+      id, organization_id, parent_event_id,
+      date_start, date_end,
+      venue_name, venue_id, city, state, street, street_number, neighborhood, complement, zip_code, capacity
+    `)
     .eq('id', id)
     .single()
 
@@ -50,12 +54,16 @@ export async function POST(
   }
 
   const body = await req.json() as {
-    titulo:                string
-    moduloIngressos?:      boolean
-    moduloEstacionamento?: boolean
+    titulo:                     string
+    moduloIngressos?:           boolean
+    moduloEstacionamento?:      boolean
+    moduloTenda?:               boolean
+    permitirVendaNoCaixaPai?:   boolean
   }
 
   if (!body.titulo?.trim()) return NextResponse.json({ error: 'Nome é obrigatório' }, { status: 400 })
+
+  const herdaDadosDoPai = body.moduloTenda || body.moduloEstacionamento
 
   const { data: filho, error } = await admin
     .from('events')
@@ -67,6 +75,25 @@ export async function POST(
       created_by:            user.id,
       modulo_ingressos:      body.moduloIngressos      ?? true,
       modulo_estacionamento: body.moduloEstacionamento  ?? false,
+      modulo_tenda:          body.moduloTenda           ?? false,
+      permitir_venda_no_caixa_pai: body.permitirVendaNoCaixaPai ?? true,
+      // Tenda/Estacionamento herdam data e local do pai (editável depois) —
+      // evita redigitar o que já existe; datas específicas de dias são
+      // escolhidas depois na etapa de ingressos, a partir do calendário do pai.
+      ...(herdaDadosDoPai ? {
+        date_start:     pai.date_start,
+        date_end:       pai.date_end,
+        venue_name:     pai.venue_name,
+        venue_id:       pai.venue_id,
+        city:           pai.city,
+        state:          pai.state,
+        street:         pai.street,
+        street_number:  pai.street_number,
+        neighborhood:   pai.neighborhood,
+        complement:     pai.complement,
+        zip_code:       pai.zip_code,
+        capacity:       pai.capacity,
+      } : {}),
     })
     .select('id')
     .single()

@@ -42,6 +42,17 @@ export default async function EventoPage({ params }: Props) {
   // Rascunhos só são visíveis ao dono
   if (evento.status !== 'publicado' && !isOwner) notFound()
 
+  // Busca atrações (eventos filhos publicados) — só faz sentido pro pai, um
+  // filho não pode ter filhos (regra já aplicada em criar-filho/route.ts)
+  const { data: atracoes } = evento.parent_event_id
+    ? { data: [] }
+    : await supabase
+        .from('events')
+        .select('id, title, banner_url, date_start')
+        .eq('parent_event_id', id)
+        .eq('status', 'publicado')
+        .order('date_start')
+
   // Busca programação
   const { data: dias } = await supabase
     .from('event_days')
@@ -167,6 +178,12 @@ export default async function EventoPage({ params }: Props) {
         capacity={evento.capacity ?? null}
         soldByTicket={soldByTicket}
         atributosAtivos={atributosAtivos}
+        atracoes={(atracoes ?? []).map(a => ({
+          id:        a.id,
+          title:     a.title      ?? 'Atração',
+          bannerUrl: a.banner_url ?? null,
+          dateStart: a.date_start ?? null,
+        }))}
       />
     </div>
   )

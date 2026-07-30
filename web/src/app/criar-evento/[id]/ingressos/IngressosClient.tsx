@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   Users, Package, Layers, Plus, Trash2, Loader2,
-  Ticket, ArrowRight, Check, ArrowLeft,
+  Ticket, ArrowRight, Check, ArrowLeft, CalendarCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -30,11 +30,20 @@ interface IngressoConfig {
   order_index:  number
 }
 
+interface DiaHerdavel {
+  id:         string | null
+  day_number: number
+  date:       string
+  start_time: string
+  end_time:   string
+}
+
 interface Props {
   eventoId:              string
   numDias:               number
   dateStart:             string
   dateEnd:               string
+  diasHerdaveis?:        DiaHerdavel[]
   ticketModeInicial:     'individual' | 'pacote' | 'ambos' | null
   packageDiscountInicial: number
   diasIniciais:          DiaConfig[]
@@ -191,6 +200,7 @@ export function IngressosClient({
   numDias,
   dateStart,
   dateEnd,
+  diasHerdaveis,
   ticketModeInicial,
   packageDiscountInicial,
   diasIniciais,
@@ -199,7 +209,8 @@ export function IngressosClient({
   const router   = useRouter()
   const supabase = createClient()
 
-  const isMultiDay = numDias > 1
+  const modoHeranca = !!diasHerdaveis
+  const isMultiDay  = modoHeranca ? true : numDias > 1
 
   const [ticketMode, setTicketMode] = useState<'individual' | 'pacote' | 'ambos' | null>(
     ticketModeInicial ?? (isMultiDay ? null : 'individual')
@@ -209,6 +220,7 @@ export function IngressosClient({
   const datas = gerarDatas(dateStart, numDias)
   const [dias, setDias] = useState<DiaConfig[]>(() => {
     if (diasIniciais.length > 0) return diasIniciais
+    if (modoHeranca) return [] // promotor escolhe os dias no seletor abaixo
     const defaultStart = extractTime(dateStart)
     const defaultEnd   = extractTime(dateEnd)
     return datas.map((date, i) => ({
@@ -219,6 +231,30 @@ export function IngressosClient({
       attractions: [],
     }))
   })
+
+  // Dias do pai já usados por este filho (por data) — evita duplicar ao marcar/desmarcar
+  const datasSelecionadas = new Set(dias.map(d => d.date))
+
+  function toggleDiaHerdado(dia: DiaHerdavel) {
+    if (datasSelecionadas.has(dia.date)) {
+      setDias(prev => {
+        const restantes = prev.filter(d => d.date !== dia.date)
+        return restantes.map((d, i) => ({ ...d, day_number: i + 1 }))
+      })
+      return
+    }
+    setDias(prev => {
+      const novo: DiaConfig = {
+        day_number:  prev.length + 1,
+        date:        dia.date,
+        start_time:  dia.start_time,
+        end_time:    dia.end_time,
+        attractions: [],
+      }
+      return [...prev, novo].sort((a, b) => a.date.localeCompare(b.date)).map((d, i) => ({ ...d, day_number: i + 1 }))
+    })
+  }
+
   const [diaAberto,  setDiaAberto]  = useState<number>(1)
   const [duracaoDia, setDuracaoDia] = useState<Record<number, string>>({})
 
@@ -310,13 +346,28 @@ export function IngressosClient({
   const handleSalvar = async (continuar = false) => {
     setSaving(true); setErro(null)
     try {
+      // Em modo herança (Tenda/Estacionamento), date_start/date_end do filho
+      // acompanham o min/max dos dias escolhidos — não pede isso na Seção 2.
+      const datasEscolhidas = modoHeranca ? dias.map(d => d.date).sort() : null
+      const novoDateStart = datasEscolhidas?.length ? `${datasEscolhidas[0]}T${(dias.find(d => d.date === datasEscolhidas[0])?.start_time || '00:00')}` : undefined
+      const novoDateEnd   = datasEscolhidas?.length ? `${datasEscolhidas[datasEscolhidas.length - 1]}T${(dias.find(d => d.date === datasEscolhidas[datasEscolhidas.length - 1])?.end_time || '23:59')}` : undefined
+
       await supabase.from('events').update({
         ticket_mode:          ticketMode,
         package_discount_pct: packageDiscount,
+        ...(novoDateStart ? { date_start: novoDateStart } : {}),
+        ...(novoDateEnd   ? { date_end:   novoDateEnd   } : {}),
       }).eq('id', eventoId)
 
+      // Mapa placeholder ("new-{date}" ou id real) → id real do dia, montado
+      // durante o próprio save — sem isso, ingressos ligados a um dia recém-criado
+      // tentariam gravar a chave temporária como event_day_id (UUID inválido).
+      const idPlaceholderParaReal: Record<string, string> = {}
+
       if (ticketMode !== 'pacote') {
+        const diasAtualizados: DiaConfig[] = []
         for (const dia of dias) {
+          const chavePlaceholder = dia.id ?? `new-${dia.date}`
           const { data: diaDb } = dia.id
             ? await supabase.from('event_days').upsert({
                 id:         dia.id,
@@ -334,8 +385,10 @@ export function IngressosClient({
                 end_time:   dia.end_time   || null,
               }, { onConflict: 'event_id,day_number' }).select('id').single()
 
-          if (!diaDb) continue
+          if (!diaDb) { diasAtualizados.push(dia); continue }
           const diaId = diaDb.id
+          idPlaceholderParaReal[chavePlaceholder] = diaId
+          diasAtualizados.push({ ...dia, id: diaId })
 
           await supabase.from('event_day_attractions').delete().eq('event_day_id', diaId)
           const atracoes = dia.attractions.filter(a => a.name.trim())
@@ -350,19 +403,19 @@ export function IngressosClient({
               }))
             )
           }
-
-          setDias(prev => prev.map(d =>
-            d.day_number === dia.day_number ? { ...d, id: diaId } : d
-          ))
         }
+        setDias(diasAtualizados)
       }
 
       for (let i = 0; i < ingressos.length; i++) {
         const t = ingressos[i]
         if (!t.name.trim()) continue
+        const eventDayIdReal = t.event_day_id
+          ? (idPlaceholderParaReal[t.event_day_id] ?? t.event_day_id)
+          : null
         const payload = {
           event_id:     eventoId,
-          event_day_id: t.event_day_id,
+          event_day_id: eventDayIdReal,
           name:         t.name.trim(),
           description:  t.description || null,
           price:        t.price,
@@ -371,10 +424,13 @@ export function IngressosClient({
         }
         if (t.id) {
           await supabase.from('event_tickets').update(payload).eq('id', t.id)
+          if (eventDayIdReal !== t.event_day_id) {
+            setIngressos(prev => prev.map((x, xi) => xi === i ? { ...x, event_day_id: eventDayIdReal } : x))
+          }
         } else {
           const { data } = await supabase.from('event_tickets').insert(payload).select('id').single()
           if (data) {
-            setIngressos(prev => prev.map((x, xi) => xi === i ? { ...x, id: data.id } : x))
+            setIngressos(prev => prev.map((x, xi) => xi === i ? { ...x, id: data.id, event_day_id: eventDayIdReal } : x))
           }
         }
       }
@@ -402,8 +458,54 @@ export function IngressosClient({
         Voltar para informações do evento
       </button>
 
+      {/* Seletor de dias herdados do pai (Tenda/Estacionamento) */}
+      {modoHeranca && (
+        <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-[#141414] flex items-center gap-2">
+            <CalendarCheck size={14} className="text-[#E8B84B]" />
+            <div>
+              <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Em quais dias este evento acontece?
+              </p>
+              <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Marque um ou mais dias do evento principal — não precisam ser seguidos
+              </p>
+            </div>
+          </div>
+          <div className="p-6 flex flex-wrap gap-2">
+            {(diasHerdaveis ?? []).length === 0 && (
+              <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                O evento principal ainda não tem dias/data cadastrados. Cadastre a data dele primeiro.
+              </p>
+            )}
+            {(diasHerdaveis ?? []).map(dh => {
+              const marcado = datasSelecionadas.has(dh.date)
+              return (
+                <button key={dh.date} type="button" onClick={() => toggleDiaHerdado(dh)}
+                  className={cn(
+                    'flex flex-col items-start px-4 py-2.5 rounded-xl border text-left transition-all duration-200',
+                    marcado
+                      ? 'border-[#E8B84B]/40 bg-[#E8B84B]/8'
+                      : 'border-[#1a1a1a] bg-[#0a0a0a] hover:border-[#2a2a2a]'
+                  )}>
+                  <span className="text-[10px] font-bold tracking-wider uppercase"
+                        style={{ color: marcado ? '#E8B84B' : '#444', fontFamily: 'var(--font-syne)' }}>
+                    {formatData(dh.date)}
+                  </span>
+                  {dh.start_time && (
+                    <span className="text-[10px] mt-0.5" style={{ color: marcado ? '#bbb' : '#333', fontFamily: 'var(--font-dm-sans)' }}>
+                      {dh.start_time.slice(0,5)}{dh.end_time ? ` → ${dh.end_time.slice(0,5)}` : ''}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Seletor de modo (somente multi-day) */}
-      {isMultiDay && (
+      {isMultiDay && dias.length > 0 && (
         <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
           <div className="px-6 py-4 border-b border-[#141414]">
             <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -637,7 +739,7 @@ export function IngressosClient({
 
                       {/* Ingressos do dia */}
                       <IngressosPorDia
-                        dayId={dia.id ?? `new-${dia.day_number}`}
+                        dayId={dia.id ?? `new-${dia.date}`}
                         label={`dia ${dia.day_number}`}
                         ingressos={ingressos}
                         onUpdate={updateIngresso}

@@ -16,7 +16,7 @@ export default async function IngressosPage({ params }: Props) {
 
   const { data: evento } = await supabase
     .from('events')
-    .select('id, title, date_start, date_end, ticket_mode, package_discount_pct, organizations(owner_id)')
+    .select('id, title, date_start, date_end, ticket_mode, package_discount_pct, parent_event_id, modulo_tenda, modulo_estacionamento, organizations(owner_id)')
     .eq('id', id)
     .single()
 
@@ -26,6 +26,53 @@ export default async function IngressosPage({ params }: Props) {
     ? evento.organizations[0]
     : evento.organizations as { owner_id: string } | null
   if (!org || (org as { owner_id: string }).owner_id !== user.id) notFound()
+
+  // Tenda/Estacionamento não geram um intervalo contínuo de dias — o promotor
+  // escolhe quais dias específicos do calendário do PAI se aplicam a este filho.
+  const herdaDiasDoPai = !!evento.parent_event_id && (!!evento.modulo_tenda || !!evento.modulo_estacionamento)
+  let diasHerdaveis: { id: string | null; day_number: number; date: string; start_time: string; end_time: string }[] = []
+  if (herdaDiasDoPai) {
+    const { data: diasPai } = await supabase
+      .from('event_days')
+      .select('id, day_number, date, start_time, end_time')
+      .eq('event_id', evento.parent_event_id!)
+      .order('day_number')
+
+    if (diasPai?.length) {
+      diasHerdaveis = diasPai.map(d => ({
+        id:         d.id,
+        day_number: d.day_number,
+        date:       d.date,
+        start_time: d.start_time ?? '',
+        end_time:   d.end_time   ?? '',
+      }))
+    } else {
+      // Pai ainda não passou pela própria etapa de ingressos (sem event_days
+      // salvos) — gera as opções a partir do intervalo date_start/date_end dele.
+      const { data: pai } = await supabase
+        .from('events')
+        .select('date_start, date_end')
+        .eq('id', evento.parent_event_id!)
+        .single()
+      if (pai?.date_start) {
+        const inicio = new Date(pai.date_start)
+        const fim    = pai.date_end ? new Date(pai.date_end) : inicio
+        const numDiasPai = Math.max(1, Math.floor((fim.getTime() - inicio.getTime()) / 86400000) + 1)
+        const hora = (d: Date) => `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`
+        for (let i = 0; i < numDiasPai; i++) {
+          const d = new Date(inicio)
+          d.setUTCDate(d.getUTCDate() + i)
+          diasHerdaveis.push({
+            id:         null,
+            day_number: i + 1,
+            date:       d.toISOString().slice(0, 10),
+            start_time: hora(inicio),
+            end_time:   hora(fim),
+          })
+        }
+      }
+    }
+  }
 
   // Calcula número de dias entre date_start e date_end
   const calcDias = () => {
@@ -87,7 +134,9 @@ export default async function IngressosPage({ params }: Props) {
             {evento.title}
           </h1>
           <p className="text-[#555] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            Configure os ingressos{numDias > 1 ? ` para os ${numDias} dias do evento` : ' do evento'}.
+            {herdaDiasDoPai
+              ? 'Escolha em quais dias do evento principal este evento acontece, e configure os ingressos.'
+              : `Configure os ingressos${numDias > 1 ? ` para os ${numDias} dias do evento` : ' do evento'}.`}
           </p>
         </div>
 
@@ -96,6 +145,7 @@ export default async function IngressosPage({ params }: Props) {
           numDias={numDias}
           dateStart={evento.date_start ?? ''}
           dateEnd={evento.date_end ?? ''}
+          diasHerdaveis={herdaDiasDoPai ? diasHerdaveis : undefined}
           ticketModeInicial={(evento.ticket_mode ?? null) as 'individual' | 'pacote' | 'ambos' | null}
           packageDiscountInicial={evento.package_discount_pct ?? 0}
           diasIniciais={(dias ?? []).map(d => ({

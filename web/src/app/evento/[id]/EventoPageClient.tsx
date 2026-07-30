@@ -62,6 +62,13 @@ interface Ingresso {
   eventDayId: string | null
 }
 
+interface Atracao {
+  id:         string
+  title:      string
+  bannerUrl:  string | null
+  dateStart:  string | null
+}
+
 interface Props {
   evento:          Evento
   dias:            Dia[]
@@ -70,6 +77,7 @@ interface Props {
   capacity:        number | null
   soldByTicket:    Record<string, number>
   atributosAtivos: { id: string; name: string; icon: string; value_json?: Record<string, string> | null }[]
+  atracoes:        Atracao[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -151,7 +159,7 @@ function TicketRow({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, soldByTicket, atributosAtivos }: Props) {
+export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, soldByTicket, atributosAtivos, atracoes }: Props) {
   // Accordion e checkout
   const [openDay,       setOpenDay]       = useState(0)
   const [selection,     setSelection]     = useState<Record<string, number>>({})
@@ -581,6 +589,40 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                   </div>
                 )
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Atrações — eventos filhos publicados (Tenda, etc.) ──────────── */}
+      {atracoes.length > 0 && (
+        <div className="border-b border-[#111]" style={{ background: '#070707' }}>
+          <div className="max-w-6xl mx-auto px-6 py-6">
+            <p className="text-white text-sm font-semibold mb-3" style={{ fontFamily: 'var(--font-outfit)' }}>
+              Atrações
+            </p>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {atracoes.map(a => (
+                <a key={a.id} href={`/evento/${a.id}`}
+                  className="flex-shrink-0 w-56 rounded-2xl overflow-hidden border border-[#1a1a1a] hover:border-[#2a2a2a] transition-colors"
+                  style={{ background: '#0d0d0d' }}>
+                  <div className="w-full h-28 bg-[#111] flex items-center justify-center overflow-hidden">
+                    {a.bannerUrl
+                      ? <img src={a.bannerUrl} alt={a.title} className="w-full h-full object-cover" />
+                      : <Music size={22} className="text-[#2a2a2a]" />}
+                  </div>
+                  <div className="p-3">
+                    <p className="text-white text-sm font-medium truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {a.title}
+                    </p>
+                    {a.dateStart && (
+                      <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        {formatDateShort(a.dateStart)}
+                      </p>
+                    )}
+                  </div>
+                </a>
+              ))}
             </div>
           </div>
         </div>

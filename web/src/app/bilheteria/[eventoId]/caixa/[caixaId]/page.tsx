@@ -2,6 +2,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { ShieldX } from 'lucide-react'
 import { BilheteiroClient } from '../../BilheteiroClient'
+import { getEventosVendaveisNoCaixa } from '@/lib/eventFamily'
 
 interface Props {
   params: Promise<{ eventoId: string; caixaId: string }>
@@ -66,12 +67,27 @@ export default async function CaixaPage({ params }: Props) {
   if (!isOwner && !isOperador && !isVendedor)
     return <SemPermissao mensagem="Você não tem permissão para acessar este caixa." />
 
-  // Busca tipos de ingresso e estoque
-  const { data: tickets } = await admin
+  // Busca tipos de ingresso e estoque de toda a família vendável neste caixa
+  // (o próprio evento + filhos que optaram por vender no caixa do pai)
+  const eventosVendaveis = await getEventosVendaveisNoCaixa(admin, eventoId)
+  const eventoIdsVendaveis = eventosVendaveis.map(e => e.id)
+  const eventoTituloMap: Record<string, string> = Object.fromEntries(eventosVendaveis.map(e => [e.id, e.title]))
+
+  const { data: ticketsRaw } = await admin
     .from('event_tickets')
-    .select('id, name, price, quantity')
-    .eq('event_id', eventoId)
+    .select('id, name, price, quantity, event_id')
+    .in('event_id', eventoIdsVendaveis)
     .order('price')
+
+  // Agrupa por evento (pai primeiro, depois filhos, na ordem de eventosVendaveis)
+  // antes de ordenar por preço dentro de cada grupo — evita intercalar eventos
+  // diferentes no seletor, o que quebraria os cabeçalhos de grupo na UI.
+  const ordemEvento = new Map(eventoIdsVendaveis.map((id, i) => [id, i]))
+  const tickets = [...(ticketsRaw ?? [])].sort((a, b) => {
+    const posA = ordemEvento.get(a.event_id) ?? 0
+    const posB = ordemEvento.get(b.event_id) ?? 0
+    return posA !== posB ? posA - posB : Number(a.price) - Number(b.price)
+  })
 
   const ticketIds = (tickets ?? []).map(t => t.id)
   let vendidosPorTicket: Record<string, number> = {}
@@ -80,7 +96,7 @@ export default async function CaixaPage({ params }: Props) {
     const { data: ordensAtivas } = await admin
       .from('orders')
       .select('id')
-      .eq('event_id', eventoId)
+      .in('event_id', eventoIdsVendaveis)
       .not('status', 'in', '(rejected,cancelled)')
 
     const orderIds = (ordensAtivas ?? []).map(o => o.id)
@@ -141,10 +157,12 @@ export default async function CaixaPage({ params }: Props) {
       ingressos={(tickets ?? []).map(i => {
         const vendidos = vendidosPorTicket[i.id] ?? 0
         return {
-          id:         i.id,
-          name:       i.name ?? 'Ingresso',
-          price:      Number(i.price ?? 0),
-          disponivel: Math.max(0, (i.quantity ?? 0) - vendidos),
+          id:          i.id,
+          name:        i.name ?? 'Ingresso',
+          price:       Number(i.price ?? 0),
+          disponivel:  Math.max(0, (i.quantity ?? 0) - vendidos),
+          eventoId:    i.event_id,
+          eventoTitle: eventoTituloMap[i.event_id] ?? evento.title ?? 'Evento',
         }
       })}
       operadorName={profile?.full_name ?? 'Operador'}

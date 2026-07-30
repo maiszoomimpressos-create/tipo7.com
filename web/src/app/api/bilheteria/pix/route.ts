@@ -9,21 +9,29 @@ import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
 import { debitarSaldoBilheteria } from '@/lib/saldoBilheteria'
 
-async function checkPermissaoBilheteria(userId: string, eventoId: string) {
-  const admin = createServiceClient()
-  const { data: evento } = await admin.from('events').select('organization_id').eq('id', eventoId).single()
-  if (!evento) return { ok: false, ownerId: null }
-  const { data: org } = await admin.from('organizations').select('owner_id').eq('id', evento.organization_id).single()
-  if (org?.owner_id === userId) return { ok: true, ownerId: org.owner_id }
-
+async function temPermissaoVenderNoEvento(admin: ReturnType<typeof createServiceClient>, userId: string, eventoId: string): Promise<boolean> {
   const { data: staff } = await admin
     .from('event_staff')
     .select('id, event_positions(event_position_permissions(permission))')
     .eq('event_id', eventoId).eq('user_id', userId).eq('status', 'active').single()
-
-  if (!staff) return { ok: false, ownerId: org?.owner_id ?? null }
+  if (!staff) return false
   const pos = staff.event_positions as unknown as { event_position_permissions: { permission: string }[] } | null
-  const temPerm = (pos?.event_position_permissions ?? []).some(p => p.permission === 'vender_ingresso')
+  return (pos?.event_position_permissions ?? []).some(p => p.permission === 'vender_ingresso')
+}
+
+// Equipe convidada no PAI também vende ingresso do filho quando ele usa o
+// caixa compartilhado — sem precisar de convite duplicado por filho.
+async function checkPermissaoBilheteria(userId: string, eventoId: string) {
+  const admin = createServiceClient()
+  const { data: evento } = await admin.from('events').select('organization_id, parent_event_id').eq('id', eventoId).single()
+  if (!evento) return { ok: false, ownerId: null }
+  const { data: org } = await admin.from('organizations').select('owner_id').eq('id', evento.organization_id).single()
+  if (org?.owner_id === userId) return { ok: true, ownerId: org.owner_id }
+
+  let temPerm = await temPermissaoVenderNoEvento(admin, userId, eventoId)
+  if (!temPerm && evento.parent_event_id) {
+    temPerm = await temPermissaoVenderNoEvento(admin, userId, evento.parent_event_id)
+  }
   return { ok: temPerm, ownerId: org?.owner_id ?? null }
 }
 

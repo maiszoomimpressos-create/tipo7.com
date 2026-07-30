@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getFamiliaRoot } from '@/lib/eventFamily'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -25,7 +26,14 @@ export async function POST(req: NextRequest) {
 
   if (!origem || !destino)
     return NextResponse.json({ error: 'Caixa não encontrado' }, { status: 404 })
-  if (origem.evento_id !== destino.evento_id)
+
+  // Permite transferência entre caixas do mesmo "grupo de eventos" (pai + filhos),
+  // não só do mesmo evento exato — ex.: caixa da Tenda transferindo pro caixa do pai.
+  const [familiaOrigem, familiaDestino] = await Promise.all([
+    getFamiliaRoot(admin, origem.evento_id),
+    getFamiliaRoot(admin, destino.evento_id),
+  ])
+  if (familiaOrigem !== familiaDestino)
     return NextResponse.json({ error: 'Caixas de eventos diferentes' }, { status: 400 })
   if (origem.status !== 'aberto' || destino.status !== 'aberto')
     return NextResponse.json({ error: 'Ambos os caixas devem estar abertos' }, { status: 400 })
