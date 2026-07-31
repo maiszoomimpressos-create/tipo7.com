@@ -80,7 +80,7 @@ const isValidCPF = (v: string) => {
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
 interface Props {
-  userId:  string
+  userId:     string
   initial: {
     // Dados pessoais
     full_name:    string
@@ -454,6 +454,10 @@ export function ProfileForm({ userId, initial }: Props) {
 
       // Avisa o Header (e qualquer outro componente) pra revalidar na hora
       window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT))
+
+      // Manda o perfil atualizado pra Autosave (best-effort — não espera
+      // nem bloqueia o salvamento se a Autosave estiver fora do ar)
+      fetch('/api/auth/sync-autosave', { method: 'POST' }).catch(() => {})
 
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)

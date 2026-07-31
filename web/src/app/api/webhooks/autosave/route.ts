@@ -23,7 +23,13 @@ function assinaturaValida(rawBody: string, assinatura: string | null, segredo: s
 }
 
 export async function POST(req: NextRequest) {
-  const segredo = process.env.AUTOSAVE_WEBHOOK_SECRET
+  const admin = createServiceClient()
+  const { data: integracao } = await admin
+    .from('api_integracoes')
+    .select('webhook_secret')
+    .eq('area_slug', 'usuarios')
+    .maybeSingle()
+  const segredo = integracao?.webhook_secret
   if (!segredo) return NextResponse.json({ error: 'Webhook não configurado' }, { status: 500 })
 
   const rawBody    = await req.text()
@@ -45,7 +51,6 @@ export async function POST(req: NextRequest) {
   const externalId = payload.data.external_id
   if (typeof externalId !== 'string') return NextResponse.json({ ok: true })
 
-  const admin = createServiceClient()
   const { data: perfilAtual } = await admin
     .from('profiles')
     .select(CAMPOS_SINCRONIZAVEIS.join(', '))

@@ -101,6 +101,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           : error.code ?? 'Erro ao criar conta. Tente novamente.'
         return { error: msg }
       }
+      // Manda o cadastro recém-criado pra Autosave (best-effort — não
+      // espera nem bloqueia o cadastro se a Autosave estiver fora do ar)
+      fetch('/api/auth/sync-autosave', { method: 'POST' }).catch(() => {})
       return { error: null }
     } catch {
       return { error: 'Erro ao criar conta. Verifique sua conexão.' }
