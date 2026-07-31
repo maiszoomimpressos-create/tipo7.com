@@ -320,56 +320,6 @@ export function IngressosClient({
   const [uploadingAttraction, setUploadingAttraction] = useState<string | null>(null)
   const [uploadingDiaBanner, setUploadingDiaBanner] = useState<number | null>(null)
 
-  // Caminho posicional pelo número do dia — estável entre saves, já que o
-  // day_number não muda depois de definido (mesma lógica das imagens de atração)
-  async function handleDiaBanner(dayNumber: number, file: File) {
-    setUploadingDiaBanner(dayNumber)
-    setErro(null)
-    try {
-      const ext = file.name.split('.').pop() ?? 'jpg'
-      const path = `${eventoId}/banner-dia${dayNumber}.${ext}`
-      const { error } = await supabase.storage
-        .from('event-images')
-        .upload(path, file, { upsert: true, contentType: file.type })
-      if (error) {
-        setErro(`Erro ao subir banner do dia: ${error.message}`)
-        return
-      }
-      const { data } = supabase.storage.from('event-images').getPublicUrl(path)
-      updateDia(dayNumber, { banner_url: data.publicUrl })
-    } catch (e) {
-      setErro(`Erro ao subir banner do dia: ${e instanceof Error ? e.message : 'erro desconhecido'}`)
-    } finally {
-      setUploadingDiaBanner(null)
-    }
-  }
-
-  // Caminho posicional (dia + índice), não pelo id da atração — a linha de
-  // event_day_attractions é apagada e recriada a cada save, então o id muda
-  // toda vez; o caminho do arquivo precisa ser estável entre saves.
-  async function handleAttractionImage(dayNumber: number, idx: number, file: File) {
-    const key = `${dayNumber}-${idx}`
-    setUploadingAttraction(key)
-    setErro(null)
-    try {
-      const ext = file.name.split('.').pop() ?? 'jpg'
-      const path = `${eventoId}/atracao-dia${dayNumber}-${idx}.${ext}`
-      const { error } = await supabase.storage
-        .from('event-images')
-        .upload(path, file, { upsert: true, contentType: file.type })
-      if (error) {
-        setErro(`Erro ao subir imagem da atração: ${error.message}`)
-        return
-      }
-      const { data } = supabase.storage.from('event-images').getPublicUrl(path)
-      updateAttraction(dayNumber, idx, { image_url: data.publicUrl })
-    } catch (e) {
-      setErro(`Erro ao subir imagem da atração: ${e instanceof Error ? e.message : 'erro desconhecido'}`)
-    } finally {
-      setUploadingAttraction(null)
-    }
-  }
-
   const addIngresso = (eventDayId: string | null) =>
     setIngressos(prev => [...prev, {
       event_day_id: eventDayId,
@@ -501,6 +451,75 @@ export function IngressosClient({
       setTimeout(() => setSaved(false), 2500)
     } catch { setErro('Erro ao salvar. Tente novamente.') }
     finally { setSaving(false) }
+  }
+
+  // Caminho posicional pelo número do dia — estável entre saves, já que o
+  // day_number não muda depois de definido (mesma lógica das imagens de atração).
+  // Persiste na hora, direto no banco (igual o banner principal do evento, que
+  // já salva assim que envia) — pra não perder o upload se o usuário navegar
+  // antes de clicar em "Salvar rascunho". Não usa handleSalvar aqui porque
+  // ele leria o `dias` antigo (o setState do updateDia ainda não aplicou).
+  async function handleDiaBanner(dayNumber: number, file: File) {
+    setUploadingDiaBanner(dayNumber)
+    setErro(null)
+    try {
+      const ext = file.name.split('.').pop() ?? 'jpg'
+      const path = `${eventoId}/banner-dia${dayNumber}.${ext}`
+      const { error } = await supabase.storage
+        .from('event-images')
+        .upload(path, file, { upsert: true, contentType: file.type })
+      if (error) {
+        setErro(`Erro ao subir banner do dia: ${error.message}`)
+        return
+      }
+      const { data } = supabase.storage.from('event-images').getPublicUrl(path)
+      updateDia(dayNumber, { banner_url: data.publicUrl })
+
+      const diaAtual = dias.find(d => d.day_number === dayNumber)
+      if (diaAtual?.id) {
+        await supabase.from('event_days').update({ banner_url: data.publicUrl }).eq('id', diaAtual.id)
+      } else if (diaAtual) {
+        const { data: diaDb } = await supabase.from('event_days').upsert({
+          event_id:   eventoId,
+          day_number: dayNumber,
+          date:       diaAtual.date,
+          start_time: diaAtual.start_time || null,
+          end_time:   diaAtual.end_time   || null,
+          banner_url: data.publicUrl,
+        }, { onConflict: 'event_id,day_number' }).select('id').single()
+        if (diaDb) updateDia(dayNumber, { id: diaDb.id })
+      }
+    } catch (e) {
+      setErro(`Erro ao subir banner do dia: ${e instanceof Error ? e.message : 'erro desconhecido'}`)
+    } finally {
+      setUploadingDiaBanner(null)
+    }
+  }
+
+  // Caminho posicional (dia + índice), não pelo id da atração — a linha de
+  // event_day_attractions é apagada e recriada a cada save, então o id muda
+  // toda vez; o caminho do arquivo precisa ser estável entre saves.
+  async function handleAttractionImage(dayNumber: number, idx: number, file: File) {
+    const key = `${dayNumber}-${idx}`
+    setUploadingAttraction(key)
+    setErro(null)
+    try {
+      const ext = file.name.split('.').pop() ?? 'jpg'
+      const path = `${eventoId}/atracao-dia${dayNumber}-${idx}.${ext}`
+      const { error } = await supabase.storage
+        .from('event-images')
+        .upload(path, file, { upsert: true, contentType: file.type })
+      if (error) {
+        setErro(`Erro ao subir imagem da atração: ${error.message}`)
+        return
+      }
+      const { data } = supabase.storage.from('event-images').getPublicUrl(path)
+      updateAttraction(dayNumber, idx, { image_url: data.publicUrl })
+    } catch (e) {
+      setErro(`Erro ao subir imagem da atração: ${e instanceof Error ? e.message : 'erro desconhecido'}`)
+    } finally {
+      setUploadingAttraction(null)
+    }
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────────

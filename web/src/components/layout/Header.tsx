@@ -5,12 +5,13 @@ import { createPortal } from 'react-dom'
 import {
   Ticket, Menu, X, ArrowRight, LogOut, User, ChevronDown,
   CalendarPlus, Settings2, MapPin, Navigation, Loader2, Briefcase,
-  Copy, Check, AlertCircle,
+  Copy, Check, AlertCircle, MessageSquare, Building2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProfileStatus } from '@/hooks/useProfileStatus'
 import { useTrabalhos } from '@/hooks/useTrabalhos'
+import { useOrganizacaoConvites } from '@/hooks/useOrganizacaoConvites'
 import { useCodigos, type CodigoItem } from '@/hooks/useCodigos'
 import { useLocation } from '@/contexts/LocationContext'
 
@@ -145,11 +146,15 @@ export function Header() {
   const { user, loading, signOut }     = useAuth()
   const { incompleto, camposFaltando } = useProfileStatus()
   const { pendentes }                  = useTrabalhos()
+  const { pendentes: pendentesOrg }    = useOrganizacaoConvites()
+  const totalMensagens                 = pendentes + pendentesOrg
   const codigos                        = useCodigos()
 
-  const [menuOpen,     setMenuOpen]     = useState(false)
-  const [scrolled,     setScrolled]     = useState(false)
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [menuOpen,       setMenuOpen]       = useState(false)
+  const [scrolled,       setScrolled]       = useState(false)
+  const [userMenuOpen,   setUserMenuOpen]   = useState(false)
+  const [mensagensOpen,  setMensagensOpen]  = useState(false)
+  const [mensagensOpenM, setMensagensOpenM] = useState(false)
   const [copiado,      setCopiado]      = useState<string | null>(null)
   const [ajudaCodigo,  setAjudaCodigo]  = useState<{ desc: string; top: number; right: number } | null>(null)
 
@@ -312,8 +317,11 @@ export function Header() {
                       {incompleto && (
                         <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#070707]" />
                       )}
-                      {!incompleto && pendentes > 0 && (
-                        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-[#070707]" />
+                      {!incompleto && totalMensagens > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 flex">
+                          <span className="absolute w-2.5 h-2.5 bg-red-500 rounded-full animate-ping opacity-75" />
+                          <span className="relative w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#070707]" />
+                        </span>
                       )}
                     </div>
                     <span
@@ -434,22 +442,62 @@ export function Header() {
                           <Ticket size={14} className="text-[#555]" />
                           Meus ingressos
                         </a>
-                        <a
-                          href="/trabalhos"
-                          onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center justify-between px-4 py-2.5 text-sm text-[#bbb] hover:text-white hover:bg-white/5 transition-colors"
+                        <button
+                          type="button"
+                          onClick={() => setMensagensOpen(v => !v)}
+                          className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-[#bbb] hover:text-white hover:bg-white/5 transition-colors"
                           style={{ fontFamily: 'var(--font-dm-sans)' }}
                         >
                           <span className="flex items-center gap-3">
-                            <Briefcase size={14} className="text-[#555]" />
-                            Trabalhos
+                            <MessageSquare size={14} className="text-[#555]" />
+                            Mensagens
                           </span>
-                          {pendentes > 0 && (
-                            <span className="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold text-[#070707]" style={{ background: '#4ade80' }}>
-                              {pendentes}
-                            </span>
-                          )}
-                        </a>
+                          <span className="flex items-center gap-1.5">
+                            {totalMensagens > 0 && (
+                              <span className="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold text-[#070707]" style={{ background: '#4ade80' }}>
+                                {totalMensagens}
+                              </span>
+                            )}
+                            <ChevronDown size={12} className={cn('text-[#444] transition-transform', mensagensOpen && 'rotate-180')} />
+                          </span>
+                        </button>
+
+                        {mensagensOpen && (
+                          <div className="flex flex-col bg-black/20">
+                            <a
+                              href="/trabalhos"
+                              onClick={() => setUserMenuOpen(false)}
+                              className="flex items-center justify-between pl-9 pr-4 py-2 text-sm text-[#999] hover:text-white hover:bg-white/5 transition-colors"
+                              style={{ fontFamily: 'var(--font-dm-sans)' }}
+                            >
+                              <span className="flex items-center gap-2.5">
+                                <Briefcase size={13} className="text-[#555]" />
+                                Trabalhos
+                              </span>
+                              {pendentes > 0 && (
+                                <span className="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold text-[#070707]" style={{ background: '#4ade80' }}>
+                                  {pendentes}
+                                </span>
+                              )}
+                            </a>
+                            <a
+                              href="/configuracoes/organizacoes"
+                              onClick={() => setUserMenuOpen(false)}
+                              className="flex items-center justify-between pl-9 pr-4 py-2 text-sm text-[#999] hover:text-white hover:bg-white/5 transition-colors"
+                              style={{ fontFamily: 'var(--font-dm-sans)' }}
+                            >
+                              <span className="flex items-center gap-2.5">
+                                <Building2 size={13} className="text-[#555]" />
+                                Organizações
+                              </span>
+                              {pendentesOrg > 0 && (
+                                <span className="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold text-[#070707]" style={{ background: '#4ade80' }}>
+                                  {pendentesOrg}
+                                </span>
+                              )}
+                            </a>
+                          </div>
+                        )}
                       </div>
 
                       <div className="border-t border-[#1a1a1a] py-1">
@@ -492,12 +540,18 @@ export function Header() {
 
           {/* Botão hambúrguer — mobile ─────────────────────────── */}
           <button
-            className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition-colors ml-auto"
+            className="md:hidden relative flex items-center justify-center w-9 h-9 rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition-colors ml-auto"
             onClick={() => setMenuOpen(!menuOpen)}
             aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'}
             aria-expanded={menuOpen}
           >
             {menuOpen ? <X size={20} /> : <Menu size={20} />}
+            {!menuOpen && !loading && user && totalMensagens > 0 && (
+              <span className="absolute top-1 right-1 flex">
+                <span className="absolute w-2.5 h-2.5 bg-red-500 rounded-full animate-ping opacity-75" />
+                <span className="relative w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#070707]" />
+              </span>
+            )}
           </button>
 
         </div>
@@ -571,26 +625,74 @@ export function Header() {
                   <Ticket size={15} />
                   Meus ingressos
                 </a>
-                <a
-                  href="/trabalhos"
-                  onClick={() => setMenuOpen(false)}
+                <button
+                  type="button"
+                  onClick={() => setMensagensOpenM(v => !v)}
                   className="w-full flex items-center justify-between px-6 py-3 rounded-xl border text-sm"
                   style={{
-                    borderColor: pendentes > 0 ? 'rgba(74,222,128,0.3)' : '#222',
-                    color:       pendentes > 0 ? '#4ade80' : 'white',
+                    borderColor: totalMensagens > 0 ? 'rgba(74,222,128,0.3)' : '#222',
+                    color:       totalMensagens > 0 ? '#4ade80' : 'white',
                     fontFamily:  'var(--font-dm-sans)',
                   }}
                 >
                   <span className="flex items-center gap-2">
-                    <Briefcase size={15} />
-                    Trabalhos
+                    <MessageSquare size={15} />
+                    Mensagens
                   </span>
-                  {pendentes > 0 && (
-                    <span className="flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold text-[#070707]" style={{ background: '#4ade80' }}>
-                      {pendentes}
-                    </span>
-                  )}
-                </a>
+                  <span className="flex items-center gap-1.5">
+                    {totalMensagens > 0 && (
+                      <span className="flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold text-[#070707]" style={{ background: '#4ade80' }}>
+                        {totalMensagens}
+                      </span>
+                    )}
+                    <ChevronDown size={13} className={cn('transition-transform', mensagensOpenM && 'rotate-180')} />
+                  </span>
+                </button>
+
+                {mensagensOpenM && (
+                  <div className="w-full flex flex-col gap-2">
+                    <a
+                      href="/trabalhos"
+                      onClick={() => setMenuOpen(false)}
+                      className="w-full flex items-center justify-between pl-8 pr-6 py-2.5 rounded-xl border text-sm"
+                      style={{
+                        borderColor: pendentes > 0 ? 'rgba(74,222,128,0.3)' : '#1c1c1c',
+                        color:       pendentes > 0 ? '#4ade80' : '#bbb',
+                        fontFamily:  'var(--font-dm-sans)',
+                      }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Briefcase size={14} />
+                        Trabalhos
+                      </span>
+                      {pendentes > 0 && (
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold text-[#070707]" style={{ background: '#4ade80' }}>
+                          {pendentes}
+                        </span>
+                      )}
+                    </a>
+                    <a
+                      href="/configuracoes/organizacoes"
+                      onClick={() => setMenuOpen(false)}
+                      className="w-full flex items-center justify-between pl-8 pr-6 py-2.5 rounded-xl border text-sm"
+                      style={{
+                        borderColor: pendentesOrg > 0 ? 'rgba(74,222,128,0.3)' : '#1c1c1c',
+                        color:       pendentesOrg > 0 ? '#4ade80' : '#bbb',
+                        fontFamily:  'var(--font-dm-sans)',
+                      }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Building2 size={14} />
+                        Organizações
+                      </span>
+                      {pendentesOrg > 0 && (
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold text-[#070707]" style={{ background: '#4ade80' }}>
+                          {pendentesOrg}
+                        </span>
+                      )}
+                    </a>
+                  </div>
+                )}
                 <a
                   href="/minha-area"
                   onClick={() => setMenuOpen(false)}

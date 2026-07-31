@@ -30,17 +30,21 @@ export function useCodigos(): CodigoItem[] {
         lista.push({ codigo: profile.user_code, tipo: 'usuario' })
       }
 
-      // Só type='promotora' — linhas legadas de 'estabelecimento' já foram
-      // espelhadas em venues+venue_admins abaixo, não duplicar aqui.
-      const { data: orgs } = await supabase
-        .from('organizations')
-        .select('codigo, type')
-        .eq('owner_id', user!.id)
-        .eq('type', 'promotora')
-        .not('codigo', 'is', null)
+      // Organizações que o usuário administra — dono integral ou sócio, só
+      // as ATIVAS (convite pendente não aparece aqui, some só depois que a
+      // pessoa aceita — organization_admins.status='ativo' é a mesma trava
+      // que o is_org_admin() do banco já exige pra dar acesso de verdade).
+      const { data: orgAdminRows } = await supabase
+        .from('organization_admins')
+        .select('organizations (codigo, type)')
+        .eq('user_id', user!.id)
+        .eq('status', 'ativo')
 
-      for (const org of orgs ?? []) {
-        lista.push({ codigo: org.codigo!, tipo: 'promotora' })
+      for (const row of orgAdminRows ?? []) {
+        const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations
+        if (org?.codigo && org.type === 'promotora') {
+          lista.push({ codigo: org.codigo, tipo: 'promotora' })
+        }
       }
 
       // Lugares administrados (venue_admins) — "estabelecimento" não é mais organização

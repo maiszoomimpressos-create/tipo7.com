@@ -5,10 +5,10 @@
 // form/estado) — trocar de aba só esconde a seção via CSS, não desmonta,
 // então nada que a pessoa digitou se perde ao ir e voltar entre abas.
 import { useState } from 'react'
-import { User, Building2, MapPin } from 'lucide-react'
+import { User, Building2, MapPin, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ProfileForm }   from './ProfileForm'
-import { PromotorForm }  from './PromotorForm'
+import { ProfileForm } from './ProfileForm'
+import type { OrganizacaoItem } from './PromotorForm'
 
 type Aba = 'pessoais' | 'promotor' | 'endereco'
 
@@ -22,13 +22,7 @@ interface Props {
     neighborhood: string; city: string; state: string
     address_type: string; complement: string
   }
-  initialPromotor: {
-    orgId:        string | null
-    razaoSocial:  string
-    cnpj:         string
-    nomeFantasia: string
-    codigo:       string | null
-  }
+  organizacoes: OrganizacaoItem[]
 }
 
 const ABAS: { value: Aba; label: string; icon: typeof User }[] = [
@@ -37,7 +31,8 @@ const ABAS: { value: Aba; label: string; icon: typeof User }[] = [
   { value: 'endereco', label: 'Endereço',          icon: MapPin },
 ]
 
-export function PerfilTabs({ userId, nomeUsuario, initialPessoal, initialPromotor }: Props) {
+export function PerfilTabs({ userId, initialPessoal, organizacoes }: Props) {
+  const ativas = organizacoes.filter(o => o.status === 'ativo')
   const [aba, setAba] = useState<Aba>('pessoais')
 
   return (
@@ -71,7 +66,23 @@ export function PerfilTabs({ userId, nomeUsuario, initialPessoal, initialPromoto
       </div>
 
       <div className={aba === 'promotor' ? undefined : 'hidden'}>
-        <PromotorForm userId={userId} nomeUsuario={nomeUsuario} initial={initialPromotor} />
+        <a href="/configuracoes/organizacoes"
+          className="flex items-center gap-4 p-5 rounded-2xl border border-[#1a1a1a] bg-[#0d0d0d] hover:border-[#2a2a2a] transition-colors">
+          <div className="w-11 h-11 rounded-xl bg-[#161616] flex items-center justify-center shrink-0">
+            <Building2 size={18} className="text-[#E8B84B]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Gerenciar organizações
+            </p>
+            <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {ativas.length === 0
+                ? 'Crie uma empresa ou casa de show com CNPJ próprio'
+                : `${ativas.length} organização${ativas.length > 1 ? 'ões' : ''} — CNPJ, endereço, logo e sócios`}
+            </p>
+          </div>
+          <ArrowRight size={15} className="text-[#444] shrink-0" />
+        </a>
       </div>
 
     </div>

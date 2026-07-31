@@ -1,6 +1,6 @@
 // Página de perfil do usuário — busca dados do banco e exibe formulário editável
 // Rota protegida: o proxy redireciona para /auth se não estiver logado
-import { createClient }  from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect }      from 'next/navigation'
 import { Header }        from '@/components/layout/Header'
 import { CodigoOrg }     from './CodigoOrg'
@@ -49,16 +49,36 @@ export default async function PerfilPage() {
     !profile?.address_type  && 'Tipo de residência',
   ].filter(Boolean) as string[]
 
-  // Busca a organização do usuário. Filtra por type='promotora' — as
-  // linhas legadas de type='estabelecimento' já foram espelhadas em
-  // venues+venue_admins (ver abaixo) e não devem duplicar o código aqui.
-  const { data: orgsData } = await supabase
-    .from('organizations')
-    .select('id, codigo, type, name, cnpj, nome_fantasia')
-    .eq('owner_id', user.id)
-    .eq('type', 'promotora')
-  const orgs = orgsData ?? []
-  const orgPromotora = orgs[0] ?? null
+  // Busca todas as organizações que o usuário administra — dono integral,
+  // sócio, ou convite pendente (organization_admins é a fonte única desde
+  // que passamos a permitir mais de uma organização por pessoa, ex: a
+  // mesma marca "Caldeirão" com CNPJ próprio em cada cidade). Precisa de
+  // service role porque um convite pendente ainda não passa na RLS de
+  // organizations (só libera leitura pra quem já está 'ativo').
+  const admin = createServiceClient()
+  const { data: orgAdminRows } = await admin
+    .from('organization_admins')
+    .select(`
+      role, participacao, percentual, status,
+      organizations (id, codigo, name, cnpj, nome_fantasia, logo_url,
+        city, state, street, street_number, neighborhood, zip_code, complement, phone, nicho, capacity)
+    `)
+    .eq('user_id', user.id)
+    .neq('status', 'removido')
+    .order('created_at')
+
+  const organizacoes = (orgAdminRows ?? []).flatMap(r => {
+    const org = Array.isArray(r.organizations) ? r.organizations[0] : r.organizations
+    if (!org) return []
+    return [{
+      ...org,
+      role:         r.role as string,
+      participacao: r.participacao as 'integral' | 'socio',
+      percentual:   r.percentual as number | null,
+      status:       r.status as 'ativo' | 'convidado',
+    }]
+  })
+  const orgs = organizacoes.filter(o => o.status === 'ativo')
 
   // Busca os lugares que o usuário administra (venue_admins) — "estabelecimento"
   // não é mais uma organização, é um venue com um responsável atribuído.
@@ -203,13 +223,7 @@ export default async function PerfilPage() {
             address_type: profile?.address_type  ?? '',
             complement:   profile?.complement    ?? '',
           }}
-          initialPromotor={{
-            orgId:        orgPromotora?.id            ?? null,
-            razaoSocial:  orgPromotora?.name           ?? '',
-            cnpj:         orgPromotora?.cnpj           ?? '',
-            nomeFantasia: orgPromotora?.nome_fantasia  ?? '',
-            codigo:       orgPromotora?.codigo         ?? null,
-          }}
+          organizacoes={organizacoes}
         />
 
       </main>

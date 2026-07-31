@@ -38,16 +38,40 @@ export default async function EventoPage({ params }: Props) {
   // Rascunhos só são visíveis ao dono
   if (evento.status !== 'publicado' && !isOwner) notFound()
 
+  // Evento filho (Tenda) — busca dados básicos do pai pro link de "Voltar"
+  const { data: paiInfo } = evento.parent_event_id
+    ? await supabase.from('events').select('id, title').eq('id', evento.parent_event_id).single()
+    : { data: null }
+
   // Busca atrações (eventos filhos publicados) — só faz sentido pro pai, um
   // filho não pode ter filhos (regra já aplicada em criar-filho/route.ts)
   const { data: atracoes } = evento.parent_event_id
     ? { data: [] }
     : await supabase
         .from('events')
-        .select('id, title, banner_url, date_start')
+        .select('id, title, banner_url, date_start, ticket_mode, package_discount_pct, fee_mode')
         .eq('parent_event_id', id)
         .eq('status', 'publicado')
         .order('date_start')
+
+  // Programação e ingressos de cada filho — carregados de uma vez pra exibir
+  // tudo inline na mesma página (abas dentro de abas), sem precisar navegar
+  // pra url própria de cada Tenda
+  const childIds = (atracoes ?? []).map(a => a.id)
+  const [{ data: childDias }, { data: childIngressos }] = childIds.length > 0
+    ? await Promise.all([
+        supabase
+          .from('event_days')
+          .select('id, event_id, day_number, date, start_time, end_time, banner_url, event_day_attractions(name, description, scheduled_time, order_index, image_url)')
+          .in('event_id', childIds)
+          .order('day_number'),
+        supabase
+          .from('event_tickets')
+          .select('id, event_id, name, price, quantity, event_day_id')
+          .in('event_id', childIds)
+          .order('order_index'),
+      ])
+    : [{ data: [] }, { data: [] }]
 
   // Busca programação
   const { data: dias } = await supabase
@@ -112,10 +136,14 @@ export default async function EventoPage({ params }: Props) {
   })
 
   // Para o organizador: busca quantidades vendidas por tipo (usa service client — RLS bloquearia)
+  // Inclui também os ingressos das Tendas — o painel de edição troca pro
+  // ingresso ativo conforme a aba de show selecionada, então precisa do
+  // vendido de ambos, não só do evento principal.
   let soldByTicket: Record<string, number> = {}
-  if (isOwner && ingressos && ingressos.length > 0) {
+  const todosIngressoIds = [...(ingressos ?? []).map(t => t.id), ...(childIngressos ?? []).map(t => t.id)]
+  if (isOwner && todosIngressoIds.length > 0) {
     const admin = createServiceClient()
-    const ticketIds = ingressos.map(t => t.id)
+    const ticketIds = todosIngressoIds
     const { data: soldRows } = await admin
       .from('order_items')
       .select('ticket_id, quantity, orders!inner(status)')
@@ -150,6 +178,8 @@ export default async function EventoPage({ params }: Props) {
           bannerUrl:          evento.banner_url         ?? null,
           moduloEstacionamento: (evento as unknown as { modulo_estacionamento: boolean }).modulo_estacionamento ?? false,
           isChild:            (evento as unknown as { parent_event_id: string | null }).parent_event_id != null,
+          parentEventId:      evento.parent_event_id ?? null,
+          parentEventTitle:   paiInfo?.title ?? null,
           feeMode,
           feePct,
         }}
@@ -176,10 +206,35 @@ export default async function EventoPage({ params }: Props) {
         soldByTicket={soldByTicket}
         atributosAtivos={atributosAtivos}
         atracoes={(atracoes ?? []).map(a => ({
-          id:        a.id,
-          title:     a.title      ?? 'Atração',
-          bannerUrl: a.banner_url ?? null,
-          dateStart: a.date_start ?? null,
+          id:                 a.id,
+          title:              a.title      ?? 'Atração',
+          bannerUrl:          a.banner_url ?? null,
+          dateStart:          a.date_start ?? null,
+          ticketMode:         (a.ticket_mode ?? null) as 'individual' | 'pacote' | 'ambos' | null,
+          packageDiscountPct: a.package_discount_pct ?? 0,
+          feeMode:            (a.fee_mode ?? 'promotor') as 'promotor' | 'comprador' | 'mista',
+          dias: (childDias ?? [])
+            .filter(d => d.event_id === a.id)
+            .map(d => ({
+              id:          d.id,
+              dayNumber:   d.day_number,
+              date:        d.date        ?? '',
+              startTime:   d.start_time  ?? '',
+              endTime:     d.end_time    ?? '',
+              bannerUrl:   d.banner_url  ?? null,
+              attractions: ((d.event_day_attractions as AttractionRow[]) ?? [])
+                .sort((x, y) => x.order_index - y.order_index)
+                .map(x => ({ name: x.name, description: x.description ?? '', scheduledTime: x.scheduled_time ?? '', imageUrl: x.image_url ?? null })),
+            })),
+          ingressos: (childIngressos ?? [])
+            .filter(t => t.event_id === a.id)
+            .map(t => ({
+              id:         t.id,
+              name:       t.name          ?? '',
+              price:      t.price         ?? 0,
+              quantity:   t.quantity      ?? 0,
+              eventDayId: t.event_day_id  ?? null,
+            })),
         }))}
       />
     </div>

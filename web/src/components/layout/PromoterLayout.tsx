@@ -4,12 +4,21 @@ import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, CalendarRange, Settings2, Landmark, ReceiptText,
-  ChevronDown, Megaphone, GalleryHorizontal,
+  ChevronDown, Megaphone, GalleryHorizontal, Building2, Users, Briefcase,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const MARKETING_SUB = [
   { label: 'Carrossel', href: '/minha-area/marketing/carrossel', icon: GalleryHorizontal },
+]
+
+// Organizações virou submenu — Sócios concentra tudo que já existia
+// (CNPJ, endereço, logo, convites de sócio); Colaboradores é o painel
+// novo que qualquer sócio vê, com os pedidos de equipe mandados pra
+// eventos das organizações que administra.
+const ORGANIZACOES_SUB = [
+  { label: 'Sócios',        href: '/configuracoes/organizacoes',   icon: Users     },
+  { label: 'Colaboradores', href: '/configuracoes/colaboradores',  icon: Briefcase },
 ]
 
 const CONFIG_SUB = [
@@ -20,13 +29,15 @@ const CONFIG_SUB = [
 export function PromoterLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
-  const inConfig    = CONFIG_SUB.some(s => pathname.startsWith(s.href))
+  const inOrganizacoes = ORGANIZACOES_SUB.some(s => pathname.startsWith(s.href))
+  const inConfig    = CONFIG_SUB.some(s => pathname.startsWith(s.href)) || inOrganizacoes
   const inMarketing = pathname.startsWith('/minha-area/marketing')
   const inEventos   = pathname.startsWith('/criar-evento') || inMarketing
 
-  const [openEventos,   setOpenEventos]   = useState(inEventos)
-  const [openMarketing, setOpenMarketing] = useState(inMarketing)
-  const [openConfig,    setOpenConfig]    = useState(inConfig)
+  const [openEventos,      setOpenEventos]      = useState(inEventos)
+  const [openMarketing,    setOpenMarketing]    = useState(inMarketing)
+  const [openConfig,       setOpenConfig]       = useState(inConfig)
+  const [openOrganizacoes, setOpenOrganizacoes] = useState(inOrganizacoes)
 
   const dashActive = pathname === '/minha-area'
 
@@ -162,6 +173,46 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
 
           {openConfig && (
             <div className="ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
+
+              {/* Organizações — expansível (nível 2) */}
+              <button
+                onClick={() => setOpenOrganizacoes(v => !v)}
+                className={cn(
+                  'flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-all w-full text-left',
+                  inOrganizacoes ? 'text-[#E8B84B]' : 'text-[#444] hover:text-[#bbb] hover:bg-white/5'
+                )}
+                style={{ fontFamily: 'var(--font-dm-sans)', fontWeight: inOrganizacoes ? 500 : 400 }}
+              >
+                <Building2 size={13} strokeWidth={2} className={inOrganizacoes ? 'text-[#E8B84B]' : 'text-[#333]'} />
+                <span className="flex-1">Organizações</span>
+                <ChevronDown
+                  size={11}
+                  className={cn('text-[#3a3a3a] transition-transform duration-200', openOrganizacoes && 'rotate-180')}
+                />
+              </button>
+
+              {openOrganizacoes && (
+                <div className="ml-3 flex flex-col gap-0.5 border-l border-[#1c1c1c] pl-3">
+                  {ORGANIZACOES_SUB.map(({ label, href, icon: Icon }) => {
+                    const active = pathname.startsWith(href)
+                    return (
+                      <a
+                        key={href}
+                        href={href}
+                        className={cn(
+                          'flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-all',
+                          active ? 'text-[#E8B84B]' : 'text-[#444] hover:text-[#bbb] hover:bg-white/5'
+                        )}
+                        style={{ fontFamily: 'var(--font-dm-sans)', fontWeight: active ? 500 : 400 }}
+                      >
+                        <Icon size={12} strokeWidth={2} className={active ? 'text-[#E8B84B]' : 'text-[#333]'} />
+                        {label}
+                      </a>
+                    )
+                  })}
+                </div>
+              )}
+
               {CONFIG_SUB.map(({ label, href, icon: Icon }) => {
                 const active = pathname === href
                 return (

@@ -16,6 +16,8 @@ interface DiaResumo {
   id:        string
   dayNumber: number
   date:      string
+  startTime?: string
+  endTime?:   string
 }
 
 interface Props {
@@ -36,6 +38,20 @@ function formatPrice(v: number) {
 function formatDateShort(iso: string) {
   if (!iso) return ''
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
+}
+
+function formatTime(t?: string) {
+  return t ? t.slice(0, 5) : ''
+}
+
+function formatDiaLabel(dia: DiaResumo) {
+  const partes = [`Dia ${dia.dayNumber}`]
+  if (dia.date) partes.push(formatDateShort(dia.date))
+  const hora = formatTime(dia.startTime)
+  const label = partes.join(' · ')
+  if (!hora) return label
+  const fim = formatTime(dia.endTime)
+  return `${label} · ${hora}${fim ? ` – ${fim}` : ''}`
 }
 
 // ---------------------------------------------------------------------------
@@ -255,11 +271,13 @@ function IngressoCard({
 export function PainelIngressos({ eventoId, ingressos, capacity, dias, diaSelecionadoId, onUpdate }: Props) {
   const [localIngressos, setLocalIngressos] = useState(ingressos)
 
-  const temMultiplosDias = (dias?.length ?? 0) > 1
+  // Mostra a info do dia sempre que o show tiver algum dia (mesmo só 1 —
+  // caso comum de Tenda), não só quando há vários dias
+  const temDias = (dias?.length ?? 0) >= 1
   const pacote  = localIngressos.filter(t => t.eventDayId === null)
   // Segue o mesmo dia selecionado na Programação — evita empilhar todos os
   // dias aqui quando o usuário já escolheu qual dia está olhando
-  const diaAtual     = temMultiplosDias ? (dias ?? []).find(d => d.id === diaSelecionadoId) ?? null : null
+  const diaAtual     = temDias ? (dias ?? []).find(d => d.id === diaSelecionadoId) ?? null : null
   const ticketsDoDia = diaAtual ? localIngressos.filter(t => t.eventDayId === diaAtual.id) : []
 
   const totalEmUso = localIngressos.reduce((sum, t) => sum + t.quantity, 0)
@@ -332,12 +350,12 @@ export function PainelIngressos({ eventoId, ingressos, capacity, dias, diaSeleci
             Gerenciar ingressos →
           </a>
         </div>
-      ) : temMultiplosDias ? (
+      ) : temDias ? (
         <div className="flex flex-col gap-5">
           {diaAtual && (
             <div className="flex flex-col gap-3">
               <p className="text-[#555] text-[11px] font-semibold uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Dia {diaAtual.dayNumber}{diaAtual.date ? ` · ${formatDateShort(diaAtual.date)}` : ''}
+                {formatDiaLabel(diaAtual)}
               </p>
               {ticketsDoDia.length > 0
                 ? ticketsDoDia.map(ingresso => renderCard(ingresso))

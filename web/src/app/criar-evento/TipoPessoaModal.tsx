@@ -41,16 +41,17 @@ interface OrgAtual {
 }
 
 interface Props {
-  promotorId:  string | null
-  nomeUsuario: string
-  orgAtual:    OrgAtual | null
-  profile:     ProfileData
-  onFechar:    () => void
+  promotorId:   string | null
+  nomeUsuario:  string
+  organizacoes: OrgAtual[]
+  profile:      ProfileData
+  onFechar:     () => void
 }
 
 type Stage =
-  | 'org-tipo'       // Etapa 1: o que vai gerenciar aqui (nicho)
-  | 'nome-evento'    // Etapa 2: nome do evento
+  | 'org-tipo'       // Etapa: o que vai gerenciar aqui (nicho) — só quando não há organização nenhuma ainda
+  | 'escolher-org'    // Etapa: qual organização vai criar esse evento — só quando há mais de uma
+  | 'nome-evento'    // Etapa final: nome do evento
 
 const inp = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]'
 
@@ -98,16 +99,22 @@ function SeletorModulos({
   )
 }
 
-export function TipoPessoaModal({ nomeUsuario, orgAtual, onFechar }: Props) {
+export function TipoPessoaModal({ nomeUsuario, organizacoes, onFechar }: Props) {
   const { user } = useAuth()
   const supabase  = createClient()
   const router    = useRouter()
 
-  // Já tem organização? Pula direto pra nomear o evento — nicho só é
-  // perguntado na primeira vez, pra usuário novo.
-  const [stage,        setStage]        = useState<Stage>(orgAtual ? 'nome-evento' : 'org-tipo')
+  // Sem organização nenhuma → pergunta o nicho (primeira vez). Uma só →
+  // pula direto pro nome do evento. Mais de uma (ex: várias casas de show
+  // com CNPJ próprio) → precisa escolher qual delas está criando esse
+  // evento, senão não tem como saber pra qual organização o evento vai.
+  const orgInicial = organizacoes.length === 1 ? organizacoes[0].id : null
+  const [stage, setStage] = useState<Stage>(
+    organizacoes.length === 0 ? 'org-tipo' : organizacoes.length > 1 ? 'escolher-org' : 'nome-evento'
+  )
   const [nicho,        setNicho]        = useState<'eventos' | 'estacionamento' | 'ambos' | ''>('')
-  const [orgId,        setOrgId]        = useState<string | null>(orgAtual?.id ?? null)
+  const [orgId,        setOrgId]        = useState<string | null>(orgInicial)
+  const orgSelecionada = organizacoes.find(o => o.id === orgId) ?? null
 
   const [savingFinal, setSavingFinal] = useState(false)
   const [erro,        setErro]        = useState<string | null>(null)
@@ -119,37 +126,28 @@ export function TipoPessoaModal({ nomeUsuario, orgAtual, onFechar }: Props) {
   const [moduloEstacionamento, setModuloEstacionamento] = useState(false)
   const nenhumModuloSelecionado = !moduloIngressos && !moduloEstacionamento
 
-  // ── Cria a organização (se ainda não existe) ou só atualiza o nicho.
-  //     Nunca mexe em name/cnpj/nome_fantasia de uma org já existente —
-  //     isso é responsabilidade exclusiva de /perfil (PromotorForm.tsx) ──
+  // ── Cria a organização (só quando a pessoa não tem nenhuma ainda, via
+  //     /api/organizations — gera código e já cria o organization_admins
+  //     junto, coisa que insert direto do client não consegue, RLS não
+  //     libera) ou só atualiza o nicho de uma já escolhida. Nunca mexe em
+  //     name/cnpj/nome_fantasia de uma org já existente — isso é
+  //     responsabilidade exclusiva de /perfil (PromotorForm.tsx) ──
   const salvarOrganizacao = async (): Promise<string> => {
     if (!user) throw new Error('Usuário não autenticado')
 
-    const camposNicho: Record<string, unknown> = nicho ? { nicho } : {}
-
     let finalOrgId = orgId
     if (!finalOrgId) {
-      const { data: orgExistente, error: errBusca } = await supabase
-        .from('organizations').select('id').eq('owner_id', user.id).eq('type', 'promotora').maybeSingle()
-      if (errBusca) throw errBusca
-      if (orgExistente) {
-        finalOrgId = orgExistente.id
-        if (Object.keys(camposNicho).length > 0) {
-          await supabase.from('organizations').update(camposNicho).eq('id', finalOrgId)
-        }
-      } else {
-        const { data: novaOrg, error: errOrg } = await supabase
-          .from('organizations')
-          .insert({ owner_id: user.id, type: 'promotora', name: nomeUsuario, ...camposNicho })
-          .select('id').single()
-        if (errOrg) throw errOrg
-        finalOrgId = novaOrg.id
-      }
-    } else if (Object.keys(camposNicho).length > 0) {
-      await supabase.from('organizations').update(camposNicho).eq('id', finalOrgId)
+      const res  = await fetch('/api/organizations', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ razaoSocial: nomeUsuario, nicho: nicho || undefined }),
+      })
+      const data = await res.json() as { organizacao?: { id: string }; error?: string }
+      if (!res.ok || !data.organizacao) throw new Error(data.error ?? 'Falha ao criar organização')
+      finalOrgId = data.organizacao.id
+    } else if (nicho) {
+      await supabase.from('organizations').update({ nicho }).eq('id', finalOrgId)
     }
 
-    if (!finalOrgId) throw new Error('Falha ao criar organização')
     setOrgId(finalOrgId)
     return finalOrgId
   }
@@ -203,7 +201,10 @@ export function TipoPessoaModal({ nomeUsuario, orgAtual, onFechar }: Props) {
   }
 
   // ── Step indicator ─────────────────────────────────────────────────────
-  const stagesSequence: Stage[] = orgAtual ? ['nome-evento'] : ['org-tipo', 'nome-evento']
+  const stagesSequence: Stage[] =
+    organizacoes.length === 0 ? ['org-tipo', 'nome-evento']
+    : organizacoes.length > 1 ? ['escolher-org', 'nome-evento']
+    : ['nome-evento']
   const stageIndex = stagesSequence.indexOf(stage)
 
   const StepDots = () => (
@@ -286,12 +287,50 @@ export function TipoPessoaModal({ nomeUsuario, orgAtual, onFechar }: Props) {
             </>
           )}
 
-          {/* ══ ETAPA 2: nome do evento ═══════════════════════════════ */}
+          {/* ══ ETAPA: qual organização — só quando há mais de uma ══════ */}
+          {stage === 'escolher-org' && (
+            <>
+              <div className="mb-5">
+                <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Qual organização vai criar esse evento?
+                </p>
+                <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Você administra mais de uma — escolha pra não emitir no lugar errado.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2 mb-5">
+                {organizacoes.map(o => (
+                  <button key={o.id} type="button" onClick={() => setOrgId(o.id)}
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-xl border text-left transition-all',
+                      orgId === o.id ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35' : 'bg-[#111] border-[#1c1c1c] hover:border-[#2a2a2a]'
+                    )}>
+                    <Building2 size={15} className={orgId === o.id ? 'text-[#E8B84B]' : 'text-[#444]'} />
+                    <span className={cn('text-sm font-medium', orgId === o.id ? 'text-white' : 'text-[#777]')}
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {o.nome_fantasia || o.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}
+
+              <button type="button" disabled={!orgId} onClick={() => setStage('nome-evento')}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 hover:brightness-110 transition-all flex items-center justify-center gap-2"
+                style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
+                <span>Próximo</span><ArrowRight size={14} />
+              </button>
+            </>
+          )}
+
+          {/* ══ ETAPA final: nome do evento ═══════════════════════════════ */}
           {stage === 'nome-evento' && (
             <>
               <div className="mb-5">
                 <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  {orgAtual ? 'Novo evento' : 'Quase lá!'}
+                  {orgSelecionada ? 'Novo evento' : 'Quase lá!'}
                 </p>
                 <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                   Qual é o nome do seu evento?
@@ -304,10 +343,10 @@ export function TipoPessoaModal({ nomeUsuario, orgAtual, onFechar }: Props) {
                 <Building2 size={13} className="shrink-0 text-[#555]" />
                 <div>
                   <p className="text-[#aaa] text-xs font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    {orgAtual?.nome_fantasia || orgAtual?.name || nomeUsuario}
+                    {orgSelecionada?.nome_fantasia || orgSelecionada?.name || nomeUsuario}
                   </p>
                   <p className="text-[#444] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    {orgAtual ? 'dados já salvos' : 'rascunho criado'}
+                    {orgSelecionada ? 'dados já salvos' : 'rascunho criado'}
                   </p>
                 </div>
               </div>

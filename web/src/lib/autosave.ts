@@ -32,19 +32,21 @@ async function getCredenciais(area: Area): Promise<{ baseUrl: string; apiKey: st
 }
 
 interface AutosaveVehicle {
-  plate?:      string
-  brand?:      string
-  model?:      string
-  color?:      string
-  year?:       number | string
-  type?:       string
-  status?:     string
-  owner_name?: string
+  plate?:         string
+  brand?:         string
+  model?:         string
+  color?:         string
+  year?:          number | string
+  type?:          string
+  status?:        string
+  owner_name?:    string
+  driver_phone?:  string
 }
 
 export interface VeiculoConsultado {
-  modelo: string | null
-  cor:    string | null
+  modelo:    string | null
+  cor:       string | null
+  telefone:  string | null
 }
 
 function montarModelo(v: AutosaveVehicle): string | null {
@@ -100,7 +102,11 @@ export async function buscarVeiculoPorPlaca(placa: string): Promise<VeiculoConsu
     // usa só o que bate exatamente.
     const exato = data.vehicles.find(v => v.plate?.toUpperCase() === placa.toUpperCase()) ?? data.vehicles[0]
 
-    return { modelo: montarModelo(exato), cor: exato.color?.trim() || null }
+    return {
+      modelo:   montarModelo(exato),
+      cor:      exato.color?.trim() || null,
+      telefone: exato.driver_phone?.trim() || null,
+    }
   } catch {
     return null
   }
@@ -134,7 +140,15 @@ export async function buscarClientePorCpf(cpf: string): Promise<AutosaveCustomer
 // Chamado depois que a entrada já foi registrada com sucesso — nunca deve
 // impedir nem atrasar a resposta da API de entrada (caller não aguarda esta
 // promise).
-export async function salvarVeiculoNaAutosave(dados: { placa: string; modelo: string; cor: string }): Promise<void> {
+export async function salvarVeiculoNaAutosave(dados: {
+  placa: string
+  modelo: string
+  cor: string
+  // Só manda quando o atendente confirmou ou corrigiu o número na entrada —
+  // omitir aqui NÃO apaga o telefone que já estava salvo (a Autosave só
+  // atualiza os campos que vierem no corpo da requisição).
+  telefone?: string
+}): Promise<void> {
   const creds = await getCredenciais('estacionamento')
   if (!creds) return
 
@@ -142,7 +156,12 @@ export async function salvarVeiculoNaAutosave(dados: { placa: string; modelo: st
     await fetchComTimeout(`${creds.baseUrl}/vehicles`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': creds.apiKey },
-      body:    JSON.stringify({ plate: dados.placa, model: dados.modelo, color: dados.cor }),
+      body:    JSON.stringify({
+        plate: dados.placa,
+        model: dados.modelo,
+        color: dados.cor,
+        ...(dados.telefone && { driver_phone: dados.telefone }),
+      }),
     })
   } catch {
     // Best-effort — se a Autosave estiver fora do ar, ignora.

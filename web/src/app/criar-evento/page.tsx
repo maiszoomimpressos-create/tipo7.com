@@ -1,7 +1,7 @@
 // Página de criação de evento
 // Fluxo: perfil 100% completo → modal (nicho + nome do evento) → formulário de evento.
 // CNPJ é opcional e fica em /perfil (aba "Dados de promotor"), não aqui.
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect }     from 'next/navigation'
 import { Header }       from '@/components/layout/Header'
 import { PromoterLayout } from '@/components/layout/PromoterLayout'
@@ -43,18 +43,30 @@ export default async function CriarEventoPage() {
     .eq('user_id', user.id)
     .single()
 
-  // Busca todas as organizações do usuário — inclui eventuais linhas legadas
-  // de type='estabelecimento' (não são mais criadas, mas ainda têm eventos
+  // Busca todas as organizações que o usuário administra — dono integral,
+  // sócio, mas só as ativas (convite pendente não conta pra criar evento
+  // ainda). Pode ser mais de uma agora (ex: várias casas de show com CNPJ
+  // próprio) — nesse caso o modal pergunta qual delas está criando o
+  // evento, em vez de adivinhar. Inclui eventuais linhas legadas de
+  // type='estabelecimento' (não são mais criadas, mas ainda têm eventos
   // reais atrelados, então continuam entrando na listagem "Meus eventos").
-  const { data: orgs } = await supabase
-    .from('organizations')
-    .select('id, name, type, cnpj, nome_fantasia')
-    .eq('owner_id', user.id)
+  const admin = createServiceClient()
+  const { data: orgAdminRows } = await admin
+    .from('organization_admins')
+    .select('role, organizations (id, name, type, cnpj, nome_fantasia)')
+    .eq('user_id', user.id)
+    .eq('status', 'ativo')
 
-  const orgIds  = (orgs ?? []).map(o => o.id)
-  // Pré-preenchimento do modal é determinístico: só a organização
-  // type='promotora' (a única criada daqui pra frente).
-  const orgAtual = (orgs ?? []).find(o => o.type === 'promotora') ?? null
+  const orgs = (orgAdminRows ?? []).flatMap(r => {
+    const org = Array.isArray(r.organizations) ? r.organizations[0] : r.organizations
+    return org ? [org] : []
+  })
+
+  const orgIds = orgs.map(o => o.id)
+  // Só entram no seletor do modal as organizações type='promotora' (as
+  // legadas type='estabelecimento' seguem existindo só por causa de
+  // eventos antigos, não criam evento novo).
+  const organizacoesPromotoras = orgs.filter(o => o.type === 'promotora')
 
   const { data: eventos } = orgIds.length > 0
     ? await supabase
@@ -96,13 +108,13 @@ export default async function CriarEventoPage() {
         <CriarEventoClient
           promotorId={promotorProfile?.id ?? null}
           nomeUsuario={profile?.full_name ?? 'Promotor'}
-          orgAtual={orgAtual ? {
-            id:           orgAtual.id,
-            name:         orgAtual.name,
-            type:         orgAtual.type as 'promotora' | 'estabelecimento',
-            cnpj:         (orgAtual as { cnpj?: string | null }).cnpj ?? null,
-            nome_fantasia:(orgAtual as { nome_fantasia?: string | null }).nome_fantasia ?? null,
-          } : null}
+          organizacoes={organizacoesPromotoras.map(o => ({
+            id:            o.id,
+            name:          o.name,
+            type:          o.type as 'promotora' | 'estabelecimento',
+            cnpj:          (o as { cnpj?: string | null }).cnpj ?? null,
+            nome_fantasia: (o as { nome_fantasia?: string | null }).nome_fantasia ?? null,
+          }))}
           profile={{
             phone:         profile?.phone         ?? '',
             zip_code:      profile?.zip_code      ?? '',

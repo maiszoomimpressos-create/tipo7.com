@@ -141,6 +141,36 @@ devolve `404` em produção — ou seja, nada disso está no ar ainda. Usuário
 real que se cadastra ou edita o perfil hoje no site **não** dispara nada
 disso.
 
+## Telefone do motorista (novo campo `driver_phone`)
+
+A Autosave agora guarda e devolve `driver_phone` no recurso `vehicles`
+(testado e funcionando em produção). Objetivo: já que pessoas trocam de
+número, quando o atendente digitar uma placa que já existe na Autosave e
+ela tiver telefone salvo, mostrar um modal **"É esse o número? [telefone]"**
+com confirmar/editar, em vez de perguntar do zero toda vez:
+
+- **Confirmou** → segue o fluxo normal de acesso/pagamento com esse número.
+- **Editou** → usa o número novo digitado, e esse número precisa ser
+  **mandado de volta pra Autosave** (pra já vir certo da próxima vez).
+
+**Já pronto** (`web/src/lib/autosave.ts`, arquivo isolado, seguro de
+publicar junto com o resto da sincronização):
+- `buscarVeiculoPorPlaca` agora também devolve `telefone: string | null`.
+- `salvarVeiculoNaAutosave` agora aceita um `telefone?: string` opcional —
+  só manda se vier preenchido (não apaga o que já estava salvo lá se você
+  omitir).
+
+**Falta fazer** (não mexi porque fica dentro de arquivos com outras
+mudanças de pagamento/caixa em andamento, não revisadas):
+- `web/src/app/api/estacionamento/entrada/route.ts` — hoje já recebe
+  `body.telefoneCondutor` e já chama `salvarVeiculoNaAutosave({ placa,
+  modelo, cor })` na linha ~139, só falta passar
+  `telefone: body.telefoneCondutor` junto.
+- A tela onde o atendente digita a placa (provavelmente dentro de
+  `web/src/app/estacionamento/[eventoId]/page.tsx`) — ao chamar
+  `buscarVeiculoPorPlaca` e receber `telefone` preenchido, mostrar o modal
+  de confirmação antes de liberar o campo de telefone pra digitação livre.
+
 ## O bloqueio pra publicar
 
 `web/src/app/perfil/page.tsx` (e a nova prop `secaoAtiva` do `ProfileForm`)

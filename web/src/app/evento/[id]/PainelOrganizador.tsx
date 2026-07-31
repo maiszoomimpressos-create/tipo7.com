@@ -14,7 +14,7 @@ interface Props {
   eventoId:            string
   ingressos:           IngressoEditavel[]
   capacity:            number | null
-  dias?:               { id: string; dayNumber: number; date: string }[]
+  dias?:               { id: string; dayNumber: number; date: string; startTime?: string; endTime?: string }[]
   diaSelecionadoId?:   string | null
   moduloEstacionamento?: boolean
 }

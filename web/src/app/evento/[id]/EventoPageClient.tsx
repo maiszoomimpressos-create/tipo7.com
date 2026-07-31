@@ -4,7 +4,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { QRCodeCanvas } from 'qrcode.react'
 import {
-  MapPin, Calendar, Clock, Tag,
+  MapPin, Calendar, Clock, Tag, ArrowLeft,
   Ticket, AlertCircle, ExternalLink, Music, Loader2,
   Pencil, X, Check, Camera, Copy, Download, QrCode, Lock,
   Shield, Car, UtensilsCrossed, Beer, Accessibility, Wifi,
@@ -36,6 +36,8 @@ interface Evento {
   bannerUrl:          string | null
   moduloEstacionamento: boolean
   isChild:            boolean
+  parentEventId:      string | null
+  parentEventTitle:   string | null
   feeMode:            'promotor' | 'comprador' | 'mista'
   feePct:             number
 }
@@ -66,10 +68,15 @@ interface Ingresso {
 }
 
 interface Atracao {
-  id:         string
-  title:      string
-  bannerUrl:  string | null
-  dateStart:  string | null
+  id:                 string
+  title:              string
+  bannerUrl:          string | null
+  dateStart:          string | null
+  ticketMode:         'individual' | 'pacote' | 'ambos' | null
+  packageDiscountPct: number
+  feeMode:            'promotor' | 'comprador' | 'mista'
+  dias:               Dia[]
+  ingressos:          Ingresso[]
 }
 
 interface Props {
@@ -170,6 +177,20 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
   const [showCardForm,  setShowCardForm]  = useState(false)
 
+  // ── Seletor de show — abas dentro de abas: qual evento (principal ou um
+  // dos filhos/Tendas) está sendo exibido em Programação + Ingressos. null
+  // = evento principal. Trocar de show troca de "loja": zera dia e carrinho,
+  // não mistura ingressos de eventos diferentes na mesma compra.
+  const [itemAtivoId, setItemAtivoId] = useState<string | null>(null)
+  const filhoAtivo = itemAtivoId ? atracoes.find(a => a.id === itemAtivoId) ?? null : null
+
+  const diasAtivo               = filhoAtivo ? filhoAtivo.dias               : dias
+  const ingressosAtivo          = filhoAtivo ? filhoAtivo.ingressos          : ingressos
+  const ticketModeAtivo         = filhoAtivo ? filhoAtivo.ticketMode         : evento.ticketMode
+  const packageDiscountPctAtivo = filhoAtivo ? filhoAtivo.packageDiscountPct : evento.packageDiscountPct
+  const feeModeAtivo            = filhoAtivo ? filhoAtivo.feeMode            : evento.feeMode
+  const eventoIdAtivo           = filhoAtivo ? filhoAtivo.id                 : evento.id
+
   // Inline edit state (owner only)
   const [editField,       setEditField]       = useState<string | null>(null)
   const [editTitle,       setEditTitle]       = useState(evento.title)
@@ -184,6 +205,43 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   const [linkCopiado,     setLinkCopiado]     = useState(false)
   const bannerInputRef = useRef<HTMLInputElement>(null)
   const qrCanvasRef    = useRef<HTMLCanvasElement>(null)
+
+  // Hero do topo é sempre do evento principal — trocar de aba em Programação
+  // não mexe aqui, só troca dias/banner/ingressos lá embaixo. O banner da
+  // Tenda selecionada já aparece certinho dentro da própria Programação.
+  const heroBanner = currentBanner
+  const heroTitulo = currentTitle
+
+  // Carrossel do hero — banner principal + a imagem de cada dia do evento
+  // principal (o banner próprio do dia, ou se não tiver, a imagem da
+  // primeira atração — mesma prioridade usada lá na Programação), sem repetir.
+  const [heroSlideIndex, setHeroSlideIndex] = useState(0)
+  const heroSlides = useMemo(() => {
+    const slides: string[] = []
+    if (heroBanner) slides.push(heroBanner)
+    for (const dia of dias) {
+      const diaImg = dia.bannerUrl || dia.attractions.find(a => a.imageUrl)?.imageUrl
+      if (diaImg && !slides.includes(diaImg)) slides.push(diaImg)
+    }
+    return slides
+  }, [heroBanner, dias])
+
+  useEffect(() => {
+    if (heroSlides.length <= 1) return
+    const t = setInterval(() => setHeroSlideIndex(i => (i + 1) % heroSlides.length), 5000)
+    return () => clearInterval(t)
+  }, [heroSlides])
+
+  // Trocar de show troca de "loja": zera dia, carrinho e qualquer edição
+  // aberta, pra não misturar contexto de eventos diferentes na mesma tela
+  useEffect(() => {
+    setDiaProgramacao(0)
+    setSelection({})
+    setShowCardForm(false)
+    setCheckoutError(null)
+    setEditField(null)
+    setHeroSlideIndex(0)
+  }, [itemAtivoId])
 
   // Começa com o caminho relativo (igual ao que o servidor renderiza) e só
   // troca pra URL absoluta depois de montar — evita mismatch de hidratação
@@ -250,17 +308,17 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   const setQty = (id: string, qty: number, max: number) =>
     setSelection(prev => ({ ...prev, [id]: Math.max(0, Math.min(qty, max)) }))
 
-  // displayPrice = preço que o comprador vê e paga conforme o modo de taxa do evento
+  // displayPrice = preço que o comprador vê e paga conforme o modo de taxa do evento ativo
   const effectivePrice = (facePrice: number) => {
-    if (evento.feeMode === 'comprador') return Math.round(facePrice * (1 + evento.feePct / 100) * 100) / 100
-    if (evento.feeMode === 'mista')     return Math.round(facePrice * (1 + evento.feePct / 2 / 100) * 100) / 100
+    if (feeModeAtivo === 'comprador') return Math.round(facePrice * (1 + evento.feePct / 100) * 100) / 100
+    if (feeModeAtivo === 'mista')     return Math.round(facePrice * (1 + evento.feePct / 2 / 100) * 100) / 100
     return facePrice
   }
 
   const total = useMemo(
-    () => ingressos.reduce((sum, t) => sum + (selection[t.id] ?? 0) * effectivePrice(t.price), 0),
+    () => ingressosAtivo.reduce((sum, t) => sum + (selection[t.id] ?? 0) * effectivePrice(t.price), 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selection, ingressos, evento.feeMode, evento.feePct],
+    [selection, ingressosAtivo, feeModeAtivo, evento.feePct],
   )
 
   const totalItems = useMemo(
@@ -268,14 +326,15 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
     [selection],
   )
 
-  const ingressosPacote     = ingressos.filter(t => t.eventDayId === null)
-  const ingressosIndividual = ingressos.filter(t => t.eventDayId !== null)
-  const modoSimples = evento.ticketMode === null || evento.ticketMode === 'individual'
+  const ingressosPacote     = ingressosAtivo.filter(t => t.eventDayId === null)
+  const ingressosIndividual = ingressosAtivo.filter(t => t.eventDayId !== null)
+  const modoSimples = ticketModeAtivo === null || ticketModeAtivo === 'individual'
   const isRascunho  = evento.status === 'rascunho'
   const editFormUrl = `/criar-evento/${evento.id}`
   // Programação (dias/atrações/banners) é editada na etapa de Ingressos,
-  // não na de Informações — link separado do editFormUrl genérico
-  const programacaoEditUrl = `/criar-evento/${evento.id}/ingressos`
+  // não na de Informações — link separado do editFormUrl genérico. Aponta
+  // pro evento ativo (pai ou o filho selecionado na aba), não sempre o pai.
+  const programacaoEditUrl = `/criar-evento/${eventoIdAtivo}/ingressos`
 
   function getItems() {
     return Object.entries(selection)
@@ -291,7 +350,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
       const res = await fetch('/api/checkout/pix', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ eventoId: evento.id, items }),
+        body:    JSON.stringify({ eventoId: eventoIdAtivo, items }),
       })
       const data = await res.json()
       if (!res.ok) { setCheckoutError(data.error ?? 'Erro ao gerar PIX'); return }
@@ -335,6 +394,19 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
 
   return (
     <>
+      {/* ── Voltar pro evento principal (só em página de Tenda/evento filho) ── */}
+      {evento.isChild && evento.parentEventId && (
+        <div className="w-full border-b border-[#111] bg-[#070707] px-4 md:px-6 py-2.5">
+          <a
+            href={`/evento/${evento.parentEventId}`}
+            className="flex items-center gap-1.5 text-[#666] hover:text-white text-xs transition-colors w-fit"
+            style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            <ArrowLeft size={13} />
+            Voltar para {evento.parentEventTitle || 'o evento principal'}
+          </a>
+        </div>
+      )}
+
       {/* ── Barra do promotor ────────────────────────────────────────────── */}
       {isOwner && (
         <div className="w-full border-b border-[#E8B84B]/20 bg-[#E8B84B]/[0.06] px-4 md:px-6 py-2.5 flex items-center justify-between gap-3">
@@ -367,10 +439,11 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
           className="relative w-full max-w-[780px] mx-auto rounded-2xl overflow-hidden"
           style={{ height: 420 }}>
 
-          {currentBanner
+          {heroSlides[heroSlideIndex]
             ? <Image
-                src={currentBanner}
-                alt={currentTitle}
+                key={heroSlides[heroSlideIndex]}
+                src={heroSlides[heroSlideIndex]}
+                alt={heroTitulo}
                 fill
                 className="object-cover brightness-110"
                 sizes="780px"
@@ -381,8 +454,24 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
           }
           <div className="absolute inset-0 bg-gradient-to-t from-[#070707] via-[#070707]/25 to-transparent" />
 
-          {/* Upload overlay (owner only) */}
-          {isOwner && (
+          {/* Navegação do carrossel — só aparece quando há mais de um banner
+              pra esse evento (principal + banners de dia específicos) */}
+          {heroSlides.length > 1 && (
+            <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
+              {heroSlides.map((_, i) => (
+                <button key={i} type="button" onClick={() => setHeroSlideIndex(i)}
+                  className="h-1.5 rounded-full transition-all"
+                  style={{
+                    width:      i === heroSlideIndex ? 18 : 6,
+                    background: i === heroSlideIndex ? '#fff' : 'rgba(255,255,255,0.4)',
+                  }} />
+              ))}
+            </div>
+          )}
+
+          {/* Upload overlay — só edita o banner principal (1º slide); os
+              banners de dia têm edição própria lá em Ingressos */}
+          {isOwner && heroSlideIndex === 0 && (
             <>
               {/* Etiqueta de medidas — canto superior esquerdo */}
               <div
@@ -503,7 +592,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                 <h1
                   className="text-white text-3xl md:text-4xl leading-tight flex-1"
                   style={{ fontFamily: 'var(--font-outfit)', fontWeight: 600, textShadow: '0 2px 24px rgba(0,0,0,0.9)' }}>
-                  {currentTitle}
+                  {heroTitulo}
                 </h1>
                 {isOwner && pencilBtn('title')}
               </div>
@@ -600,152 +689,6 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
         </div>
       )}
 
-      {/* ── Atrações — eventos filhos publicados (Tenda, etc.) ──────────── */}
-      {atracoes.length > 0 && (
-        <div className="border-b border-[#111]" style={{ background: '#070707' }}>
-          <div className="max-w-6xl mx-auto px-6 py-6">
-            <p className="text-white text-sm font-semibold mb-3" style={{ fontFamily: 'var(--font-outfit)' }}>
-              Atrações
-            </p>
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {atracoes.map(a => (
-                <a key={a.id} href={`/evento/${a.id}`}
-                  className="flex-shrink-0 w-56 rounded-2xl overflow-hidden border border-[#1a1a1a] hover:border-[#2a2a2a] transition-colors"
-                  style={{ background: '#0d0d0d' }}>
-                  <div className="w-full h-28 bg-[#111] flex items-center justify-center overflow-hidden">
-                    {a.bannerUrl
-                      ? <img src={a.bannerUrl} alt={a.title} className="w-full h-full object-cover" />
-                      : <Music size={22} className="text-[#2a2a2a]" />}
-                  </div>
-                  <div className="p-3">
-                    <p className="text-white text-sm font-medium truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {a.title}
-                    </p>
-                    {a.dateStart && (
-                      <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        {formatDateShort(a.dateStart)}
-                      </p>
-                    )}
-                  </div>
-                </a>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Painel de divulgação (somente dono) ─────────────────────────── */}
-      {isOwner && (
-        <div className="border-b border-[#111] bg-[#080808]">
-          <div className="max-w-6xl mx-auto px-6 py-5 flex flex-wrap items-center gap-6">
-
-            {evento.status === 'publicado' ? (
-              <>
-                {/* QR code */}
-                <div className="relative shrink-0">
-                  <div className="p-2 rounded-xl bg-white">
-                    <QRCodeCanvas
-                      id="qr-evento-canvas"
-                      value={eventUrl}
-                      size={100}
-                      bgColor="#ffffff"
-                      fgColor="#070707"
-                      level="M"
-                    />
-                  </div>
-                  <div
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
-                    style={{ background: ACCENT }}>
-                    <QrCode size={10} style={{ color: '#070707' }} />
-                  </div>
-                </div>
-
-                {/* URL + ações */}
-                <div className="flex-1 min-w-0 flex flex-col gap-3">
-                  <div>
-                    <p className="text-[#444] text-[10px] uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Link do evento
-                    </p>
-                    <p className="text-[#666] text-sm truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {eventUrl}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={copiarLink}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
-                      style={{
-                        background: linkCopiado ? 'rgba(34,197,94,0.10)' : 'rgba(232,184,75,0.08)',
-                        border:     `1px solid ${linkCopiado ? 'rgba(34,197,94,0.30)' : 'rgba(232,184,75,0.25)'}`,
-                        color:      linkCopiado ? '#22c55e' : ACCENT,
-                        fontFamily: 'var(--font-dm-sans)',
-                      }}>
-                      {linkCopiado
-                        ? <><Check size={12} /> Link copiado!</>
-                        : <><Copy size={12} /> Copiar link</>
-                      }
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={baixarQR}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
-                      style={{
-                        background: 'rgba(255,255,255,0.04)',
-                        border:     '1px solid #1e1e1e',
-                        color:      '#555',
-                        fontFamily: 'var(--font-dm-sans)',
-                      }}>
-                      <Download size={12} /> Baixar QR
-                    </button>
-
-                    <a
-                      href={`https://wa.me/?text=${encodeURIComponent(`Garanta seu ingresso para ${evento.title}! 🎟️ ${eventUrl}`)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
-                      style={{
-                        background: 'rgba(37,211,102,0.08)',
-                        border:     '1px solid rgba(37,211,102,0.20)',
-                        color:      '#25D366',
-                        fontFamily: 'var(--font-dm-sans)',
-                      }}>
-                      <ExternalLink size={12} /> Compartilhar no WhatsApp
-                    </a>
-                  </div>
-                </div>
-              </>
-            ) : (
-              /* Bloqueado — evento ainda é rascunho */
-              <div className="flex items-center gap-4 w-full">
-                <div
-                  className="w-[116px] h-[116px] rounded-xl shrink-0 flex items-center justify-center"
-                  style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
-                  <Lock size={28} className="text-[#2a2a2a]" />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <p className="text-[#444] text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Divulgação bloqueada
-                  </p>
-                  <p className="text-[#2e2e2e] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    O QR code, o link e o compartilhamento via WhatsApp ficam disponíveis assim que você publicar o evento.
-                  </p>
-                  <a
-                    href={`/criar-evento/${evento.id}/publicar`}
-                    className="mt-2 text-xs font-medium w-fit flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all hover:brightness-110"
-                    style={{ background: 'rgba(232,184,75,0.10)', border: '1px solid rgba(232,184,75,0.20)', color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-                    Publicar evento →
-                  </a>
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-      )}
-
       {/* ── Conteúdo principal ───────────────────────────────────────────── */}
       <div className="max-w-6xl mx-auto px-4 py-10 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 items-start">
 
@@ -801,8 +744,8 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
           )}
 
           {/* ── Programação ── */}
-          {(dias.length > 0 || isOwner) && (
-            <section>
+          {(diasAtivo.length > 0 || isOwner) && (
+            <section id="programacao">
               <div className="flex items-center gap-2 mb-4">
                 <h2 className="text-white text-lg font-medium flex-1"
                     style={{ fontFamily: 'var(--font-outfit)' }}>
@@ -818,12 +761,57 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                 )}
               </div>
 
-              {dias.length > 0 ? (
+              {/* Seletor de show — qual evento (principal ou Tenda) está sendo
+                  exibido aqui embaixo. Uma Tenda só roda nos dias que o
+                  promotor marcou pra ela, então a aba dela só aparece quando
+                  o dia atualmente selecionado é um desses dias específicos —
+                  não em todos os dias do evento. Trocar de aba troca TUDO
+                  nesta seção (dias, banner, atrações) e os ingressos ao
+                  lado, sem sair da tela nem perder o carrinho já montado. */}
+              {(() => {
+                const diaAtualObj = diasAtivo[diaProgramacao] ?? diasAtivo[0]
+                const atracoesNesseDia = diaAtualObj
+                  ? atracoes.filter(a => a.dias.some(d => d.date === diaAtualObj.date) || a.id === itemAtivoId)
+                  : []
+                // A barra fica sempre montada (mesma altura reservada), mesmo
+                // sem Tenda nesse dia — senão o banner/dias pulam de posição
+                // ao trocar entre um dia com Tenda e um sem.
+                return (
+                <div className="flex gap-1 border-b border-[#1a1a1a] mb-4 -mt-1 overflow-x-auto">
+                  {atracoesNesseDia.length > 0 ? (
+                    [
+                      { id: null as string | null, label: currentTitle || 'Evento principal' },
+                      ...atracoesNesseDia.map(a => ({ id: a.id as string | null, label: a.title })),
+                    ].map(item => {
+                      const ativa = itemAtivoId === item.id
+                      return (
+                        <button key={item.id ?? 'principal'} type="button"
+                          onClick={() => setItemAtivoId(item.id)}
+                          className="relative flex-shrink-0 whitespace-nowrap px-3.5 py-2.5 text-sm font-medium transition-colors"
+                          style={{ color: ativa ? ACCENT : '#666', fontFamily: 'var(--font-dm-sans)' }}>
+                          {item.label}
+                          {ativa && (
+                            <span className="absolute bottom-0 left-0 right-0 h-0.5 rounded-t-full"
+                                  style={{ background: ACCENT }} />
+                          )}
+                        </button>
+                      )
+                    })
+                  ) : (
+                    <span className="invisible px-3.5 py-2.5 text-sm font-medium" aria-hidden>·</span>
+                  )}
+                </div>
+                )
+              })()}
+
+              {diasAtivo.length > 0 ? (
                 <div className="flex flex-col gap-3">
-                  {/* Abas de dia — só exibe seletor quando há mais de um dia */}
-                  {dias.length > 1 && (
-                    <div className="flex gap-2 overflow-x-auto pb-1 -mb-1">
-                      {dias.map((dia, i) => {
+                  {/* Abas de dia — reserva a mesma altura mesmo quando o show
+                      ativo só tem 1 dia (ex: Tenda), pra não pular o banner
+                      de posição ao trocar entre "tripa seca" e "Adoradores" */}
+                  <div className="flex gap-2 overflow-x-auto pb-1 -mb-1">
+                    {diasAtivo.length > 1 ? (
+                      diasAtivo.map((dia, i) => {
                         const ativa = diaProgramacao === i
                         return (
                           <button key={dia.id} type="button"
@@ -842,28 +830,37 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                             </span>
                           </button>
                         )
-                      })}
-                    </div>
-                  )}
+                      })
+                    ) : (
+                      <div className="invisible flex flex-col items-start px-4 py-2.5 rounded-xl border">
+                        <span className="text-[10px] font-bold">·</span>
+                        <span className="text-xs mt-0.5">·</span>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Conteúdo do dia selecionado */}
                   {(() => {
-                    const dia = dias[diaProgramacao] ?? dias[0]
+                    const dia = diasAtivo[diaProgramacao] ?? diasAtivo[0]
                     if (!dia) return null
                     // Prioriza o banner próprio do dia; sem ele, usa a imagem da
-                    // primeira atração — nunca o banner geral do evento aqui,
-                    // pra não parecer que todo dia usa a mesma arte genérica
+                    // primeira atração. Cai no banner geral só quando o show
+                    // ativo é uma Tenda (ela normalmente tem só 1-2 dias e o
+                    // banner dela já representa bem qualquer um deles) — o
+                    // evento principal nunca usa esse fallback, senão todo
+                    // dia de um evento de vários dias pareceria igual.
                     const heroAttraction = dia.attractions[0]
-                    const heroImg = dia.bannerUrl || heroAttraction?.imageUrl || null
+                    const heroImg = dia.bannerUrl || heroAttraction?.imageUrl || (filhoAtivo?.bannerUrl ?? null)
+
                     return (
-                      <div className="rounded-xl border border-[#1a1a1a] overflow-hidden">
+                      <div className="relative rounded-xl border border-[#1a1a1a] overflow-hidden">
                         {heroImg && (
                           <img src={heroImg} alt=""
                                className="w-full max-h-96 object-contain bg-[#050505]" />
                         )}
                         <div className="px-5 py-4 bg-[#0d0d0d]">
                           <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                            {dias.length > 1 ? `Dia ${dia.dayNumber}` : 'Programação'}
+                            {diasAtivo.length > 1 ? `Dia ${dia.dayNumber}` : 'Programação'}
                             {dia.date && (
                               <span className="text-[#555] font-normal ml-2">
                                 · {formatDateShort(dia.date)}
@@ -985,13 +982,109 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
         <div className="lg:sticky lg:top-24">
           {isOwner && (
             <>
+              {/* ── Divulgação — QR, link, compartilhar ── */}
+              <div className="rounded-2xl border border-[#1a1a1a] bg-[#0d0d0d] p-5 mb-4 flex flex-col items-center gap-4">
+                {evento.status === 'publicado' ? (
+                  <>
+                    <div className="relative shrink-0">
+                      <div className="p-2 rounded-xl bg-white">
+                        <QRCodeCanvas
+                          id="qr-evento-canvas"
+                          value={eventUrl}
+                          size={100}
+                          bgColor="#ffffff"
+                          fgColor="#070707"
+                          level="M"
+                        />
+                      </div>
+                      <div
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
+                        style={{ background: ACCENT }}>
+                        <QrCode size={10} style={{ color: '#070707' }} />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={copiarLink}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                        style={{
+                          background: linkCopiado ? 'rgba(34,197,94,0.10)' : 'rgba(232,184,75,0.08)',
+                          border:     `1px solid ${linkCopiado ? 'rgba(34,197,94,0.30)' : 'rgba(232,184,75,0.25)'}`,
+                          color:      linkCopiado ? '#22c55e' : ACCENT,
+                          fontFamily: 'var(--font-dm-sans)',
+                        }}>
+                        {linkCopiado
+                          ? <><Check size={12} /> Link copiado!</>
+                          : <><Copy size={12} /> Copiar link</>
+                        }
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={baixarQR}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                        style={{
+                          background: 'rgba(255,255,255,0.04)',
+                          border:     '1px solid #1e1e1e',
+                          color:      '#555',
+                          fontFamily: 'var(--font-dm-sans)',
+                        }}>
+                        <Download size={12} /> Baixar QR
+                      </button>
+
+                      <a
+                        href={`https://wa.me/?text=${encodeURIComponent(`Garanta seu ingresso para ${evento.title}! 🎟️ ${eventUrl}`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                        style={{
+                          background: 'rgba(37,211,102,0.08)',
+                          border:     '1px solid rgba(37,211,102,0.20)',
+                          color:      '#25D366',
+                          fontFamily: 'var(--font-dm-sans)',
+                        }}>
+                        <ExternalLink size={12} /> Compartilhar no WhatsApp
+                      </a>
+                    </div>
+                  </>
+                ) : (
+                  /* Bloqueado — evento ainda é rascunho */
+                  <div className="flex flex-col items-center text-center gap-2">
+                    <div
+                      className="w-[72px] h-[72px] rounded-xl flex items-center justify-center"
+                      style={{ background: '#111', border: '1px solid #1a1a1a' }}>
+                      <Lock size={22} className="text-[#2a2a2a]" />
+                    </div>
+                    <p className="text-[#444] text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Divulgação bloqueada
+                    </p>
+                    <p className="text-[#2e2e2e] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      O QR code, o link e o compartilhamento via WhatsApp ficam disponíveis assim que você publicar o evento.
+                    </p>
+                    <a
+                      href={`/criar-evento/${evento.id}/publicar`}
+                      className="mt-1 text-xs font-medium w-fit flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all hover:brightness-110"
+                      style={{ background: 'rgba(232,184,75,0.10)', border: '1px solid rgba(232,184,75,0.20)', color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                      Publicar evento →
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              {/* key força remount ao trocar de show — sem isso, o estado
+                  interno do painel (useState(ingressos) etc.) fica preso nos
+                  dados do primeiro evento que ele mostrou, e trocar de aba
+                  não atualiza mais os ingressos exibidos */}
               <PainelOrganizador
-                eventoId={evento.id}
+                key={eventoIdAtivo}
+                eventoId={eventoIdAtivo}
                 capacity={capacity}
                 moduloEstacionamento={evento.moduloEstacionamento}
-                dias={dias.map(d => ({ id: d.id, dayNumber: d.dayNumber, date: d.date }))}
-                diaSelecionadoId={dias[diaProgramacao]?.id ?? null}
-                ingressos={ingressos.map((t): IngressoEditavel => ({
+                dias={diasAtivo.map(d => ({ id: d.id, dayNumber: d.dayNumber, date: d.date, startTime: d.startTime, endTime: d.endTime }))}
+                diaSelecionadoId={diasAtivo[diaProgramacao]?.id ?? null}
+                ingressos={ingressosAtivo.map((t): IngressoEditavel => ({
                   id:         t.id,
                   name:       t.name,
                   price:      t.price,
@@ -1020,38 +1113,42 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
               <div className="p-5 flex flex-col gap-5">
 
                 {/* ── Modo simples (individual ou sem modo definido) ─────── */}
-                {modoSimples && (
-                  <>
-                    {ingressosIndividual.length > 0 && dias.map(dia => {
-                      const tickets = ingressosIndividual.filter(t => t.eventDayId === dia.id)
-                      if (!tickets.length) return null
-                      return (
-                        <div key={dia.id} className="flex flex-col gap-1">
-                          {dias.length > 1 && (
+                {/* Mostra só os ingressos do dia selecionado na aba de Programação
+                    acima — nunca empilha ingressos de todos os dias juntos. */}
+                {modoSimples && (() => {
+                  const diaAtivoObj = diasAtivo[diaProgramacao] ?? diasAtivo[0]
+                  const ticketsDoDia = diaAtivoObj
+                    ? ingressosIndividual.filter(t => t.eventDayId === diaAtivoObj.id)
+                    : []
+                  return (
+                    <>
+                      {ticketsDoDia.length > 0 && (
+                        <div className="flex flex-col gap-1">
+                          {diasAtivo.length > 1 && diaAtivoObj && (
                             <p className="text-[#444] text-xs mb-1"
                                style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                              Dia {dia.dayNumber}
-                              {dia.date ? ` · ${formatDateShort(dia.date)}` : ''}
+                              Dia {diaAtivoObj.dayNumber}
+                              {diaAtivoObj.date ? ` · ${formatDateShort(diaAtivoObj.date)}` : ''}
                             </p>
                           )}
-                          {tickets.map(t => (
+                          {ticketsDoDia.map(t => (
                             <TicketRow key={t.id} ingresso={t}
                               qty={selection[t.id] ?? 0}
                               onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
                           ))}
                         </div>
-                      )
-                    })}
-                    {ingressosPacote.map(t => (
-                      <TicketRow key={t.id} ingresso={t}
-                        qty={selection[t.id] ?? 0}
-                        onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
-                    ))}
-                  </>
-                )}
+                      )}
+                      {ingressosPacote.map(t => (
+                        <TicketRow key={t.id} ingresso={t}
+                          qty={selection[t.id] ?? 0}
+                          onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
+                      ))}
+                    </>
+                  )
+                })()}
 
                 {/* ── Modo pacote ───────────────────────────────────────── */}
-                {evento.ticketMode === 'pacote' && (
+                {ticketModeAtivo === 'pacote' && (
                   <div className="flex flex-col gap-1">
                     {ingressosPacote.map(t => (
                       <TicketRow key={t.id} ingresso={t}
@@ -1062,62 +1159,60 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                 )}
 
                 {/* ── Modo ambos ────────────────────────────────────────── */}
-                {evento.ticketMode === 'ambos' && (
-                  <>
-                    {ingressosPacote.length > 0 && (
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2 mb-1">
+                {ticketModeAtivo === 'ambos' && (() => {
+                  const diaAtivoObj = diasAtivo[diaProgramacao] ?? diasAtivo[0]
+                  const ticketsDoDia = diaAtivoObj
+                    ? ingressosIndividual.filter(t => t.eventDayId === diaAtivoObj.id)
+                    : []
+                  return (
+                    <>
+                      {ingressosPacote.length > 0 && (
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-[#555] text-[11px] font-semibold uppercase tracking-wider"
+                               style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                              Pacote completo
+                            </p>
+                            {packageDiscountPctAtivo > 0 && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                                    style={{ background: '#22c55e20', color: '#4ade80' }}>
+                                -{packageDiscountPctAtivo}%
+                              </span>
+                            )}
+                          </div>
+                          {ingressosPacote.map(t => (
+                            <TicketRow key={t.id} ingresso={t}
+                              qty={selection[t.id] ?? 0}
+                              onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
+                          ))}
+                        </div>
+                      )}
+
+                      {ticketsDoDia.length > 0 && (
+                        <div className="flex flex-col gap-1">
                           <p className="text-[#555] text-[11px] font-semibold uppercase tracking-wider"
                              style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                            Pacote completo
+                            Por dia
                           </p>
-                          {evento.packageDiscountPct > 0 && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
-                                  style={{ background: '#22c55e20', color: '#4ade80' }}>
-                              -{evento.packageDiscountPct}%
-                            </span>
+                          {diasAtivo.length > 1 && diaAtivoObj && (
+                            <p className="text-[#444] text-xs"
+                               style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                              Dia {diaAtivoObj.dayNumber}{diaAtivoObj.date ? ` · ${formatDateShort(diaAtivoObj.date)}` : ''}
+                            </p>
                           )}
+                          {ticketsDoDia.map(t => (
+                            <TicketRow key={t.id} ingresso={t}
+                              qty={selection[t.id] ?? 0}
+                              onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
+                          ))}
                         </div>
-                        {ingressosPacote.map(t => (
-                          <TicketRow key={t.id} ingresso={t}
-                            qty={selection[t.id] ?? 0}
-                            onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
-                        ))}
-                      </div>
-                    )}
-
-                    {ingressosIndividual.length > 0 && (
-                      <div className="flex flex-col gap-3">
-                        <p className="text-[#555] text-[11px] font-semibold uppercase tracking-wider"
-                           style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                          Por dia
-                        </p>
-                        {dias.map(dia => {
-                          const tickets = ingressosIndividual.filter(t => t.eventDayId === dia.id)
-                          if (!tickets.length) return null
-                          return (
-                            <div key={dia.id} className="flex flex-col gap-1">
-                              {dias.length > 1 && (
-                                <p className="text-[#444] text-xs"
-                                   style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                                  Dia {dia.dayNumber}{dia.date ? ` · ${formatDateShort(dia.date)}` : ''}
-                                </p>
-                              )}
-                              {tickets.map(t => (
-                                <TicketRow key={t.id} ingresso={t}
-                                  qty={selection[t.id] ?? 0}
-                                  onQty={q => setQty(t.id, q, t.quantity)} displayPrice={effectivePrice(t.price)} />
-                              ))}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </>
-                )}
+                      )}
+                    </>
+                  )
+                })()}
 
                 {/* Sem ingressos */}
-                {ingressos.length === 0 && (
+                {ingressosAtivo.length === 0 && (
                   <p className="text-[#444] text-sm text-center py-6"
                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
                     Ingressos não cadastrados.
@@ -1125,7 +1220,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                 )}
 
                 {/* Total + botões */}
-                {ingressos.length > 0 && (
+                {ingressosAtivo.length > 0 && (
                   <div className="border-t border-[#141414] pt-4 flex flex-col gap-3">
                     <div className="flex items-center justify-between">
                       <span className="text-[#555] text-sm"
@@ -1147,7 +1242,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                     {/* Formulário de cartão inline */}
                     {showCardForm && (
                       <CheckoutCardPanel
-                        eventoId={evento.id}
+                        eventoId={eventoIdAtivo}
                         items={getItems()}
                         total={total}
                         onClose={() => setShowCardForm(false)}

@@ -29,11 +29,11 @@ interface OrgAtual {
 }
 
 interface Props {
-  promotorId:  string | null
-  nomeUsuario: string
-  orgAtual:    OrgAtual | null
-  profile:     ProfileData
-  eventos:     EventoItem[]
+  promotorId:    string | null
+  nomeUsuario:   string
+  organizacoes:  OrgAtual[]
+  profile:       ProfileData
+  eventos:       EventoItem[]
 }
 
 const MESES_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
@@ -108,7 +108,7 @@ function ConfirmDeleteModal({
 }
 
 // ── Componente principal ────────────────────────────────────────────────────
-export function CriarEventoClient({ promotorId, nomeUsuario, orgAtual, profile, eventos: inicial }: Props) {
+export function CriarEventoClient({ promotorId, nomeUsuario, organizacoes, profile, eventos: inicial }: Props) {
   const router = useRouter()
   const [modalAberto,    setModalAberto]    = useState(false)
   const [lista,          setLista]          = useState<EventoItem[]>(inicial)
@@ -278,11 +278,17 @@ export function CriarEventoClient({ promotorId, nomeUsuario, orgAtual, profile, 
               Começar agora
             </button>
 
-            {orgAtual && (
+            {organizacoes.length === 1 && (
               <div className="mt-5 inline-flex items-center gap-2 text-[#444] text-xs border border-[#1a1a1a] rounded-xl px-4 py-2.5"
                    style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 <span className="text-[#555]">Organização</span>
-                <span className="text-white font-medium">{orgAtual.nome_fantasia || orgAtual.name}</span>
+                <span className="text-white font-medium">{organizacoes[0].nome_fantasia || organizacoes[0].name}</span>
+              </div>
+            )}
+            {organizacoes.length > 1 && (
+              <div className="mt-5 inline-flex items-center gap-2 text-[#444] text-xs border border-[#1a1a1a] rounded-xl px-4 py-2.5"
+                   style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <span className="text-[#555]">Você escolhe a organização ao criar</span>
               </div>
             )}
           </div>
@@ -295,7 +301,7 @@ export function CriarEventoClient({ promotorId, nomeUsuario, orgAtual, profile, 
         <TipoPessoaModal
           promotorId={promotorId}
           nomeUsuario={nomeUsuario}
-          orgAtual={orgAtual}
+          organizacoes={organizacoes}
           profile={profile}
           onFechar={() => setModalAberto(false)}
         />
