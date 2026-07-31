@@ -1,7 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { redirect }            from 'next/navigation'
 import { createClient }        from '@/lib/supabase/server'
-import { getAdminMember, can } from '@/lib/adminAuth'
+import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
 import { BancosClient }        from './BancosClient'
 
 const FEE_KEYS = [
@@ -20,7 +20,7 @@ export default async function BancosPage() {
   if (!user) redirect('/auth?next=/admin/financeiro/bancos')
 
   const member = await getAdminMember(user.id)
-  if (!member || !can(member, 'gerenciar_financeiro')) redirect('/admin')
+  if (!member || !temAcessoRestrito(member)) redirect('/admin')
 
   const admin = createServiceClient()
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getFamiliaRoot } from '@/lib/eventFamily'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -41,13 +42,7 @@ export async function POST(req: NextRequest) {
   const evento = origem.events as { organization_id: string; transferencia_requer_senha: boolean } | null
 
   // Verifica autorização
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento?.organization_id ?? '')
-    .single()
-
-  const isOwner    = org?.owner_id === user.id
+  const isOwner    = evento ? await isOrgAdmin(admin, evento.organization_id, user.id) : false
   const isOperador = origem.operador_id === user.id || destino.operador_id === user.id
 
   if (!isOwner && !isOperador)

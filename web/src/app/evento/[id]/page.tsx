@@ -2,6 +2,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound }         from 'next/navigation'
 import { Header }           from '@/components/layout/Header'
 import { EventoPageClient } from './EventoPageClient'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -31,12 +32,7 @@ export default async function EventoPage({ params }: Props) {
   const { data: { user } } = await supabase.auth.getUser()
   let isOwner = false
   if (user && evento.organization_id) {
-    const { data: org } = await supabase
-      .from('organizations')
-      .select('owner_id')
-      .eq('id', evento.organization_id)
-      .single()
-    isOwner = org?.owner_id === user.id
+    isOwner = await isOrgAdmin(supabase, evento.organization_id, user.id)
   }
 
   // Rascunhos só são visíveis ao dono
@@ -56,7 +52,7 @@ export default async function EventoPage({ params }: Props) {
   // Busca programação
   const { data: dias } = await supabase
     .from('event_days')
-    .select('id, day_number, date, start_time, end_time, event_day_attractions(name, scheduled_time, order_index)')
+    .select('id, day_number, date, start_time, end_time, banner_url, event_day_attractions(name, description, scheduled_time, order_index, image_url)')
     .eq('event_id', id)
     .order('day_number')
 
@@ -131,7 +127,7 @@ export default async function EventoPage({ params }: Props) {
     }
   }
 
-  type AttractionRow = { name: string; scheduled_time: string | null; order_index: number }
+  type AttractionRow = { name: string; description: string | null; scheduled_time: string | null; order_index: number; image_url: string | null }
 
   return (
     <div className="min-h-dvh bg-[#070707]">
@@ -163,9 +159,10 @@ export default async function EventoPage({ params }: Props) {
           date:        d.date        ?? '',
           startTime:   d.start_time  ?? '',
           endTime:     d.end_time    ?? '',
+          bannerUrl:   d.banner_url  ?? null,
           attractions: ((d.event_day_attractions as AttractionRow[]) ?? [])
             .sort((a, b) => a.order_index - b.order_index)
-            .map(a => ({ name: a.name, scheduledTime: a.scheduled_time ?? '' })),
+            .map(a => ({ name: a.name, description: a.description ?? '', scheduledTime: a.scheduled_time ?? '', imageUrl: a.image_url ?? null })),
         }))}
         ingressos={(ingressos ?? []).map(t => ({
           id:         t.id,

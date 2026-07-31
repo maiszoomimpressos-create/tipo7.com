@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { CheckCircle2, ExternalLink, CalendarPlus } from 'lucide-react'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -16,16 +17,12 @@ export default async function PublicadoPage({ params }: Props) {
 
   const { data: evento } = await supabase
     .from('events')
-    .select('id, title, status, organizations(owner_id)')
+    .select('id, title, status, organization_id')
     .eq('id', id)
     .single()
 
   if (!evento) notFound()
-
-  const org = Array.isArray(evento.organizations)
-    ? evento.organizations[0]
-    : evento.organizations as { owner_id: string } | null
-  if (!org || (org as { owner_id: string }).owner_id !== user.id) notFound()
+  if (!(await isOrgAdmin(supabase, evento.organization_id, user.id))) notFound()
 
   // Só exibe esta tela se o evento realmente foi publicado
   if (evento.status !== 'publicado') redirect(`/criar-evento/${id}/publicar`)

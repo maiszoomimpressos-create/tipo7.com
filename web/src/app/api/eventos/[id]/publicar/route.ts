@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 // POST /api/eventos/[id]/publicar
 // Revalida no servidor os mesmos requisitos que a tela já mostra (título, data,
@@ -31,7 +32,8 @@ export async function POST(
     .select('owner_id')
     .eq('id', evento.organization_id)
     .single()
-  if (org?.owner_id !== user.id) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  if (!(await isOrgAdmin(admin, evento.organization_id, user.id)))
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
 
   const { data: ingressos } = await admin
     .from('event_tickets')
@@ -42,10 +44,12 @@ export async function POST(
   // tabela de contas conectadas (promotor_mp_accounts / promotor_pagbank_accounts).
   const gateway = evento.payment_gateway === 'pagbank' ? 'pagbank' : 'mercadopago'
 
+  // A conta de pagamento é sempre a do dono da organização — quem publica pode
+  // ser um co-admin, mas o dinheiro sempre cai na conta que o dono conectou.
   const { data: contaGateway } = await admin
     .from(gateway === 'pagbank' ? 'promotor_pagbank_accounts' : 'promotor_mp_accounts')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('user_id', org?.owner_id ?? '')
     .maybeSingle()
 
   const faltando: string[] = []

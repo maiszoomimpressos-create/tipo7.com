@@ -3,9 +3,9 @@
 import { createClient }  from '@/lib/supabase/server'
 import { redirect }      from 'next/navigation'
 import { Header }        from '@/components/layout/Header'
-import { ProfileForm }   from './ProfileForm'
 import { CodigoOrg }     from './CodigoOrg'
 import { PerfilBanner }  from './PerfilBanner'
+import { PerfilTabs }    from './PerfilTabs'
 
 export default async function PerfilPage() {
   const supabase = await createClient()
@@ -49,14 +49,27 @@ export default async function PerfilPage() {
     !profile?.address_type  && 'Tipo de residência',
   ].filter(Boolean) as string[]
 
-  // Busca todas as organizações do usuário (pode ter promotora + estabelecimento)
+  // Busca a organização do usuário. Filtra por type='promotora' — as
+  // linhas legadas de type='estabelecimento' já foram espelhadas em
+  // venues+venue_admins (ver abaixo) e não devem duplicar o código aqui.
   const { data: orgsData } = await supabase
     .from('organizations')
-    .select('codigo, type, name')
+    .select('id, codigo, type, name, cnpj, nome_fantasia')
     .eq('owner_id', user.id)
-    .not('codigo', 'is', null)
+    .eq('type', 'promotora')
   const orgs = orgsData ?? []
-  const org = orgs[0] ?? null
+  const orgPromotora = orgs[0] ?? null
+
+  // Busca os lugares que o usuário administra (venue_admins) — "estabelecimento"
+  // não é mais uma organização, é um venue com um responsável atribuído.
+  const { data: venueAdminsData } = await supabase
+    .from('venue_admins')
+    .select('venues ( codigo, name )')
+    .eq('user_id', user.id)
+    .eq('status', 'ativo')
+  const lugaresAdministrados = (venueAdminsData ?? [])
+    .map(va => Array.isArray(va.venues) ? va.venues[0] : va.venues)
+    .filter((v): v is { codigo: string | null; name: string } => !!v?.codigo)
 
   // Pega a inicial do nome ou email para o avatar placeholder
   const inicialAvatar = (profile?.full_name ?? user.email ?? '?').charAt(0).toUpperCase()
@@ -125,29 +138,54 @@ export default async function PerfilPage() {
           </div>
         </div>
 
-        {/* Código pessoal do usuário — presente para todos */}
-        {profile?.user_code && (
-          <CodigoOrg
-            codigo={profile.user_code}
-            tipo="usuario"
-            nome={profile?.full_name ?? user.email ?? ''}
-          />
-        )}
+        {/* Códigos — coluna esquerda: usuário/promotor (pessoa). Coluna
+            direita: estabelecimentos (lugares administrados). */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 mb-2">
+          <div>
+            <p className="text-[#444] text-[11px] uppercase tracking-wider mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Seus códigos
+            </p>
+            {profile?.user_code && (
+              <CodigoOrg
+                codigo={profile.user_code}
+                tipo="usuario"
+                nome={profile?.full_name ?? user.email ?? ''}
+              />
+            )}
+            {orgs.map(o => (
+              <CodigoOrg
+                key={o.codigo}
+                codigo={o.codigo!}
+                tipo="promotora"
+                nome={o.name ?? ''}
+              />
+            ))}
+          </div>
 
-        {/* Badges de identificação — exibe um badge por organização (promotora e/ou estabelecimento) */}
-        {orgs.map(o => (
-          <CodigoOrg
-            key={o.codigo}
-            codigo={o.codigo!}
-            tipo={o.type as 'promotora' | 'estabelecimento'}
-            nome={o.name ?? ''}
-          />
-        ))}
+          <div>
+            <p className="text-[#444] text-[11px] uppercase tracking-wider mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Estabelecimentos
+            </p>
+            {lugaresAdministrados.length > 0 ? lugaresAdministrados.map(v => (
+              <CodigoOrg
+                key={v.codigo}
+                codigo={v.codigo!}
+                tipo="estabelecimento"
+                nome={v.name}
+              />
+            )) : (
+              <p className="text-[#333] text-xs italic mb-6" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Você ainda não é responsável por nenhum lugar.
+              </p>
+            )}
+          </div>
+        </div>
 
-        {/* Formulário editável — client component com foto, dados e endereço */}
-        <ProfileForm
+        {/* Abas: foto sempre visível + Dados pessoais / Dados de promotor / Endereço */}
+        <PerfilTabs
           userId={user.id}
-          initial={{
+          nomeUsuario={profile?.full_name ?? 'Promotor'}
+          initialPessoal={{
             // Dados pessoais
             full_name:    profile?.full_name    ?? '',
             phone:        profile?.phone        ?? '',
@@ -164,6 +202,13 @@ export default async function PerfilPage() {
             state:        profile?.state         ?? '',
             address_type: profile?.address_type  ?? '',
             complement:   profile?.complement    ?? '',
+          }}
+          initialPromotor={{
+            orgId:        orgPromotora?.id            ?? null,
+            razaoSocial:  orgPromotora?.name           ?? '',
+            cnpj:         orgPromotora?.cnpj           ?? '',
+            nomeFantasia: orgPromotora?.nome_fantasia  ?? '',
+            codigo:       orgPromotora?.codigo         ?? null,
           }}
         />
 

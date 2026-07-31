@@ -4,6 +4,7 @@ import { Header }     from '@/components/layout/Header'
 import { EventoForm } from './EventoForm'
 import { MPConnect }  from './MPConnect'
 import { FileEdit, ImagePlus } from 'lucide-react'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -18,22 +19,61 @@ export default async function EditarEventoPage({ params }: Props) {
 
   const { data: evento } = await supabase
     .from('events')
-    .select('id, title, description, category, date_start, date_end, venue_name, venue_id, zip_code, street, street_number, neighborhood, city, state, complement, capacity, status, banner_url, fee_mode, parent_event_id, modulo_tenda, modulo_estacionamento, permitir_venda_no_caixa_pai, organizations(owner_id)')
+    .select('id, title, description, category, date_start, date_end, venue_name, venue_id, zip_code, street, street_number, neighborhood, city, state, complement, capacity, status, banner_url, fee_mode, parent_event_id, modulo_tenda, modulo_estacionamento, permitir_venda_no_caixa_pai, organization_id, organizations(cnpj)')
     .eq('id', id)
     .single()
 
   if (!evento) notFound()
+  if (!(await isOrgAdmin(supabase, evento.organization_id, user.id))) notFound()
 
-  const org = Array.isArray(evento.organizations)
+  // PJ ou PF é derivado da própria organização (tem CNPJ ou não) — não é
+  // mais uma pergunta/flag separada do usuário (ver PromotorForm em /perfil)
+  const orgData = Array.isArray(evento.organizations)
     ? evento.organizations[0]
-    : evento.organizations as { owner_id: string } | null
-  if (!org || (org as { owner_id: string }).owner_id !== user.id) notFound()
+    : evento.organizations as { cnpj: string | null } | null
+  const tipoPessoa: 'pf' | 'pj' = orgData?.cnpj ? 'pj' : 'pf'
 
-  // Busca perfil e tipo de pessoa para exibir responsável (PF)
-  const [{ data: profile }, { data: promotor }] = await Promise.all([
-    supabase.from('profiles').select('full_name, cpf, phone, city, state').eq('id', user.id).single(),
-    supabase.from('promotor_profiles').select('tipo_pessoa').eq('user_id', user.id).single(),
-  ])
+  const { data: profile } = await supabase
+    .from('profiles').select('full_name, cpf, phone, city, state').eq('id', user.id).single()
+
+  // Locais que o usuário já usou em outros eventos — sugestão imediata ao
+  // começar a preencher o local, sem precisar digitar nada
+  const { data: orgsPromotor } = await supabase
+    .from('organizations').select('id').eq('owner_id', user.id).eq('type', 'promotora')
+  const orgIdsPromotor = (orgsPromotor ?? []).map(o => o.id)
+
+  const { data: eventosComLocal } = orgIdsPromotor.length > 0
+    ? await supabase
+        .from('events')
+        .select('venue_id, venues ( id, name, city, state, zip_code, street, street_number, neighborhood, complement, lat, lng, capacity, has_parking, parking_spots )')
+        .in('organization_id', orgIdsPromotor)
+        .not('venue_id', 'is', null)
+        .neq('id', id)
+        .order('created_at', { ascending: false })
+        .limit(20)
+    : { data: [] }
+
+  const vistos = new Set<string>()
+  const locaisRecentes: {
+    id: string; name: string; city: string | null; state: string | null
+    zipCode: string | null; street: string | null; streetNumber: string | null
+    neighborhood: string | null; complement: string | null
+    lat: number | null; lng: number | null; capacity: number | null
+    hasParking: boolean | null; parkingSpots: number | null
+  }[] = []
+  for (const e of eventosComLocal ?? []) {
+    const v = Array.isArray(e.venues) ? e.venues[0] : e.venues
+    if (!v || vistos.has(v.id)) continue
+    vistos.add(v.id)
+    locaisRecentes.push({
+      id: v.id, name: v.name, city: v.city, state: v.state,
+      zipCode: v.zip_code, street: v.street, streetNumber: v.street_number,
+      neighborhood: v.neighborhood, complement: v.complement,
+      lat: v.lat, lng: v.lng, capacity: v.capacity,
+      hasParking: v.has_parking, parkingSpots: v.parking_spots,
+    })
+    if (locaisRecentes.length >= 6) break
+  }
 
   return (
     <div className="min-h-dvh bg-[#070707]">
@@ -104,11 +144,13 @@ export default async function EditarEventoPage({ params }: Props) {
           eventoId={evento.id}
           herdaDadosDoPai={!!evento.parent_event_id && (!!evento.modulo_tenda || !!evento.modulo_estacionamento)}
           isChild={!!evento.parent_event_id}
+          parentEventId={evento.parent_event_id ?? null}
           permitirVendaNoCaixaPaiInicial={(evento as unknown as { permitir_venda_no_caixa_pai: boolean | null }).permitir_venda_no_caixa_pai ?? true}
-          tipoPessoa={(promotor?.tipo_pessoa ?? null) as 'pf' | 'pj' | null}
+          tipoPessoa={tipoPessoa}
           perfilCidade={profile?.city  ?? null}
           perfilEstado={profile?.state ?? null}
-          responsavel={promotor?.tipo_pessoa === 'pf' ? {
+          locaisRecentes={locaisRecentes}
+          responsavel={tipoPessoa === 'pf' ? {
             nome:     profile?.full_name ?? '',
             cpf:      profile?.cpf       ?? '',
             telefone: profile?.phone     ?? '',

@@ -55,8 +55,12 @@ export function TrabalhoDashboard({ eventoId }: { eventoId: string }) {
 
     const supabase = createClient()
 
+    // Nome do canal precisa ser único a cada montagem — em dev, o StrictMode
+    // roda o efeito duas vezes de forma síncrona, e Date.now() pode repetir
+    // o mesmo milissegundo, fazendo o cliente reaproveitar um canal já
+    // inscrito (daí o erro "cannot add postgres_changes... after subscribe()")
     const channel = supabase
-      .channel(`dash-${eventoId}-${Date.now()}`)
+      .channel(`dash-${eventoId}-${crypto.randomUUID()}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'orders',
         filter: `event_id=eq.${eventoId}`,

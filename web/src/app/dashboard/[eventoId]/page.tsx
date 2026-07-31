@@ -2,6 +2,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { DashboardClient, type DashboardData } from './DashboardClient'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ eventoId: string }>
@@ -25,13 +26,7 @@ export default async function DashboardPage({ params }: Props) {
 
   if (!evento) notFound()
 
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento.organization_id)
-    .single()
-
-  if (org?.owner_id !== user.id) {
+  if (!(await isOrgAdmin(admin, evento.organization_id, user.id))) {
     redirect(`/evento/${eventoId}`)
   }
 

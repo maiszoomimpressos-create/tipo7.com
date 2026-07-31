@@ -30,17 +30,29 @@ export function useCodigos(): CodigoItem[] {
         lista.push({ codigo: profile.user_code, tipo: 'usuario' })
       }
 
+      // Só type='promotora' — linhas legadas de 'estabelecimento' já foram
+      // espelhadas em venues+venue_admins abaixo, não duplicar aqui.
       const { data: orgs } = await supabase
         .from('organizations')
         .select('codigo, type')
         .eq('owner_id', user!.id)
+        .eq('type', 'promotora')
         .not('codigo', 'is', null)
 
       for (const org of orgs ?? []) {
-        lista.push({
-          codigo: org.codigo!,
-          tipo:   org.type as 'promotora' | 'estabelecimento',
-        })
+        lista.push({ codigo: org.codigo!, tipo: 'promotora' })
+      }
+
+      // Lugares administrados (venue_admins) — "estabelecimento" não é mais organização
+      const { data: venueAdmins } = await supabase
+        .from('venue_admins')
+        .select('venues ( codigo )')
+        .eq('user_id', user!.id)
+        .eq('status', 'ativo')
+
+      for (const va of venueAdmins ?? []) {
+        const venue = Array.isArray(va.venues) ? va.venues[0] : va.venues
+        if (venue?.codigo) lista.push({ codigo: venue.codigo, tipo: 'estabelecimento' })
       }
 
       setCodigos(lista)

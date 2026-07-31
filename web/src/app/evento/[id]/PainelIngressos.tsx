@@ -4,24 +4,38 @@ import { useState } from 'react'
 import { Ticket, Pencil, Check, X, Loader2, AlertTriangle, TrendingUp } from 'lucide-react'
 
 export type IngressoEditavel = {
-  id:       string
-  name:     string
-  price:    number
-  quantity: number
-  sold:     number
+  id:         string
+  name:       string
+  price:      number
+  quantity:   number
+  sold:       number
+  eventDayId: string | null
+}
+
+interface DiaResumo {
+  id:        string
+  dayNumber: number
+  date:      string
 }
 
 interface Props {
-  eventoId:  string
-  ingressos: IngressoEditavel[]
-  capacity:  number | null
-  onUpdate:  (id: string, fields: Partial<IngressoEditavel>) => void
+  eventoId:          string
+  ingressos:         IngressoEditavel[]
+  capacity:          number | null
+  dias?:             DiaResumo[]
+  diaSelecionadoId?: string | null
+  onUpdate:          (id: string, fields: Partial<IngressoEditavel>) => void
 }
 
 const ACCENT = '#E8B84B'
 
 function formatPrice(v: number) {
   return v === 0 ? 'Gratuito' : `R$ ${v.toFixed(2).replace('.', ',')}`
+}
+
+function formatDateShort(iso: string) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
 }
 
 // ---------------------------------------------------------------------------
@@ -238,8 +252,15 @@ function IngressoCard({
 // Painel principal
 // ---------------------------------------------------------------------------
 
-export function PainelIngressos({ eventoId, ingressos, capacity, onUpdate }: Props) {
+export function PainelIngressos({ eventoId, ingressos, capacity, dias, diaSelecionadoId, onUpdate }: Props) {
   const [localIngressos, setLocalIngressos] = useState(ingressos)
+
+  const temMultiplosDias = (dias?.length ?? 0) > 1
+  const pacote  = localIngressos.filter(t => t.eventDayId === null)
+  // Segue o mesmo dia selecionado na Programação — evita empilhar todos os
+  // dias aqui quando o usuário já escolheu qual dia está olhando
+  const diaAtual     = temMultiplosDias ? (dias ?? []).find(d => d.id === diaSelecionadoId) ?? null : null
+  const ticketsDoDia = diaAtual ? localIngressos.filter(t => t.eventDayId === diaAtual.id) : []
 
   const totalEmUso = localIngressos.reduce((sum, t) => sum + t.quantity, 0)
   const totalVendido = localIngressos.reduce((sum, t) => sum + t.sold, 0)
@@ -311,24 +332,50 @@ export function PainelIngressos({ eventoId, ingressos, capacity, onUpdate }: Pro
             Gerenciar ingressos →
           </a>
         </div>
+      ) : temMultiplosDias ? (
+        <div className="flex flex-col gap-5">
+          {diaAtual && (
+            <div className="flex flex-col gap-3">
+              <p className="text-[#555] text-[11px] font-semibold uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Dia {diaAtual.dayNumber}{diaAtual.date ? ` · ${formatDateShort(diaAtual.date)}` : ''}
+              </p>
+              {ticketsDoDia.length > 0
+                ? ticketsDoDia.map(ingresso => renderCard(ingresso))
+                : <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Nenhum ingresso cadastrado para este dia.
+                  </p>
+              }
+            </div>
+          )}
+          {pacote.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <p className="text-[#555] text-[11px] font-semibold uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Pacote completo
+              </p>
+              {pacote.map(ingresso => renderCard(ingresso))}
+            </div>
+          )}
+        </div>
       ) : (
-        localIngressos.map(ingresso => {
-          // Capacidade disponível para este ingresso = sobra da capacidade total
-          const somaOutros = localIngressos
-            .filter(t => t.id !== ingresso.id)
-            .reduce((sum, t) => sum + t.quantity, 0)
-          const capacidadeDisponivel = capacity !== null ? capacity - somaOutros - ingresso.quantity : null
-
-          return (
-            <IngressoCard
-              key={ingresso.id}
-              ingresso={ingresso}
-              capacidadeDisponivel={capacidadeDisponivel}
-              onSave={fields => handleSave(ingresso.id, fields)}
-            />
-          )
-        })
+        localIngressos.map(ingresso => renderCard(ingresso))
       )}
     </div>
   )
+
+  function renderCard(ingresso: IngressoEditavel) {
+    // Capacidade disponível para este ingresso = sobra da capacidade total
+    const somaOutros = localIngressos
+      .filter(t => t.id !== ingresso.id)
+      .reduce((sum, t) => sum + t.quantity, 0)
+    const capacidadeDisponivel = capacity !== null ? capacity - somaOutros - ingresso.quantity : null
+
+    return (
+      <IngressoCard
+        key={ingresso.id}
+        ingresso={ingresso}
+        capacidadeDisponivel={capacidadeDisponivel}
+        onSave={fields => handleSave(ingresso.id, fields)}
+      />
+    )
+  }
 }

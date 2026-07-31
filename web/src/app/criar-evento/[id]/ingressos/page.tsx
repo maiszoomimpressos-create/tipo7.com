@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { IngressosClient } from './IngressosClient'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -16,16 +17,12 @@ export default async function IngressosPage({ params }: Props) {
 
   const { data: evento } = await supabase
     .from('events')
-    .select('id, title, date_start, date_end, ticket_mode, package_discount_pct, parent_event_id, modulo_tenda, modulo_estacionamento, organizations(owner_id)')
+    .select('id, title, date_start, date_end, ticket_mode, package_discount_pct, parent_event_id, modulo_tenda, modulo_estacionamento, organization_id')
     .eq('id', id)
     .single()
 
   if (!evento) notFound()
-
-  const org = Array.isArray(evento.organizations)
-    ? evento.organizations[0]
-    : evento.organizations as { owner_id: string } | null
-  if (!org || (org as { owner_id: string }).owner_id !== user.id) notFound()
+  if (!(await isOrgAdmin(supabase, evento.organization_id, user.id))) notFound()
 
   // Tenda/Estacionamento não geram um intervalo contínuo de dias — o promotor
   // escolhe quais dias específicos do calendário do PAI se aplicam a este filho.
@@ -87,7 +84,7 @@ export default async function IngressosPage({ params }: Props) {
   // Busca dias já configurados
   const { data: dias } = await supabase
     .from('event_days')
-    .select('id, day_number, date, start_time, end_time, event_day_attractions(id, name, description, order_index, scheduled_time)')
+    .select('id, day_number, date, start_time, end_time, banner_url, event_day_attractions(id, name, description, order_index, scheduled_time, image_url)')
     .eq('event_id', id)
     .order('day_number')
 
@@ -103,30 +100,6 @@ export default async function IngressosPage({ params }: Props) {
       <Header />
       <main className="max-w-2xl mx-auto px-4 py-12">
 
-        {/* Indicador de etapas */}
-        <div className="flex items-center gap-2 mb-8">
-          <a href={`/criar-evento/${id}`}
-            className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors"
-            style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            <span className="w-5 h-5 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-500 text-[10px]">✓</span>
-            Informações
-          </a>
-          <div className="h-px flex-1 bg-[#1a1a1a]" />
-          <div className="flex items-center gap-1.5 text-white text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            <span className="w-5 h-5 rounded-full bg-[#E8B84B] flex items-center justify-center text-[#070707] text-[10px] font-bold">2</span>
-            Ingressos
-          </div>
-          <div className="h-px flex-1 bg-[#1a1a1a]" />
-          <div className="flex items-center gap-1.5 text-[#333] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            <span className="w-5 h-5 rounded-full bg-[#111] border border-[#222] flex items-center justify-center text-[10px]">3</span>
-            Imagens
-          </div>
-          <div className="h-px flex-1 bg-[#1a1a1a]" />
-          <div className="flex items-center gap-1.5 text-[#333] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            <span className="w-5 h-5 rounded-full bg-[#111] border border-[#222] flex items-center justify-center text-[10px]">4</span>
-            Publicar
-          </div>
-        </div>
 
         <div className="mb-8">
           <h1 className="text-2xl text-white mb-1"
@@ -154,12 +127,14 @@ export default async function IngressosPage({ params }: Props) {
             date:        d.date,
             start_time:  d.start_time ?? '',
             end_time:    d.end_time   ?? '',
-            attractions: (d.event_day_attractions ?? []).map((a: { id: string; name: string; description: string | null; order_index: number; scheduled_time: string | null }) => ({
+            banner_url:  d.banner_url ?? null,
+            attractions: (d.event_day_attractions ?? []).map((a: { id: string; name: string; description: string | null; order_index: number; scheduled_time: string | null; image_url: string | null }) => ({
               id:             a.id,
               name:           a.name,
               description:    a.description ?? '',
               order_index:    a.order_index,
               scheduled_time: a.scheduled_time ?? '',
+              image_url:      a.image_url ?? null,
             })),
           }))}
           ingressosIniciais={(ingressos ?? []).map(t => ({

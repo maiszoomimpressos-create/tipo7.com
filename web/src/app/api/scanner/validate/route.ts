@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 import { logAudit } from '@/lib/audit'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 // Verifica se o usuário tem permissão para escanear neste evento.
 // Organizador do evento sempre tem acesso; staff precisa ter validar_ingresso.
@@ -16,12 +17,7 @@ async function checkPermission(userId: string, eventoId: string): Promise<boolea
     .single()
   if (!evento) return false
 
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento.organization_id)
-    .single()
-  if (org?.owner_id === userId) return true
+  if (await isOrgAdmin(admin, evento.organization_id, userId)) return true
 
   // Verifica se é staff com permissão validar_ingresso
   const { data: staff } = await admin

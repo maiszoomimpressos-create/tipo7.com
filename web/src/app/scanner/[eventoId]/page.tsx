@@ -2,6 +2,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { ShieldX  } from 'lucide-react'
 import { ScannerClient } from './ScannerClient'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ eventoId: string }>
@@ -29,13 +30,7 @@ export default async function ScannerPage({ params }: Props) {
   }
 
   // Verifica se é organizador
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento.organization_id)
-    .single()
-
-  const isOwner = org?.owner_id === user.id
+  const isOwner = await isOrgAdmin(admin, evento.organization_id, user.id)
 
   // Verifica se é staff com permissão validar_ingresso
   let isStaff = false

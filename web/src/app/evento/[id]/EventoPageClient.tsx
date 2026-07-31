@@ -4,7 +4,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { QRCodeCanvas } from 'qrcode.react'
 import {
-  MapPin, Calendar, Clock, Tag, ChevronDown, ChevronUp,
+  MapPin, Calendar, Clock, Tag,
   Ticket, AlertCircle, ExternalLink, Music, Loader2,
   Pencil, X, Check, Camera, Copy, Download, QrCode, Lock,
   Shield, Car, UtensilsCrossed, Beer, Accessibility, Wifi,
@@ -42,7 +42,9 @@ interface Evento {
 
 interface Attraction {
   name:          string
+  description:   string
   scheduledTime: string
+  imageUrl:      string | null
 }
 
 interface Dia {
@@ -51,6 +53,7 @@ interface Dia {
   date:        string
   startTime:   string
   endTime:     string
+  bannerUrl:   string | null
   attractions: Attraction[]
 }
 
@@ -160,8 +163,8 @@ function TicketRow({
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, soldByTicket, atributosAtivos, atracoes }: Props) {
-  // Accordion e checkout
-  const [openDay,       setOpenDay]       = useState(0)
+  // Abas de programação e checkout
+  const [diaProgramacao, setDiaProgramacao] = useState(0)
   const [selection,     setSelection]     = useState<Record<string, number>>({})
   const [loadingPix,    setLoadingPix]    = useState(false)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
@@ -270,6 +273,9 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   const modoSimples = evento.ticketMode === null || evento.ticketMode === 'individual'
   const isRascunho  = evento.status === 'rascunho'
   const editFormUrl = `/criar-evento/${evento.id}`
+  // Programação (dias/atrações/banners) é editada na etapa de Ingressos,
+  // não na de Informações — link separado do editFormUrl genérico
+  const programacaoEditUrl = `/criar-evento/${evento.id}/ingressos`
 
   function getItems() {
     return Object.entries(selection)
@@ -804,7 +810,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                 </h2>
                 {isOwner && (
                   <a
-                    href={editFormUrl}
+                    href={programacaoEditUrl}
                     className="w-6 h-6 rounded-md flex items-center justify-center text-[#444] hover:text-[#E8B84B] hover:bg-[#E8B84B]/10 transition-all"
                     title="Editar programação">
                     <Pencil size={12} />
@@ -813,50 +819,83 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
               </div>
 
               {dias.length > 0 ? (
-                <div className="flex flex-col gap-2">
-                  {dias.map((dia, i) => (
-                    <div key={dia.id} className="rounded-xl border border-[#1a1a1a] overflow-hidden">
-                      {/* Cabeçalho do dia */}
-                      <button
-                        onClick={() => setOpenDay(openDay === i ? -1 : i)}
-                        className="w-full flex items-center justify-between px-5 py-4 bg-[#0d0d0d] hover:bg-[#111] transition-colors text-left">
-                        <div className="flex items-center gap-3">
-                          <span
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-[#070707] shrink-0"
-                            style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-                            {dia.dayNumber}
-                          </span>
-                          <div>
-                            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                              {dias.length > 1 ? `Dia ${dia.dayNumber}` : 'Programação'}
-                              {dia.date && (
-                                <span className="text-[#555] font-normal ml-2">
-                                  · {formatDateShort(dia.date)}
-                                </span>
-                              )}
-                            </p>
-                            {dia.startTime && (
-                              <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                                {formatTime(dia.startTime)}
-                                {dia.endTime ? ` – ${formatTime(dia.endTime)}` : ''}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        {openDay === i
-                          ? <ChevronUp  size={15} className="text-[#444] shrink-0" />
-                          : <ChevronDown size={15} className="text-[#444] shrink-0" />
-                        }
-                      </button>
+                <div className="flex flex-col gap-3">
+                  {/* Abas de dia — só exibe seletor quando há mais de um dia */}
+                  {dias.length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto pb-1 -mb-1">
+                      {dias.map((dia, i) => {
+                        const ativa = diaProgramacao === i
+                        return (
+                          <button key={dia.id} type="button"
+                            onClick={() => setDiaProgramacao(i)}
+                            className="flex-shrink-0 flex flex-col items-start px-4 py-2.5 rounded-xl border text-left transition-all duration-200"
+                            style={{
+                              borderColor: ativa ? '#E8B84B66' : '#1a1a1a',
+                              background:  ativa ? '#E8B84B14' : '#0a0a0a',
+                            }}>
+                            <span className="text-[10px] font-bold tracking-wider uppercase"
+                                  style={{ color: ativa ? ACCENT : '#444', fontFamily: 'var(--font-syne)' }}>
+                              Dia {dia.dayNumber}
+                            </span>
+                            <span className="text-xs mt-0.5" style={{ color: ativa ? '#bbb' : '#333', fontFamily: 'var(--font-dm-sans)' }}>
+                              {formatDateShort(dia.date)}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
 
-                      {/* Atrações */}
-                      {openDay === i && (
+                  {/* Conteúdo do dia selecionado */}
+                  {(() => {
+                    const dia = dias[diaProgramacao] ?? dias[0]
+                    if (!dia) return null
+                    // Prioriza o banner próprio do dia; sem ele, usa a imagem da
+                    // primeira atração — nunca o banner geral do evento aqui,
+                    // pra não parecer que todo dia usa a mesma arte genérica
+                    const heroAttraction = dia.attractions[0]
+                    const heroImg = dia.bannerUrl || heroAttraction?.imageUrl || null
+                    return (
+                      <div className="rounded-xl border border-[#1a1a1a] overflow-hidden">
+                        {heroImg && (
+                          <img src={heroImg} alt=""
+                               className="w-full max-h-96 object-contain bg-[#050505]" />
+                        )}
+                        <div className="px-5 py-4 bg-[#0d0d0d]">
+                          <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                            {dias.length > 1 ? `Dia ${dia.dayNumber}` : 'Programação'}
+                            {dia.date && (
+                              <span className="text-[#555] font-normal ml-2">
+                                · {formatDateShort(dia.date)}
+                              </span>
+                            )}
+                          </p>
+                          {dia.startTime && (
+                            <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                              {formatTime(dia.startTime)}
+                              {dia.endTime ? ` – ${formatTime(dia.endTime)}` : ''}
+                            </p>
+                          )}
+                          {heroAttraction?.description && (
+                            <p className="text-[#888] text-xs mt-3 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                              {heroAttraction.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Atrações */}
                         <div className="px-5 py-3 bg-[#0a0a0a]">
                           {dia.attractions.length > 0
                             ? dia.attractions.map((a, ai) => (
                                 <div key={ai}
                                      className="flex items-center gap-3 py-2.5 border-b border-[#0f0f0f] last:border-0">
-                                  <Music size={11} className="text-[#333] shrink-0" />
+                                  {a.imageUrl
+                                    ? <img src={a.imageUrl} alt={a.name}
+                                           className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                                    : <div className="w-8 h-8 rounded-lg bg-[#111] flex items-center justify-center shrink-0">
+                                        <Music size={11} className="text-[#333]" />
+                                      </div>
+                                  }
                                   <span className="text-white text-sm flex-1"
                                         style={{ fontFamily: 'var(--font-dm-sans)' }}>
                                     {a.name}
@@ -875,13 +914,13 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                               </p>
                           }
                         </div>
-                      )}
-                    </div>
-                  ))}
+                      </div>
+                    )
+                  })()}
                 </div>
               ) : (
                 <a
-                  href={editFormUrl}
+                  href={programacaoEditUrl}
                   className="flex items-center justify-center gap-2 text-[#444] text-sm hover:text-[#E8B84B] border border-dashed border-[#222] hover:border-[#E8B84B]/30 rounded-xl px-4 py-3 w-full transition-colors"
                   style={{ fontFamily: 'var(--font-dm-sans)' }}>
                   <Pencil size={13} /> Adicionar programação
@@ -950,12 +989,15 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                 eventoId={evento.id}
                 capacity={capacity}
                 moduloEstacionamento={evento.moduloEstacionamento}
+                dias={dias.map(d => ({ id: d.id, dayNumber: d.dayNumber, date: d.date }))}
+                diaSelecionadoId={dias[diaProgramacao]?.id ?? null}
                 ingressos={ingressos.map((t): IngressoEditavel => ({
-                  id:       t.id,
-                  name:     t.name,
-                  price:    t.price,
-                  quantity: t.quantity,
-                  sold:     soldByTicket[t.id] ?? 0,
+                  id:         t.id,
+                  name:       t.name,
+                  price:      t.price,
+                  quantity:   t.quantity,
+                  sold:       soldByTicket[t.id] ?? 0,
+                  eventDayId: t.eventDayId,
                 }))}
               />
               <PainelEventosFilhos eventoId={evento.id} isChild={evento.isChild} />

@@ -1,15 +1,32 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ArrowLeft, Loader2, Check, Lock, User, MapPin, Search, ArrowRight, ShoppingBag } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SecaoBloqueavel } from '@/components/SecaoBloqueavel'
 
 interface PlaceSuggestion {
+  origem:         'venue' | 'google'
   placeId:        string
   nomePrincipal:  string
   nomeSecundario: string
+  // Campos embutidos só quando origem === 'venue' — evita uma segunda
+  // chamada de rede pra buscar detalhes de um local já cadastrado
+  venueId?:       string
+  zipCode?:       string
+  street?:        string
+  streetNumber?:  string
+  neighborhood?:  string
+  city?:          string
+  state?:         string
+  complement?:    string
+  lat?:           number | null
+  lng?:           number | null
+  capacity?:      number | null
+  hasParking?:    boolean | null
+  parkingSpots?:  number | null
 }
 
 interface Responsavel {
@@ -26,16 +43,26 @@ interface Inicial {
   feeMode: 'promotor' | 'comprador' | 'mista'
 }
 
+interface LocalRecente {
+  id: string; name: string; city: string | null; state: string | null
+  zipCode: string | null; street: string | null; streetNumber: string | null
+  neighborhood: string | null; complement: string | null
+  lat: number | null; lng: number | null; capacity: number | null
+  hasParking: boolean | null; parkingSpots: number | null
+}
+
 interface Props {
   eventoId:        string
   herdaDadosDoPai?: boolean
   isChild?:        boolean
+  parentEventId?:  string | null
   permitirVendaNoCaixaPaiInicial?: boolean
   tipoPessoa:      'pf' | 'pj' | null
   responsavel:     Responsavel | null
   inicial:         Inicial
   perfilCidade:    string | null
   perfilEstado:    string | null
+  locaisRecentes:  LocalRecente[]
 }
 
 const CATEGORIAS = [
@@ -119,9 +146,32 @@ function DateTimeInput24h({ value, onChange, className }: { value: string; onCha
   )
 }
 
-export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNoCaixaPaiInicial, tipoPessoa, responsavel, inicial, perfilCidade, perfilEstado }: Props) {
+export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, permitirVendaNoCaixaPaiInicial, tipoPessoa, responsavel, inicial, perfilCidade, perfilEstado, locaisRecentes }: Props) {
   const router   = useRouter()
   const supabase = createClient()
+
+  // Locais já usados pelo promotor em outros eventos — sugestão imediata,
+  // sem precisar digitar nada, reaproveitando o mesmo formato de sugestão
+  // da busca (mesma lógica de seleção em selecionarLocal)
+  const sugestoesRecentes: PlaceSuggestion[] = useMemo(() => locaisRecentes.map(v => ({
+    origem:         'venue',
+    placeId:        '',
+    venueId:        v.id,
+    nomePrincipal:  v.name,
+    nomeSecundario: [v.city, v.state].filter(Boolean).join(' - '),
+    zipCode:        v.zipCode ?? '',
+    street:         v.street ?? '',
+    streetNumber:   v.streetNumber ?? '',
+    neighborhood:   v.neighborhood ?? '',
+    city:           v.city ?? '',
+    state:          v.state ?? '',
+    complement:     v.complement ?? '',
+    lat:            v.lat,
+    lng:            v.lng,
+    capacity:       v.capacity,
+    hasParking:     v.hasParking,
+    parkingSpots:   v.parkingSpots,
+  })), [locaisRecentes])
 
   // Seção 1
   const [titulo,    setTitulo]    = useState(inicial.titulo === 'Novo evento' ? '' : inicial.titulo)
@@ -140,8 +190,19 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null)
   const [selectedLat,    setSelectedLat]    = useState<number | null>(null)
   const [selectedLng,    setSelectedLng]    = useState<number | null>(null)
+  // true quando venueId veio da busca interna (venue já existe) — nesse
+  // caso o save nunca sobrescreve o venue de quem já é responsável por ele
+  const [venueJaExistente, setVenueJaExistente] = useState(!!inicial.venueId)
 
-  const [suggestions,   setSuggestions]   = useState<PlaceSuggestion[]>([])
+  // "Sou responsável por esse lugar" — só cuida dos dados do venue
+  // (endereço/capacidade/estacionamento), nunca de dinheiro/caixa
+  const [souResponsavel,      setSouResponsavel]      = useState(false)
+  const [venuePhone,          setVenuePhone]          = useState('')
+  const [venueNicho,          setVenueNicho]          = useState<'eventos' | 'estacionamento' | 'ambos' | ''>('')
+  const [venueTemEstacionamento, setVenueTemEstacionamento] = useState<'sim' | 'nao' | ''>('')
+  const [venueVagas,          setVenueVagas]          = useState('')
+
+  const [suggestions,   setSuggestions]   = useState<PlaceSuggestion[]>(sugestoesRecentes)
   const [searchLoading, setSearchLoading] = useState(false)
   const [showDropdown,  setShowDropdown]  = useState(false)
   const [placeSearchError, setPlaceSearchError] = useState<string | null>(null)
@@ -233,7 +294,11 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
 
   const buscarSugestoes = useCallback((valor: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!valor || valor.length < 2) { setSuggestions([]); setShowDropdown(false); setPlaceSearchError(null); return }
+    // Campo vazio: volta a mostrar os locais já usados antes, em vez de nada
+    if (!valor || valor.length < 2) {
+      setSuggestions(sugestoesRecentes); setShowDropdown(false); setPlaceSearchError(null)
+      return
+    }
     debounceRef.current = setTimeout(async () => {
       setSearchLoading(true)
       try {
@@ -256,14 +321,36 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
       }
       finally { setSearchLoading(false) }
     }, 350)
-  }, [biasCidade, biasEstado])
+  }, [biasCidade, biasEstado, sugestoesRecentes])
 
   const selecionarLocal = async (s: PlaceSuggestion) => {
     setNomeLocal(s.nomePrincipal)
     setShowDropdown(false)
     setSuggestions([])
+    setSouResponsavel(false)
+
+    // Venue já cadastrado na plataforma — preenche tudo direto, sem
+    // segunda chamada de rede, e nunca sobrescreve esse venue no save
+    if (s.origem === 'venue') {
+      setSelectedPlaceId(null)
+      setVenueId(s.venueId ?? null)
+      setVenueJaExistente(true)
+      if (s.zipCode)      { setCep(formatCEP(s.zipCode)); setCepError(null) }
+      setRua(s.street ?? '')
+      setNumero(s.streetNumber ?? '')
+      setBairro(s.neighborhood ?? '')
+      if (s.city)  setCidade(s.city)
+      if (s.state) setEstado(s.state.slice(0, 2).toUpperCase())
+      setComplemento(s.complement ?? '')
+      if (s.capacity != null) setCapacidade(String(s.capacity))
+      if (s.lat != null) setSelectedLat(s.lat)
+      if (s.lng != null) setSelectedLng(s.lng)
+      return
+    }
+
     setSelectedPlaceId(s.placeId)
     setVenueId(null) // será definido no save
+    setVenueJaExistente(false)
     try {
       const res  = await fetch(`/api/places/details?place_id=${s.placeId}`)
       const data = await res.json()
@@ -278,10 +365,11 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
     } catch { /* usuário pode preencher manualmente */ }
   }
 
-  // Quando o usuário digita manualmente, limpa o placeId selecionado
+  // Quando o usuário digita manualmente, limpa o placeId/venue selecionado
   const handleNomeLocalChange = (v: string) => {
     setNomeLocal(v)
     if (selectedPlaceId) { setSelectedPlaceId(null); setSelectedLat(null); setSelectedLng(null) }
+    if (venueJaExistente) { setVenueId(null); setVenueJaExistente(false); setSouResponsavel(false) }
     buscarSugestoes(v)
   }
 
@@ -310,7 +398,7 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
     (cidade.trim() || nomeLocal.trim())
   )
 
-  const handleSalvar = async (continuar = false) => {
+  const handleSalvar = async (destino?: string) => {
     setSaving(true); setErro(null); setSaved(false)
     try {
       let venueIdToSave = venueId
@@ -359,8 +447,24 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
         ...(isChild ? { permitir_venda_no_caixa_pai: permitirVendaNoCaixaPai } : {}),
       }).eq('id', eventoId)
 
-      if (continuar) {
-        router.push(`/criar-evento/${eventoId}/ingressos`)
+      // Assume o lugar como responsável — só cuida dos dados do venue
+      // (endereço/capacidade/estacionamento), nunca de dinheiro/caixa
+      if (souResponsavel && venueIdToSave) {
+        await fetch(`/api/venues/${venueIdToSave}/tornar-responsavel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone:         venuePhone || undefined,
+            nicho:         venueNicho || undefined,
+            capacity:      capacidade ? parseInt(capacidade, 10) : undefined,
+            has_parking:   venueTemEstacionamento === 'sim' ? true : venueTemEstacionamento === 'nao' ? false : undefined,
+            parking_spots: venueTemEstacionamento === 'sim' && venueVagas ? parseInt(venueVagas, 10) : undefined,
+          }),
+        }).catch(() => { /* não bloqueia o salvamento do evento */ })
+      }
+
+      if (destino) {
+        router.push(destino)
         return
       }
       setSaved(true)
@@ -369,15 +473,51 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
     finally { setSaving(false) }
   }
 
+  // Navega entre etapas salvando antes — clicar direto no indicador não pode
+  // descartar silenciosamente o que já foi digitado nesta tela.
+  const irParaEtapa = (path: string) => handleSalvar(path)
+
   return (
     <div className="flex flex-col gap-6">
 
-      {/* Voltar */}
-      <button type="button" onClick={() => router.push('/criar-evento')}
+      {/* Indicador de etapas — todas navegáveis; ir e voltar sempre salva
+          primeiro, pra nunca perder o que já foi preenchido */}
+      <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-1.5 text-white text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-[#E8B84B] flex items-center justify-center text-[#070707] text-[10px] font-bold">1</span>
+          Informações
+        </div>
+        <div className="h-px flex-1 bg-[#1a1a1a]" />
+        <button type="button" onClick={() => irParaEtapa(`/criar-evento/${eventoId}/ingressos`)} disabled={saving}
+          className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-[#111] border border-[#222] flex items-center justify-center text-[10px]">2</span>
+          Ingressos
+        </button>
+        <div className="h-px flex-1 bg-[#1a1a1a]" />
+        <button type="button" onClick={() => irParaEtapa(`/criar-evento/${eventoId}/imagens`)} disabled={saving}
+          className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-[#111] border border-[#222] flex items-center justify-center text-[10px]">3</span>
+          Imagens
+        </button>
+        <div className="h-px flex-1 bg-[#1a1a1a]" />
+        <button type="button" onClick={() => irParaEtapa(`/criar-evento/${eventoId}/publicar`)} disabled={saving}
+          className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-[#111] border border-[#222] flex items-center justify-center text-[10px]">4</span>
+          Publicar
+        </button>
+      </div>
+
+      {/* Voltar — evento filho (Tenda) volta pro evento principal, já que
+          "Meus eventos" exclui filhos e viraria um beco sem saída */}
+      <button type="button"
+        onClick={() => router.push(isChild && parentEventId ? `/evento/${parentEventId}` : '/criar-evento')}
         className="flex items-center gap-2 text-[#555] hover:text-white transition-colors text-sm w-fit"
         style={{ fontFamily: 'var(--font-dm-sans)' }}>
         <ArrowLeft size={15} />
-        Voltar para meus eventos
+        {isChild && parentEventId ? 'Voltar para o evento principal' : 'Voltar para meus eventos'}
       </button>
 
       {/* ── Venda no caixa compartilhado do evento principal (só eventos filhos) ── */}
@@ -548,7 +688,8 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
       </div>
       )}
 
-      {/* ── SEÇÃO 3: Local do evento ── */}
+      {/* ── SEÇÃO 3: Local do evento — libera assim que o nome do evento é preenchido ── */}
+      <SecaoBloqueavel ativo={!!(titulo.trim() && titulo.trim() !== 'Novo evento')} mensagem="Preencha o nome do evento primeiro">
       <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-[#141414]">
           <div className="flex items-center gap-2">
@@ -581,9 +722,14 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
 
               {showDropdown && suggestions.length > 0 && (
                 <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-[#111] border border-[#222] rounded-xl overflow-hidden shadow-2xl shadow-black/60">
+                  {!nomeLocal.trim() && (
+                    <p className="px-4 pt-2.5 pb-1 text-[10px] uppercase tracking-wider text-[#444]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Locais que você já usou
+                    </p>
+                  )}
                   {suggestions.map((s, i) => (
                     <button
-                      key={s.placeId}
+                      key={s.origem === 'venue' ? `v-${s.venueId}` : `g-${s.placeId}`}
                       type="button"
                       onMouseDown={() => selecionarLocal(s)}
                       className={cn(
@@ -591,8 +737,16 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
                         i > 0 && 'border-t border-[#1a1a1a]'
                       )}
                     >
-                      <span className="text-white text-sm font-medium truncate"
-                            style={{ fontFamily: 'var(--font-dm-sans)' }}>{s.nomePrincipal}</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-white text-sm font-medium truncate"
+                              style={{ fontFamily: 'var(--font-dm-sans)' }}>{s.nomePrincipal}</span>
+                        {s.origem === 'venue' && (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
+                                style={{ background: 'rgba(232,184,75,0.12)', color: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
+                            Cadastrado
+                          </span>
+                        )}
+                      </span>
                       {s.nomeSecundario && (
                         <span className="text-[#555] text-xs truncate"
                               style={{ fontFamily: 'var(--font-dm-sans)' }}>{s.nomeSecundario}</span>
@@ -656,6 +810,85 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
               </p>
             )}
           </div>
+
+          {/* Assumir responsabilidade pelo lugar — só cuida dos dados dele
+              (endereço/capacidade/estacionamento), nunca de dinheiro/caixa.
+              Só aparece quando há um venue de fato (selecionado da busca
+              interna ou do Google Places) — entrada 100% manual sem
+              selecionar nada ainda não gera um venue pra vincular. */}
+          {(venueId || selectedPlaceId) && (
+            <div className="rounded-xl border border-[#1a1a1a] overflow-hidden">
+              <button type="button" onClick={() => setSouResponsavel(v => !v)}
+                className="w-full flex items-center gap-3 p-3.5 text-left transition-colors hover:bg-[#111]">
+                <div className={cn(
+                  'w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-all',
+                  souResponsavel ? 'bg-[#E8B84B] border-[#E8B84B]' : 'border-[#333]'
+                )}>
+                  {souResponsavel && <Check size={13} className="text-[#070707]" />}
+                </div>
+                <div>
+                  <p className="text-white text-xs font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Sou responsável por esse lugar
+                  </p>
+                  <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Cuido dos dados dele (endereço, capacidade, estacionamento) — não muda nada do caixa deste evento
+                  </p>
+                </div>
+              </button>
+
+              {souResponsavel && (
+                <div className="p-3.5 pt-0 flex flex-col gap-2.5">
+                  <input type="tel" placeholder="Telefone de contato do lugar" value={venuePhone}
+                    onChange={e => setVenuePhone(e.target.value)}
+                    className={inputCls} style={{ fontFamily: 'var(--font-dm-sans)' }} />
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { value: 'eventos'        as const, label: 'Eventos'        },
+                      { value: 'estacionamento' as const, label: 'Estacionamento' },
+                      { value: 'ambos'          as const, label: 'Ambos'          },
+                    ]).map(({ value, label }) => (
+                      <button key={value} type="button" onClick={() => setVenueNicho(value)}
+                        className={cn(
+                          'py-2 rounded-lg border text-xs font-medium transition-all',
+                          venueNicho === value
+                            ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white'
+                            : 'bg-[#111] border-[#1c1c1c] text-[#777] hover:border-[#2a2a2a]'
+                        )}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: 'sim' as const, label: 'Tem estacionamento' },
+                      { value: 'nao' as const, label: 'Sem estacionamento' },
+                    ]).map(({ value, label }) => (
+                      <button key={value} type="button" onClick={() => {
+                        setVenueTemEstacionamento(value)
+                        if (value === 'nao') setVenueVagas('')
+                      }}
+                        className={cn(
+                          'py-2 rounded-lg border text-xs font-medium transition-all',
+                          venueTemEstacionamento === value
+                            ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white'
+                            : 'bg-[#111] border-[#1c1c1c] text-[#777] hover:border-[#2a2a2a]'
+                        )}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {venueTemEstacionamento === 'sim' && (
+                    <input type="number" placeholder="Quantas vagas?" value={venueVagas}
+                      onChange={e => setVenueVagas(e.target.value)} min="1"
+                      className={inputCls} style={{ fontFamily: 'var(--font-dm-sans)' }} />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>CEP</label>
@@ -729,8 +962,10 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
           </div>
         </div>
       </div>
+      </SecaoBloqueavel>
 
-      {/* ── SEÇÃO: Cobrança da taxa ── */}
+      {/* ── SEÇÃO: Cobrança da taxa — libera assim que cidade OU nome do local for preenchido ── */}
+      <SecaoBloqueavel ativo={!!(cidade.trim() || nomeLocal.trim())} mensagem="Preencha a cidade ou o nome do local primeiro">
       <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-[#141414]">
           <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Cobrança da taxa de serviço</p>
@@ -786,6 +1021,7 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
           ))}
         </div>
       </div>
+      </SecaoBloqueavel>
 
       {/* Responsável — somente PF, somente leitura */}
       {tipoPessoa === 'pf' && responsavel && (
@@ -833,7 +1069,7 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
 
       {/* Botões de ação fixos */}
       <div className="flex gap-3 sticky bottom-4">
-        <button type="button" onClick={() => handleSalvar(false)} disabled={saving}
+        <button type="button" onClick={() => handleSalvar()} disabled={saving}
           className={cn(
             'py-3.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-40',
             podeContinuar
@@ -852,7 +1088,7 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, permitirVendaNo
         </button>
 
         {podeContinuar && (
-          <button type="button" onClick={() => handleSalvar(true)} disabled={saving}
+          <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}/ingressos`)} disabled={saving}
             className="flex-1 py-3.5 rounded-xl text-sm font-semibold text-[#070707] hover:brightness-110 transition-all flex items-center justify-center gap-2 disabled:opacity-40"
             style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
             {saving

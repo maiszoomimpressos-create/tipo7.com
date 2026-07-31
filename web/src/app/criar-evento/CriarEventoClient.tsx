@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  CalendarPlus, Plus, Pencil, Trash2,
+  CalendarPlus, Plus, Trash2,
   ExternalLink, ImageIcon, Ticket, Settings, AlertTriangle, X, Car,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -29,15 +29,12 @@ interface OrgAtual {
 }
 
 interface Props {
-  promotorId:      string | null
-  tipoPessoaAtual: 'pf' | 'pj' | null
-  nomeUsuario:     string
-  orgAtual:        OrgAtual | null
-  profile:         ProfileData
-  eventos:         EventoItem[]
+  promotorId:  string | null
+  nomeUsuario: string
+  orgAtual:    OrgAtual | null
+  profile:     ProfileData
+  eventos:     EventoItem[]
 }
-
-const labelTipo = { pf: 'Pessoa física', pj: 'Pessoa jurídica' }
 
 const MESES_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
 const formatData = (iso: string) => {
@@ -111,7 +108,7 @@ function ConfirmDeleteModal({
 }
 
 // ── Componente principal ────────────────────────────────────────────────────
-export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, orgAtual, profile, eventos: inicial }: Props) {
+export function CriarEventoClient({ promotorId, nomeUsuario, orgAtual, profile, eventos: inicial }: Props) {
   const router = useRouter()
   const [modalAberto,    setModalAberto]    = useState(false)
   const [lista,          setLista]          = useState<EventoItem[]>(inicial)
@@ -281,15 +278,11 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, or
               Começar agora
             </button>
 
-            {tipoPessoaAtual && (
+            {orgAtual && (
               <div className="mt-5 inline-flex items-center gap-2 text-[#444] text-xs border border-[#1a1a1a] rounded-xl px-4 py-2.5"
                    style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                <span className="text-[#555]">Atuando como</span>
-                <span className="text-white font-medium">{labelTipo[tipoPessoaAtual]}</span>
-                <button type="button" onClick={() => setModalAberto(true)}
-                  className="text-[#333] hover:text-[#E8B84B] transition-colors ml-1">
-                  <Pencil size={11} />
-                </button>
+                <span className="text-[#555]">Organização</span>
+                <span className="text-white font-medium">{orgAtual.nome_fantasia || orgAtual.name}</span>
               </div>
             )}
           </div>
@@ -301,7 +294,6 @@ export function CriarEventoClient({ promotorId, tipoPessoaAtual, nomeUsuario, or
       {modalAberto && (
         <TipoPessoaModal
           promotorId={promotorId}
-          tipoPessoaAtual={tipoPessoaAtual}
           nomeUsuario={nomeUsuario}
           orgAtual={orgAtual}
           profile={profile}

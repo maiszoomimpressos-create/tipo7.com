@@ -16,6 +16,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <AdminSidebar
         role={member.role}
         permissions={member.permissions}
+        acessoRestrito={member.acesso_restrito}
         userName={user.user_metadata?.full_name ?? user.email ?? 'Admin'}
       />
       <main className="flex-1 min-h-dvh overflow-auto">

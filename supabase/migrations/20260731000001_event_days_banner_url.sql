@@ -1,0 +1,1 @@
+ALTER TABLE event_days ADD COLUMN IF NOT EXISTS banner_url TEXT;

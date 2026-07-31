@@ -81,6 +81,7 @@ const isValidCPF = (v: string) => {
 
 interface Props {
   userId:     string
+  secaoAtiva: 'pessoais' | 'endereco'
   initial: {
     // Dados pessoais
     full_name:    string
@@ -103,7 +104,7 @@ interface Props {
 
 // ─── Componente principal ──────────────────────────────────────────────────────
 
-export function ProfileForm({ userId, initial }: Props) {
+export function ProfileForm({ userId, secaoAtiva, initial }: Props) {
   const supabase = createClient()
   const { city: cidadeDetectada } = useLocation()
 
@@ -550,7 +551,7 @@ export function ProfileForm({ userId, initial }: Props) {
       </div>
 
       {/* ── Seção: dados pessoais ─────────────────────────────────────────── */}
-      <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
+      <div className={cn('bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden', secaoAtiva !== 'pessoais' && 'hidden')}>
         <div className="px-6 py-4 border-b border-[#141414]">
           <h2 className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
             Dados pessoais
@@ -679,7 +680,7 @@ export function ProfileForm({ userId, initial }: Props) {
       </div>
 
       {/* ── Seção: endereço ───────────────────────────────────────────────── */}
-      <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
+      <div className={cn('bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden', secaoAtiva !== 'endereco' && 'hidden')}>
         <div className="px-6 py-4 border-b border-[#141414] flex items-center gap-2">
           <MapPin size={14} className="text-[#E8B84B]" />
           <h2 className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>

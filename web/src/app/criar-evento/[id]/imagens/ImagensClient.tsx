@@ -174,7 +174,7 @@ export function ImagensClient({ eventoId, bannerUrlInicial, galleryUrlsIniciais 
 
   // ── Salvar URLs no banco ───────────────────────────────────────────────────
 
-  const handleSalvar = async (continuar = false) => {
+  const handleSalvar = async (destino?: string) => {
     setSaving(true); setErro(null)
     try {
       const { error } = await supabase.from('events').update({
@@ -183,8 +183,8 @@ export function ImagensClient({ eventoId, bannerUrlInicial, galleryUrlsIniciais 
       }).eq('id', eventoId)
       if (error) throw error
 
-      if (continuar) {
-        router.push(`/criar-evento/${eventoId}/publicar`)
+      if (destino) {
+        router.push(destino)
         return
       }
       setSaved(true)
@@ -199,9 +199,39 @@ export function ImagensClient({ eventoId, bannerUrlInicial, galleryUrlsIniciais 
   return (
     <div className="flex flex-col gap-6">
 
+      {/* Indicador de etapas — todas navegáveis; ir e voltar sempre salva
+          primeiro, pra nunca perder o que já foi preenchido */}
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}`)} disabled={saving}
+          className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-500 text-[10px]">✓</span>
+          Informações
+        </button>
+        <div className="h-px flex-1 bg-[#1a1a1a]" />
+        <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}/ingressos`)} disabled={saving}
+          className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-500 text-[10px]">✓</span>
+          Ingressos
+        </button>
+        <div className="h-px flex-1 bg-[#1a1a1a]" />
+        <div className="flex items-center gap-1.5 text-white text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-[#E8B84B] flex items-center justify-center text-[#070707] text-[10px] font-bold">3</span>
+          Imagens
+        </div>
+        <div className="h-px flex-1 bg-[#1a1a1a]" />
+        <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}/publicar`)} disabled={saving}
+          className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-[#111] border border-[#222] flex items-center justify-center text-[10px]">4</span>
+          Publicar
+        </button>
+      </div>
+
       {/* Voltar */}
-      <button type="button" onClick={() => router.push(`/criar-evento/${eventoId}/ingressos`)}
-        className="flex items-center gap-2 text-[#555] hover:text-white transition-colors text-sm w-fit"
+      <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}/ingressos`)} disabled={saving}
+        className="flex items-center gap-2 text-[#555] hover:text-white transition-colors text-sm w-fit disabled:opacity-40"
         style={{ fontFamily: 'var(--font-dm-sans)' }}>
         <ArrowLeft size={15} />
         Voltar para ingressos
@@ -291,13 +321,13 @@ export function ImagensClient({ eventoId, bannerUrlInicial, galleryUrlsIniciais 
 
       {/* ── Botões ─────────────────────────────────────────────────────────── */}
       <div className="flex gap-3 sticky bottom-4">
-        <button type="button" onClick={() => handleSalvar(false)}
+        <button type="button" onClick={() => handleSalvar()}
           disabled={saving}
           className="flex-none px-5 py-3.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-40 bg-[#111] border border-[#222] text-[#555] hover:text-[#888] hover:border-[#333]"
           style={{ fontFamily: 'var(--font-dm-sans)' }}>
           {saved ? <><Check size={15} /><span>Salvo!</span></> : <span>Salvar rascunho</span>}
         </button>
-        <button type="button" onClick={() => handleSalvar(true)}
+        <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}/publicar`)}
           disabled={saving}
           className="flex-1 py-3.5 rounded-xl text-sm font-semibold text-[#070707] hover:brightness-110 transition-all flex items-center justify-center gap-2 disabled:opacity-40"
           style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>

@@ -1,5 +1,6 @@
 // Página de criação de evento
-// Fluxo: perfil 100% completo → modal PF/PJ (1x, editável) → formulário de evento
+// Fluxo: perfil 100% completo → modal (nicho + nome do evento) → formulário de evento.
+// CNPJ é opcional e fica em /perfil (aba "Dados de promotor"), não aqui.
 import { createClient } from '@/lib/supabase/server'
 import { redirect }     from 'next/navigation'
 import { Header }       from '@/components/layout/Header'
@@ -38,18 +39,22 @@ export default async function CriarEventoPage() {
 
   const { data: promotorProfile } = await supabase
     .from('promotor_profiles')
-    .select('id, tipo_pessoa')
+    .select('id')
     .eq('user_id', user.id)
     .single()
 
-  // Busca organização do usuário com dados completos para pré-preencher o modal
+  // Busca todas as organizações do usuário — inclui eventuais linhas legadas
+  // de type='estabelecimento' (não são mais criadas, mas ainda têm eventos
+  // reais atrelados, então continuam entrando na listagem "Meus eventos").
   const { data: orgs } = await supabase
     .from('organizations')
     .select('id, name, type, cnpj, nome_fantasia')
     .eq('owner_id', user.id)
 
   const orgIds  = (orgs ?? []).map(o => o.id)
-  const orgAtual = (orgs ?? [])[0] ?? null
+  // Pré-preenchimento do modal é determinístico: só a organização
+  // type='promotora' (a única criada daqui pra frente).
+  const orgAtual = (orgs ?? []).find(o => o.type === 'promotora') ?? null
 
   const { data: eventos } = orgIds.length > 0
     ? await supabase
@@ -90,7 +95,6 @@ export default async function CriarEventoPage() {
       {perfilCompleto && (
         <CriarEventoClient
           promotorId={promotorProfile?.id ?? null}
-          tipoPessoaAtual={(promotorProfile?.tipo_pessoa ?? null) as 'pf' | 'pj' | null}
           nomeUsuario={profile?.full_name ?? 'Promotor'}
           orgAtual={orgAtual ? {
             id:           orgAtual.id,

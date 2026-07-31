@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Layers, Plus, Loader2, ArrowUpRight, X, Ticket, Car, Tent } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Tent, Plus, Loader2, ArrowUpRight, X, Upload, ImageIcon, Trash2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
 const ACCENT = '#E8B84B'
 
@@ -16,7 +16,7 @@ interface EventoFilho {
 
 interface Props {
   eventoId:      string
-  isChild:       boolean // este evento já é filho de outro — não pode ter filhos
+  isChild:       boolean // este evento já é filho de outro — não pode ter Tendas
 }
 
 const STATUS_LABEL: Record<string, { label: string; cor: string }> = {
@@ -46,15 +46,15 @@ export function PainelEventosFilhos({ eventoId, isChild }: Props) {
     <div className="rounded-2xl overflow-hidden mt-4" style={{ border: '1px solid #1a1a1a', background: '#0a0a0a' }}>
       <div className="px-4 pt-4 pb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Layers size={13} style={{ color: ACCENT }} />
+          <Tent size={13} style={{ color: ACCENT }} />
           <span className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
-            Eventos filhos
+            Tendas
           </span>
         </div>
         <button type="button" onClick={() => setModalAberto(true)}
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#070707]"
           style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-          <Plus size={12} /> Criar evento filho
+          <Plus size={12} /> Tenda
         </button>
       </div>
 
@@ -62,7 +62,7 @@ export function PainelEventosFilhos({ eventoId, isChild }: Props) {
         {carregando && <Loader2 size={16} className="animate-spin text-[#E8B84B] mx-auto my-4" />}
         {!carregando && filhos.length === 0 && (
           <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            Nenhum evento filho ainda — use pra uma atração à parte dentro deste evento (ex: uma tenda com show cobrado à parte).
+            Nenhuma Tenda ainda — use pra uma atração à parte dentro deste evento, com ingresso próprio (ex: um show cobrado à parte, em outro palco).
           </p>
         )}
         <div className="flex flex-col gap-2">
@@ -83,7 +83,7 @@ export function PainelEventosFilhos({ eventoId, isChild }: Props) {
       </div>
 
       {modalAberto && (
-        <CriarEventoFilhoModal
+        <CriarTendaModal
           eventoId={eventoId}
           onFechar={() => setModalAberto(false)}
         />
@@ -92,40 +92,60 @@ export function PainelEventosFilhos({ eventoId, isChild }: Props) {
   )
 }
 
-function CriarEventoFilhoModal({ eventoId, onFechar }: { eventoId: string; onFechar: () => void }) {
+// Cria uma Tenda: nome + imagem só, direto ao ponto. Ingressos on-line e
+// venda no caixa compartilhado do pai já vêm ligados por padrão — quem
+// quiser desligar ajusta depois na tela de edição do evento.
+function CriarTendaModal({ eventoId, onFechar }: { eventoId: string; onFechar: () => void }) {
+  const supabase = createClient()
   const [titulo, setTitulo] = useState('')
-  const [moduloIngressos, setModuloIngressos] = useState(true)
-  const [moduloEstacionamento, setModuloEstacionamento] = useState(false)
-  const [moduloTenda, setModuloTenda] = useState(false)
-  const [permitirVendaNoCaixaPai, setPermitirVendaNoCaixaPai] = useState(true)
+  const [bannerFile, setBannerFile] = useState<File | null>(null)
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const nenhumModulo = !moduloIngressos && !moduloEstacionamento && !moduloTenda
-
-  // Tenda paga quase sempre também quer venda on-line — marca Ingressos junto,
-  // mas o promotor pode desmarcar se quiser só venda presencial.
-  function toggleTenda() {
-    const ligando = !moduloTenda
-    setModuloTenda(ligando)
-    if (ligando) setModuloIngressos(true)
+  function selecionarBanner(f: File) {
+    setBannerFile(f)
+    setBannerPreview(URL.createObjectURL(f))
   }
 
   const salvar = async () => {
-    if (!titulo.trim() || nenhumModulo) return
+    if (!titulo.trim()) return
     setSalvando(true); setErro(null)
     try {
       const res = await fetch(`/api/eventos/${eventoId}/criar-filho`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          titulo: titulo.trim(), moduloIngressos, moduloEstacionamento, moduloTenda,
-          permitirVendaNoCaixaPai: moduloTenda ? permitirVendaNoCaixaPai : undefined,
+          titulo:                  titulo.trim(),
+          moduloIngressos:         true,
+          moduloEstacionamento:    false,
+          moduloTenda:             true,
+          permitirVendaNoCaixaPai: true,
         }),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.error ?? 'Erro ao criar evento filho'); return }
-      window.location.href = `/criar-evento/${data.id}`
+      if (!res.ok) { setErro(data.error ?? 'Erro ao criar a Tenda'); return }
+
+      // Imagem é opcional aqui — não bloqueia a criação se falhar, dá pra
+      // subir depois na etapa de Imagens normalmente.
+      if (bannerFile) {
+        try {
+          const ext = bannerFile.name.split('.').pop() ?? 'jpg'
+          const path = `${data.id}/banner.${ext}`
+          const { error: uploadErr } = await supabase.storage
+            .from('event-images')
+            .upload(path, bannerFile, { upsert: true, contentType: bannerFile.type })
+          if (!uploadErr) {
+            const { data: pub } = supabase.storage.from('event-images').getPublicUrl(path)
+            await supabase.from('events').update({ banner_url: pub.publicUrl }).eq('id', data.id)
+          }
+        } catch { /* segue sem banner, promotor sobe depois */ }
+      }
+
+      // Já herda data e local do pai — pula Informações, vai direto pra
+      // escolha de dias + ingressos.
+      window.location.href = `/criar-evento/${data.id}/ingressos`
     } finally {
       setSalvando(false)
     }
@@ -135,56 +155,44 @@ function CriarEventoFilhoModal({ eventoId, onFechar }: { eventoId: string; onFec
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
       <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6">
         <div className="flex items-center justify-between mb-5">
-          <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Criar evento filho</p>
+          <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Criar Tenda</p>
           <button onClick={onFechar} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
         </div>
 
-        <input type="text" placeholder="Nome do evento filho *" value={titulo}
+        <input type="text" placeholder="Nome da Tenda *" value={titulo}
           onChange={e => setTitulo(e.target.value)} autoFocus
           className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 mb-4"
           style={{ fontFamily: 'var(--font-dm-sans)' }} />
 
-        <p className="text-[#444] text-[11px] uppercase tracking-wider mb-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          O que esse evento filho vai ter
-        </p>
-        <div className="flex flex-col gap-2 mb-2">
-          {([
-            { checked: moduloIngressos,      onChange: () => setModuloIngressos(v => !v), icon: Ticket, label: 'Ingressos' },
-            { checked: moduloEstacionamento, onChange: () => setModuloEstacionamento(v => !v), icon: Car, label: 'Estacionamento' },
-            { checked: moduloTenda,          onChange: toggleTenda, icon: Tent, label: 'Tenda' },
-          ]).map(({ checked, onChange, icon: Icon, label }) => (
-            <button key={label} type="button" onClick={onChange}
-              className={cn(
-                'flex items-center gap-3 p-3 rounded-xl border text-left transition-all',
-                checked ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35' : 'bg-[#111] border-[#1c1c1c]'
-              )}>
-              <Icon size={14} className={checked ? 'text-[#E8B84B]' : 'text-[#444]'} />
-              <span className={cn('text-xs font-medium', checked ? 'text-white' : 'text-[#777]')} style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                {label}
-              </span>
+        {/* Banner opcional — pode subir aqui, ou depois na etapa de Imagens */}
+        <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) selecionarBanner(f) }} />
+        {bannerPreview ? (
+          <div className="relative rounded-xl overflow-hidden border border-[#222] mb-5" style={{ aspectRatio: '780/420' }}>
+            <img src={bannerPreview} alt="" className="w-full h-full object-cover" />
+            <button type="button" onClick={() => { setBannerFile(null); setBannerPreview(null) }}
+              className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/70 flex items-center justify-center text-white hover:bg-red-500/80">
+              <Trash2 size={13} />
             </button>
-          ))}
-        </div>
-
-        {moduloTenda && (
-          <button type="button" onClick={() => setPermitirVendaNoCaixaPai(v => !v)}
-            className="w-full flex items-center gap-3 p-3 rounded-xl mb-4 text-left transition-all"
-            style={{ background: '#111', border: '1px solid #1c1c1c' }}>
-            <div className="w-9 h-5 rounded-full transition-colors relative shrink-0"
-                 style={{ background: permitirVendaNoCaixaPai ? '#E8B84B' : '#222' }}>
-              <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
-                   style={{ left: permitirVendaNoCaixaPai ? '18px' : '2px' }} />
+          </div>
+        ) : (
+          <button type="button" onClick={() => fileInputRef.current?.click()}
+            className="w-full flex items-center gap-3 p-3 rounded-xl mb-5 text-left transition-all"
+            style={{ background: '#111', border: '1px dashed #2a2a2a' }}>
+            <div className="w-9 h-9 rounded-lg bg-[#161616] flex items-center justify-center shrink-0">
+              <ImageIcon size={15} className="text-[#444]" />
             </div>
-            <span className="text-[#999] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              Vender no mesmo caixa do evento principal
-            </span>
+            <div className="flex-1">
+              <span className="text-[#999] text-xs font-medium block" style={{ fontFamily: 'var(--font-dm-sans)' }}>Adicionar imagem (opcional)</span>
+              <span className="text-[#444] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>Pode subir agora ou depois</span>
+            </div>
+            <Upload size={14} className="text-[#444] shrink-0" />
           </button>
         )}
 
-        {nenhumModulo && <p className="text-red-400 text-xs text-center mb-3">Selecione ao menos um item acima</p>}
         {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}
 
-        <button type="button" onClick={salvar} disabled={salvando || !titulo.trim() || nenhumModulo}
+        <button type="button" onClick={salvar} disabled={salvando || !titulo.trim()}
           className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
           style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
           {salvando ? <Loader2 size={15} className="animate-spin" /> : 'Criar'}

@@ -1,5 +1,5 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getAdminMember } from '@/lib/adminAuth'
+import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
 import { redirect } from 'next/navigation'
 import { EquipeClient } from './EquipeClient'
 
@@ -9,7 +9,7 @@ export default async function EquipePage() {
   if (!user) redirect('/auth')
 
   const me = await getAdminMember(user.id)
-  if (!me || me.role !== 'super_admin') redirect('/admin')
+  if (!me || !temAcessoRestrito(me)) redirect('/admin')
 
   const admin = createServiceClient()
 

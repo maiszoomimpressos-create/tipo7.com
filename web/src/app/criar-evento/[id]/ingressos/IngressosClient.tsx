@@ -5,19 +5,21 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   Users, Package, Layers, Plus, Trash2, Loader2,
-  Ticket, ArrowRight, Check, ArrowLeft, CalendarCheck,
+  Ticket, ArrowRight, Check, ArrowLeft, CalendarCheck, ImageIcon, X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SecaoBloqueavel } from '@/components/SecaoBloqueavel'
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
-interface Attraction { id?: string; name: string; description: string; order_index: number; scheduled_time?: string }
+interface Attraction { id?: string; name: string; description: string; order_index: number; scheduled_time?: string; image_url?: string | null }
 interface DiaConfig {
   id?:         string
   day_number:  number
   date:        string
   start_time:  string
   end_time:    string
+  banner_url?: string | null
   attractions: Attraction[]
 }
 interface IngressoConfig {
@@ -315,6 +317,59 @@ export function IngressosClient({
       return { ...d, attractions: d.attractions.filter((_, i) => i !== idx) }
     }))
 
+  const [uploadingAttraction, setUploadingAttraction] = useState<string | null>(null)
+  const [uploadingDiaBanner, setUploadingDiaBanner] = useState<number | null>(null)
+
+  // Caminho posicional pelo número do dia — estável entre saves, já que o
+  // day_number não muda depois de definido (mesma lógica das imagens de atração)
+  async function handleDiaBanner(dayNumber: number, file: File) {
+    setUploadingDiaBanner(dayNumber)
+    setErro(null)
+    try {
+      const ext = file.name.split('.').pop() ?? 'jpg'
+      const path = `${eventoId}/banner-dia${dayNumber}.${ext}`
+      const { error } = await supabase.storage
+        .from('event-images')
+        .upload(path, file, { upsert: true, contentType: file.type })
+      if (error) {
+        setErro(`Erro ao subir banner do dia: ${error.message}`)
+        return
+      }
+      const { data } = supabase.storage.from('event-images').getPublicUrl(path)
+      updateDia(dayNumber, { banner_url: data.publicUrl })
+    } catch (e) {
+      setErro(`Erro ao subir banner do dia: ${e instanceof Error ? e.message : 'erro desconhecido'}`)
+    } finally {
+      setUploadingDiaBanner(null)
+    }
+  }
+
+  // Caminho posicional (dia + índice), não pelo id da atração — a linha de
+  // event_day_attractions é apagada e recriada a cada save, então o id muda
+  // toda vez; o caminho do arquivo precisa ser estável entre saves.
+  async function handleAttractionImage(dayNumber: number, idx: number, file: File) {
+    const key = `${dayNumber}-${idx}`
+    setUploadingAttraction(key)
+    setErro(null)
+    try {
+      const ext = file.name.split('.').pop() ?? 'jpg'
+      const path = `${eventoId}/atracao-dia${dayNumber}-${idx}.${ext}`
+      const { error } = await supabase.storage
+        .from('event-images')
+        .upload(path, file, { upsert: true, contentType: file.type })
+      if (error) {
+        setErro(`Erro ao subir imagem da atração: ${error.message}`)
+        return
+      }
+      const { data } = supabase.storage.from('event-images').getPublicUrl(path)
+      updateAttraction(dayNumber, idx, { image_url: data.publicUrl })
+    } catch (e) {
+      setErro(`Erro ao subir imagem da atração: ${e instanceof Error ? e.message : 'erro desconhecido'}`)
+    } finally {
+      setUploadingAttraction(null)
+    }
+  }
+
   const addIngresso = (eventDayId: string | null) =>
     setIngressos(prev => [...prev, {
       event_day_id: eventDayId,
@@ -343,7 +398,7 @@ export function IngressosClient({
 
   // ─── Salvar tudo ─────────────────────────────────────────────────────────────
 
-  const handleSalvar = async (continuar = false) => {
+  const handleSalvar = async (destino?: string) => {
     setSaving(true); setErro(null)
     try {
       // Em modo herança (Tenda/Estacionamento), date_start/date_end do filho
@@ -376,6 +431,7 @@ export function IngressosClient({
                 date:       dia.date,
                 start_time: dia.start_time || null,
                 end_time:   dia.end_time   || null,
+                banner_url: dia.banner_url || null,
               }).select('id').single()
             : await supabase.from('event_days').upsert({
                 event_id:   eventoId,
@@ -383,6 +439,7 @@ export function IngressosClient({
                 date:       dia.date,
                 start_time: dia.start_time || null,
                 end_time:   dia.end_time   || null,
+                banner_url: dia.banner_url || null,
               }, { onConflict: 'event_id,day_number' }).select('id').single()
 
           if (!diaDb) { diasAtualizados.push(dia); continue }
@@ -400,6 +457,7 @@ export function IngressosClient({
                 description:    a.description || null,
                 order_index:    i,
                 scheduled_time: a.scheduled_time || null,
+                image_url:      a.image_url || null,
               }))
             )
           }
@@ -435,8 +493,8 @@ export function IngressosClient({
         }
       }
 
-      if (continuar) {
-        router.push(`/criar-evento/${eventoId}/imagens`)
+      if (destino) {
+        router.push(destino)
         return
       }
       setSaved(true)
@@ -450,9 +508,39 @@ export function IngressosClient({
   return (
     <div className="flex flex-col gap-6">
 
+      {/* Indicador de etapas — todas navegáveis; ir e voltar sempre salva
+          primeiro, pra nunca perder o que já foi preenchido */}
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}`)} disabled={saving}
+          className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-500 text-[10px]">✓</span>
+          Informações
+        </button>
+        <div className="h-px flex-1 bg-[#1a1a1a]" />
+        <div className="flex items-center gap-1.5 text-white text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-[#E8B84B] flex items-center justify-center text-[#070707] text-[10px] font-bold">2</span>
+          Ingressos
+        </div>
+        <div className="h-px flex-1 bg-[#1a1a1a]" />
+        <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}/imagens`)} disabled={saving}
+          className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-[#111] border border-[#222] flex items-center justify-center text-[10px]">3</span>
+          Imagens
+        </button>
+        <div className="h-px flex-1 bg-[#1a1a1a]" />
+        <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}/publicar`)} disabled={saving}
+          className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <span className="w-5 h-5 rounded-full bg-[#111] border border-[#222] flex items-center justify-center text-[10px]">4</span>
+          Publicar
+        </button>
+      </div>
+
       {/* Voltar */}
-      <button type="button" onClick={() => router.push(`/criar-evento/${eventoId}`)}
-        className="flex items-center gap-2 text-[#555] hover:text-white transition-colors text-sm w-fit"
+      <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}`)} disabled={saving}
+        className="flex items-center gap-2 text-[#555] hover:text-white transition-colors text-sm w-fit disabled:opacity-40"
         style={{ fontFamily: 'var(--font-dm-sans)' }}>
         <ArrowLeft size={15} />
         Voltar para informações do evento
@@ -504,57 +592,32 @@ export function IngressosClient({
         </div>
       )}
 
-      {/* Seletor de modo (somente multi-day) */}
+      {/* Seletor de modo (somente multi-day) — compacto, 3 opções lado a lado */}
       {isMultiDay && dias.length > 0 && (
         <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-[#141414]">
-            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <div className="px-5 py-3 border-b border-[#141414]">
+            <p className="text-white text-xs font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
               Como serão vendidos os ingressos?
             </p>
-            <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              Escolha o modelo de compra para os {numDias} dias do evento
-            </p>
           </div>
-          <div className="p-6 flex flex-col gap-3">
+          <div className="p-3 grid grid-cols-3 gap-2">
             {([
-              {
-                value: 'individual' as const,
-                icon:  Users,
-                label: 'Individual por dia',
-                desc:  'O participante compra ingresso para cada dia separadamente',
-              },
-              {
-                value: 'pacote' as const,
-                icon:  Package,
-                label: 'Pacote completo',
-                desc:  'Um único ingresso dá acesso a todos os dias do evento',
-              },
-              {
-                value: 'ambos' as const,
-                icon:  Layers,
-                label: 'Individual + Pacote',
-                desc:  'Oferece os dois: compra por dia ou pacote com desconto',
-              },
-            ]).map(({ value, icon: Icon, label, desc }) => (
+              { value: 'individual' as const, icon: Users,   label: 'Individual por dia' },
+              { value: 'pacote'     as const, icon: Package, label: 'Pacote completo'    },
+              { value: 'ambos'      as const, icon: Layers,  label: 'Individual + Pacote' },
+            ]).map(({ value, icon: Icon, label }) => (
               <button key={value} type="button" onClick={() => setTicketMode(value)}
+                title={label}
                 className={cn(
-                  'flex items-center gap-4 p-4 rounded-xl border text-left transition-all duration-200',
+                  'flex flex-col items-center gap-1.5 py-2.5 px-1 rounded-xl border text-center transition-all duration-200',
                   ticketMode === value
                     ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35'
                     : 'bg-[#111] border-[#1c1c1c] hover:border-[#2a2a2a]'
                 )}
               >
-                <div className={cn(
-                  'w-9 h-9 rounded-xl flex items-center justify-center shrink-0',
-                  ticketMode === value ? 'bg-[#E8B84B]/15' : 'bg-[#161616]'
-                )}>
-                  <Icon size={16} className={ticketMode === value ? 'text-[#E8B84B]' : 'text-[#444]'} />
-                </div>
-                <div>
-                  <p className={cn('text-sm font-medium', ticketMode === value ? 'text-white' : 'text-[#777]')}
-                     style={{ fontFamily: 'var(--font-dm-sans)' }}>{label}</p>
-                  <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>{desc}</p>
-                </div>
+                <Icon size={14} className={ticketMode === value ? 'text-[#E8B84B]' : 'text-[#444]'} />
+                <p className={cn('text-[11px] leading-tight font-medium', ticketMode === value ? 'text-white' : 'text-[#777]')}
+                   style={{ fontFamily: 'var(--font-dm-sans)' }}>{label}</p>
               </button>
             ))}
 
@@ -704,14 +767,70 @@ export function IngressosClient({
                         </div>
                       )}
 
-                      {/* Atrações */}
+                      {/* Atrações — libera assim que o horário de abertura do dia é preenchido */}
+                      <SecaoBloqueavel ativo={!!dia.start_time} mensagem="Preencha a Abertura do dia primeiro">
+                      {isMultiDay && (
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="relative shrink-0 w-16 h-16">
+                            <label className={cn(
+                              'absolute inset-0 rounded-xl overflow-hidden border border-[#222] flex items-center justify-center cursor-pointer bg-[#0a0a0a]',
+                              uploadingDiaBanner === dia.day_number && 'pointer-events-none opacity-60'
+                            )}>
+                              <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden"
+                                onChange={e => { const f = e.target.files?.[0]; if (f) handleDiaBanner(dia.day_number, f) }} />
+                              {uploadingDiaBanner === dia.day_number
+                                ? <Loader2 size={16} className="animate-spin text-[#E8B84B]" />
+                                : dia.banner_url
+                                  ? <img src={dia.banner_url} alt="" className="w-full h-full object-cover" />
+                                  : <ImageIcon size={16} className="text-[#333]" />
+                              }
+                            </label>
+                            {dia.banner_url && uploadingDiaBanner !== dia.day_number && (
+                              <button type="button"
+                                onClick={() => updateDia(dia.day_number, { banner_url: null })}
+                                title="Remover banner deste dia"
+                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#1a1a1a] border border-[#333] flex items-center justify-center text-[#888] hover:text-red-500 hover:border-red-500/40 transition-colors z-10">
+                                <X size={11} />
+                              </button>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-white text-xs font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                              Banner deste dia{' '}
+                              <span className="text-[#333] normal-case tracking-normal font-normal">(opcional)</span>
+                            </p>
+                            <p className="text-[#444] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                              Sem banner próprio, este dia usa o banner principal do evento
+                            </p>
+                          </div>
+                        </div>
+                      )}
                       <div className="flex flex-col gap-2">
                         <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>
                           Atrações / Lineup{' '}
                           <span className="text-[#333] normal-case tracking-normal font-normal">(opcional)</span>
                         </label>
-                        {dia.attractions.map((a, ai) => (
-                          <div key={ai} className="flex gap-2">
+                        {dia.attractions.map((a, ai) => {
+                          const uploadKey = `${dia.day_number}-${ai}`
+                          const uploading = uploadingAttraction === uploadKey
+                          return (
+                          <div key={ai} className="flex flex-col gap-2 bg-[#0a0a0a] border border-[#161616] rounded-xl p-2.5">
+                          <div className="flex gap-2">
+                            {/* Miniatura/upload da imagem do show — não muda entre saves,
+                                caminho é posicional (dia + índice), não pelo id */}
+                            <label className={cn(
+                              'relative shrink-0 w-11 h-11 rounded-lg overflow-hidden border border-[#222] flex items-center justify-center cursor-pointer',
+                              uploading && 'pointer-events-none opacity-60'
+                            )}>
+                              <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden"
+                                onChange={e => { const f = e.target.files?.[0]; if (f) handleAttractionImage(dia.day_number, ai, f) }} />
+                              {uploading
+                                ? <Loader2 size={14} className="animate-spin text-[#E8B84B]" />
+                                : a.image_url
+                                  ? <img src={a.image_url} alt="" className="w-full h-full object-cover" />
+                                  : <ImageIcon size={14} className="text-[#333]" />
+                              }
+                            </label>
                             <input type="text" placeholder="Nome do artista ou atração"
                               value={a.name}
                               onChange={e => updateAttraction(dia.day_number, ai, { name: e.target.value })}
@@ -729,15 +848,25 @@ export function IngressosClient({
                               <Trash2 size={14} />
                             </button>
                           </div>
-                        ))}
+                          <textarea placeholder="Descrição do show (opcional) — aparece na página pública junto com o banner"
+                            value={a.description}
+                            onChange={e => updateAttraction(dia.day_number, ai, { description: e.target.value })}
+                            rows={2} maxLength={500}
+                            className={cn(inputCls, 'resize-none text-xs')}
+                            style={{ fontFamily: 'var(--font-dm-sans)' }} />
+                          </div>
+                          )
+                        })}
                         <button type="button" onClick={() => addAttraction(dia.day_number)}
                           className="flex items-center gap-2 text-[#444] hover:text-[#E8B84B] text-xs transition-colors py-1"
                           style={{ fontFamily: 'var(--font-dm-sans)' }}>
                           <Plus size={13} /> Adicionar atração
                         </button>
                       </div>
+                      </SecaoBloqueavel>
 
-                      {/* Ingressos do dia */}
+                      {/* Ingressos do dia — mesmo gatilho da seção de Atrações */}
+                      <SecaoBloqueavel ativo={!!dia.start_time} mensagem="Preencha a Abertura do dia primeiro">
                       <IngressosPorDia
                         dayId={dia.id ?? `new-${dia.date}`}
                         label={`dia ${dia.day_number}`}
@@ -747,6 +876,36 @@ export function IngressosClient({
                         onAdd={addIngresso}
                         onAddSugestao={addIngressoSugestao}
                       />
+                      </SecaoBloqueavel>
+
+                      {/* Navegação entre dias — deixa óbvio que cada dia precisa
+                          de atenção, em vez de depender de lembrar das abas */}
+                      {dias.length > 1 && (
+                        <div className="flex items-center gap-2 pt-2 border-t border-[#141414]">
+                          <button type="button"
+                            onClick={() => setDiaAberto(d => Math.max(1, d - 1))}
+                            disabled={dia.day_number === 1}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-medium border transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            style={{ borderColor: '#222', color: '#888', fontFamily: 'var(--font-dm-sans)' }}>
+                            <ArrowLeft size={13} /> Dia anterior
+                          </button>
+                          {(() => {
+                            const ultimoDia = dia.day_number === dias.length
+                            const proximaData = dias.find(d => d.day_number === dia.day_number + 1)?.date
+                            return (
+                              <button type="button"
+                                onClick={() => setDiaAberto(d => Math.min(dias.length, d + 1))}
+                                disabled={ultimoDia}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                                style={{ background: ultimoDia ? 'transparent' : '#E8B84B', border: ultimoDia ? '1px solid #222' : 'none', color: ultimoDia ? '#888' : '#070707', fontFamily: 'var(--font-dm-sans)' }}>
+                                {ultimoDia
+                                  ? 'Último dia'
+                                  : <>Próximo dia — {proximaData ? formatData(proximaData) : ''} <ArrowRight size={13} /></>}
+                              </button>
+                            )
+                          })()}
+                        </div>
+                      )}
 
                   </div>
                 </div>
@@ -789,12 +948,12 @@ export function IngressosClient({
           {erro && <p className="text-red-400 text-sm text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erro}</p>}
 
           <div className="flex gap-3 sticky bottom-4">
-            <button type="button" onClick={() => handleSalvar(false)} disabled={saving}
+            <button type="button" onClick={() => handleSalvar()} disabled={saving}
               className="flex-none px-5 py-3.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-40 bg-[#111] border border-[#222] text-[#555] hover:text-[#888] hover:border-[#333]"
               style={{ fontFamily: 'var(--font-dm-sans)' }}>
               {saved ? <><Check size={15} /><span>Salvo!</span></> : <span>Salvar rascunho</span>}
             </button>
-            <button type="button" onClick={() => handleSalvar(true)} disabled={saving}
+            <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}/imagens`)} disabled={saving}
               className="flex-1 py-3.5 rounded-xl text-sm font-semibold text-[#070707] hover:brightness-110 transition-all flex items-center justify-center gap-2 disabled:opacity-40"
               style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
               {saving

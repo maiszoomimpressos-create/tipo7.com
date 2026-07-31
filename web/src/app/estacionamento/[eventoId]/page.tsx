@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { ShieldX } from 'lucide-react'
 import { GerenciadorEstacionamentos } from './GerenciadorEstacionamentos'
 import { AtendenteClient } from './AtendenteClient'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ eventoId: string }>
@@ -25,13 +26,7 @@ export default async function EstacionamentoPage({ params }: Props) {
 
   if (!evento) return <SemPermissao mensagem="Evento não encontrado." />
 
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento.organization_id)
-    .single()
-
-  const isOwner = org?.owner_id === user.id
+  const isOwner = await isOrgAdmin(admin, evento.organization_id, user.id)
 
   if (isOwner) {
     return <GerenciadorEstacionamentos eventoId={eventoId} eventoTitle={evento.title ?? 'Evento'} />

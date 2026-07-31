@@ -8,6 +8,7 @@ import { getMpToken } from '@/lib/mpToken'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
 import { debitarSaldoBilheteria } from '@/lib/saldoBilheteria'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 async function temPermissaoVenderNoEvento(admin: ReturnType<typeof createServiceClient>, userId: string, eventoId: string): Promise<boolean> {
   const { data: staff } = await admin
@@ -26,7 +27,7 @@ async function checkPermissaoBilheteria(userId: string, eventoId: string) {
   const { data: evento } = await admin.from('events').select('organization_id, parent_event_id').eq('id', eventoId).single()
   if (!evento) return { ok: false, ownerId: null }
   const { data: org } = await admin.from('organizations').select('owner_id').eq('id', evento.organization_id).single()
-  if (org?.owner_id === userId) return { ok: true, ownerId: org.owner_id }
+  if (await isOrgAdmin(admin, evento.organization_id, userId)) return { ok: true, ownerId: org?.owner_id ?? null }
 
   let temPerm = await temPermissaoVenderNoEvento(admin, userId, eventoId)
   if (!temPerm && evento.parent_event_id) {

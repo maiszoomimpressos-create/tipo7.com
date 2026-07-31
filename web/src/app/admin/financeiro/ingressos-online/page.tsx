@@ -1,8 +1,17 @@
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
+import { redirect } from 'next/navigation'
 import { FinanceiroClient } from './FinanceiroClient'
 import { RulesClient } from './RulesClient'
 
 export default async function IngressosOnlinePage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth?next=/admin/financeiro/ingressos-online')
+
+  const member = await getAdminMember(user.id)
+  if (!member || !temAcessoRestrito(member)) redirect('/admin')
+
   const admin = createServiceClient()
 
   const [

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
-// Verifica se o usuário logado é dono do evento
+// Verifica se o usuário logado é dono/admin da organização do evento
 async function assertOwner(userId: string, eventoId: string) {
   const admin = createServiceClient()
   const { data: evento } = await admin
@@ -10,12 +11,7 @@ async function assertOwner(userId: string, eventoId: string) {
     .eq('id', eventoId)
     .single()
   if (!evento) return false
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento.organization_id)
-    .single()
-  return org?.owner_id === userId
+  return isOrgAdmin(admin, evento.organization_id, userId)
 }
 
 // GET /api/eventos/[id]/equipe — lista membros do evento

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Params { params: Promise<{ caixaId: string }> }
 
@@ -20,13 +21,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   // Verifica acesso: dono do evento ou operador designado
   const evento = caixa.events as { title: string; date_start: string; venue_name: string; city: string; state: string; transferencia_requer_senha: boolean } | null
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', (await admin.from('events').select('organization_id').eq('id', caixa.evento_id).single()).data?.organization_id ?? '')
-    .single()
-
-  const isOwner   = org?.owner_id === user.id
+  const { data: eventoOrg } = await admin.from('events').select('organization_id').eq('id', caixa.evento_id).single()
+  const isOwner    = eventoOrg ? await isOrgAdmin(admin, eventoOrg.organization_id, user.id) : false
   const isOperador = caixa.operador_id === user.id
   if (!isOwner && !isOperador)
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })

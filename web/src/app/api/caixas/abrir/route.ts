@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { ativarSaldoBilheteria } from '@/lib/saldoBilheteria'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -35,12 +36,7 @@ export async function POST(req: NextRequest) {
     .single()
   if (!evento) return NextResponse.json({ error: 'Evento não encontrado' }, { status: 404 })
 
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento.organization_id)
-    .single()
-  if (org?.owner_id !== user.id)
+  if (!(await isOrgAdmin(admin, evento.organization_id, user.id)))
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
 
   // Valida nomes únicos dentro do lote

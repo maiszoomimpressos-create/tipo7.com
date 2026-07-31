@@ -14,10 +14,12 @@ interface Props {
   eventoId:            string
   ingressos:           IngressoEditavel[]
   capacity:            number | null
+  dias?:               { id: string; dayNumber: number; date: string }[]
+  diaSelecionadoId?:   string | null
   moduloEstacionamento?: boolean
 }
 
-export function PainelOrganizador({ eventoId, ingressos, capacity, moduloEstacionamento }: Props) {
+export function PainelOrganizador({ eventoId, ingressos, capacity, dias, diaSelecionadoId, moduloEstacionamento }: Props) {
   const [tab,           setTab]           = useState<Tab>('ingressos')
   const [localIngressos, setLocalIngressos] = useState(ingressos)
   const [estacionamentoAtivo, setEstacionamentoAtivo] = useState(!!moduloEstacionamento)
@@ -113,6 +115,8 @@ export function PainelOrganizador({ eventoId, ingressos, capacity, moduloEstacio
             eventoId={eventoId}
             ingressos={localIngressos}
             capacity={capacity}
+            dias={dias}
+            diaSelecionadoId={diaSelecionadoId}
             onUpdate={handleUpdate}
           />
         )}

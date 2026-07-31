@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 // POST /api/caixas/validar
 // Segunda etapa do fechamento — só o dono do evento confirma a contagem que
@@ -25,14 +26,8 @@ export async function POST(req: NextRequest) {
   }
 
   const evento = caixa.events as { organization_id: string } | null
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento?.organization_id ?? '')
-    .single()
-
-  if (org?.owner_id !== user.id) {
-    return NextResponse.json({ error: 'Só o dono do evento pode validar o fechamento' }, { status: 403 })
+  if (!evento || !(await isOrgAdmin(admin, evento.organization_id, user.id))) {
+    return NextResponse.json({ error: 'Só o dono/admin do evento pode validar o fechamento' }, { status: 403 })
   }
 
   const { data: fechamento } = await admin

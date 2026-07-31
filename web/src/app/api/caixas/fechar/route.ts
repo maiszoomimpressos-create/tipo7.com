@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -27,13 +28,7 @@ export async function POST(req: NextRequest) {
   if (caixa.status === 'fechamento_pendente') return NextResponse.json({ error: 'Contagem já enviada, aguardando validação do organizador' }, { status: 400 })
 
   const evento = caixa.events as { organization_id: string } | null
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento?.organization_id ?? '')
-    .single()
-
-  const isOwner    = org?.owner_id === user.id
+  const isOwner    = evento ? await isOrgAdmin(admin, evento.organization_id, user.id) : false
   const isOperador = caixa.operador_id === user.id
   if (!isOwner && !isOperador)
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })

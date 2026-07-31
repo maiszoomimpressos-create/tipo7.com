@@ -1,14 +1,15 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
-// Dono do evento sempre tem acesso a tudo, independente de cargo/permissão
+// Dono/admin da organização do evento sempre tem acesso a tudo, independente
+// de cargo/permissão
 export async function isEventOwner(userId: string, eventoId: string): Promise<boolean> {
   const admin = createServiceClient()
 
   const { data: evento } = await admin.from('events').select('organization_id').eq('id', eventoId).single()
   if (!evento) return false
 
-  const { data: org } = await admin.from('organizations').select('owner_id').eq('id', evento.organization_id).single()
-  return org?.owner_id === userId
+  return isOrgAdmin(admin, evento.organization_id, userId)
 }
 
 // Dono do evento OU staff ativo com a permissão informada (event_permission enum).

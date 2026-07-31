@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { PublicarClient } from './PublicarClient'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -22,23 +23,24 @@ export default async function PublicarPage({ params }: Props) {
       venue_name, city, state, street,
       ticket_mode, package_discount_pct,
       banner_url,
+      organization_id,
       organizations(owner_id)
     `)
     .eq('id', id)
     .single()
 
   if (!evento) notFound()
+  if (!(await isOrgAdmin(supabase, evento.organization_id, user.id))) notFound()
 
-  const org = Array.isArray(evento.organizations)
+  // Conta de pagamento é sempre a do dono da organização — quem publica pode
+  // ser um co-admin, mas o dinheiro sempre cai na conta que o dono conectou.
+  const orgOwner = Array.isArray(evento.organizations)
     ? evento.organizations[0]
     : evento.organizations as { owner_id: string } | null
-  if (!org || (org as { owner_id: string }).owner_id !== user.id) notFound()
-
-  // Verifica se o promotor tem Mercado Pago conectado
   const { data: mpAccount } = await supabase
     .from('promotor_mp_accounts')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('user_id', orgOwner?.owner_id ?? '')
     .maybeSingle()
   const mpConectado = !!mpAccount
 

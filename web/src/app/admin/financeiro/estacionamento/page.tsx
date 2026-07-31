@@ -1,6 +1,6 @@
 import { redirect }              from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getAdminMember, can }   from '@/lib/adminAuth'
+import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
 import { TarifaModuloClient }    from '@/components/admin/TarifaModuloClient'
 
 export default async function EstacionamentoFinanceiroPage() {
@@ -9,7 +9,7 @@ export default async function EstacionamentoFinanceiroPage() {
   if (!user) redirect('/auth?next=/admin/financeiro/estacionamento')
 
   const member = await getAdminMember(user.id)
-  if (!member || !can(member, 'gerenciar_financeiro')) redirect('/admin')
+  if (!member || !temAcessoRestrito(member)) redirect('/admin')
 
   const admin = createServiceClient()
   const { data: settings } = await admin.from('platform_settings').select('key, value')

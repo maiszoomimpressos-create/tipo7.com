@@ -5,6 +5,7 @@ import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 import { logAudit } from '@/lib/audit'
 import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
 import { debitarSaldoBilheteria } from '@/lib/saldoBilheteria'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 async function temPermissaoVenderNoEvento(admin: ReturnType<typeof createServiceClient>, userId: string, eventoId: string): Promise<boolean> {
   const { data: staff } = await admin
@@ -35,12 +36,7 @@ async function checkPermissaoBilheteria(userId: string, eventoId: string): Promi
     .single()
   if (!evento) return false
 
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento.organization_id)
-    .single()
-  if (org?.owner_id === userId) return true
+  if (await isOrgAdmin(admin, evento.organization_id, userId)) return true
 
   if (await temPermissaoVenderNoEvento(admin, userId, eventoId)) return true
   if (evento.parent_event_id) return temPermissaoVenderNoEvento(admin, userId, evento.parent_event_id)

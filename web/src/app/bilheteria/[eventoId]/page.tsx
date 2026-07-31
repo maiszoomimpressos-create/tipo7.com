@@ -2,6 +2,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { ShieldX, ArrowLeft } from 'lucide-react'
 import { GerenciadorCaixas } from './GerenciadorCaixas'
+import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ eventoId: string }>
@@ -24,13 +25,7 @@ export default async function BilheteriaPage({ params }: Props) {
 
   if (!evento) return <SemPermissao mensagem="Evento não encontrado." />
 
-  const { data: org } = await admin
-    .from('organizations')
-    .select('owner_id')
-    .eq('id', evento.organization_id)
-    .single()
-
-  const isOwner = org?.owner_id === user.id
+  const isOwner = await isOrgAdmin(admin, evento.organization_id, user.id)
 
   // Operadores com permissão vender_ingresso são redirecionados ao caixa designado
   if (!isOwner) {

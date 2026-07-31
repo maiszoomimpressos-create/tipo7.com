@@ -6,7 +6,7 @@ import Link from 'next/link'
 import {
   LayoutDashboard, UsersRound, Users, UserCheck, Building2, Calendar, DollarSign,
   Shield, FileText, ChevronDown, Landmark, ReceiptText, Layers, Clapperboard, Megaphone,
-  Globe, Ticket, Tent, SquareParking,
+  Globe, Ticket, Tent, SquareParking, Webhook,
 } from 'lucide-react'
 import type { AdminRole } from '@/lib/adminAuth'
 
@@ -14,7 +14,6 @@ const ACCENT = '#E8B84B'
 
 const NAV = [
   { href: '/admin',          label: 'Início',  icon: LayoutDashboard, perm: null              },
-  { href: '/admin/equipe',   label: 'Equipe',  icon: Shield,          perm: 'gerenciar_equipe' },
   { href: '/admin/conteudo', label: 'Conteúdo', icon: FileText,       perm: 'super_admin_only' },
 ]
 
@@ -43,13 +42,18 @@ const TARIFAS_SUB = [
 ]
 
 interface Props {
-  role:        AdminRole
-  permissions: string[]
-  userName:    string
+  role:           AdminRole
+  permissions:    string[]
+  acessoRestrito: boolean
+  userName:       string
 }
 
-export function AdminSidebar({ role, permissions, userName }: Props) {
+export function AdminSidebar({ role, permissions, acessoRestrito, userName }: Props) {
   const pathname = usePathname()
+
+  // Área restrita (Equipe/Financeiro/API) — role='admin' sozinho não basta
+  // mais, precisa ser super_admin ou ter o acesso concedido explicitamente.
+  const podeAcessarRestrito = role === 'super_admin' || acessoRestrito
 
   const playersOpen = pathname.startsWith('/admin/usuarios') || pathname.startsWith('/admin/promotores') || pathname.startsWith('/admin/estabelecimentos')
   const entOpen     = pathname.startsWith('/admin/eventos') || pathname.startsWith('/admin/atributos') || pathname.startsWith('/admin/funcoes')
@@ -215,8 +219,36 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
           </div>
         )}
 
+        {/* Divisor — abaixo daqui é área restrita (senha própria de admin
+            master/supervisor, ainda não implementada — só a marcação visual
+            por enquanto) */}
+        <div className="flex items-center gap-2 px-3 py-3">
+          <div className="h-px flex-1" style={{ background: '#1c1c1c' }} />
+          <span className="text-[9px] uppercase tracking-widest text-[#333]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Área restrita
+          </span>
+          <div className="h-px flex-1" style={{ background: '#1c1c1c' }} />
+        </div>
+
+        {/* Equipe */}
+        {podeAcessarRestrito && (
+          <Link
+            href="/admin/equipe"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all"
+            style={{
+              background: pathname.startsWith('/admin/equipe') ? `${ACCENT}12` : 'transparent',
+              color:      pathname.startsWith('/admin/equipe') ? ACCENT : '#555',
+              fontFamily: 'var(--font-dm-sans)',
+              fontWeight: pathname.startsWith('/admin/equipe') ? 600 : 400,
+            }}
+          >
+            <Shield size={14} />
+            Equipe
+          </Link>
+        )}
+
         {/* Financeiro com submenu */}
-        {canSee('gerenciar_financeiro') && (
+        {podeAcessarRestrito && (
           <div>
             <button
               type="button"
@@ -310,6 +342,23 @@ export function AdminSidebar({ role, permissions, userName }: Props) {
               </div>
             )}
           </div>
+        )}
+
+        {/* API */}
+        {podeAcessarRestrito && (
+          <Link
+            href="/admin/api"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all"
+            style={{
+              background: pathname.startsWith('/admin/api') ? `${ACCENT}12` : 'transparent',
+              color:      pathname.startsWith('/admin/api') ? ACCENT : '#555',
+              fontFamily: 'var(--font-dm-sans)',
+              fontWeight: pathname.startsWith('/admin/api') ? 600 : 400,
+            }}
+          >
+            <Webhook size={14} />
+            API
+          </Link>
         )}
 
       </nav>
