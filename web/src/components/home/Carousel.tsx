@@ -18,8 +18,17 @@ interface Evento {
   cover_url:   string | null
 }
 
-type CarouselItem =
+interface SystemBanner {
+  id:        string
+  image_url: string
+}
+
+type ContentItem =
   | { type: 'evento'; data: Evento }
+  | { type: 'banner_sistema'; data: SystemBanner }
+
+type CarouselItem =
+  | ContentItem
   | { type: 'anuncio' }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -70,21 +79,35 @@ const getCarouselConfig = (width: number) => {
   }
 }
 
-// Monta a lista de itens exibidos no carrossel:
-// - Repete eventos até ter no mínimo 4 slots de evento
+// Monta a lista de itens exibidos no carrossel (eventos + banners
+// promocionais do sistema, misturados no mesmo giro):
+// - Repete itens até ter no mínimo 4 slots
 // - Insere o card "Anuncie aqui" na 3ª posição
-function buildDisplayItems(eventos: Evento[]): CarouselItem[] {
-  if (eventos.length === 0) return [{ type: 'anuncio' }]
+function buildDisplayItems(items: ContentItem[]): CarouselItem[] {
+  if (items.length === 0) return [{ type: 'anuncio' }]
 
-  const minEventSlots = Math.max(eventos.length, 4)
+  const minSlots = Math.max(items.length, 4)
   const repeated: CarouselItem[] = []
   let i = 0
-  while (repeated.length < minEventSlots) {
-    repeated.push({ type: 'evento', data: eventos[i % eventos.length] })
+  while (repeated.length < minSlots) {
+    repeated.push(items[i % items.length])
     i++
   }
 
-  // Insere "Anuncie aqui" após o 2º evento
+  // A lista é circular (o último item fica "colado" no primeiro ao dar a
+  // volta) — quando minSlots não é múltiplo de items.length, o
+  // preenchimento por módulo fecha o círculo repetindo o mesmo item logo
+  // ao lado dele mesmo. Corta a repetição no fim pra evitar essa duplicata
+  // adjacente (só acontece quando há mais de 1 item único).
+  while (
+    repeated.length > items.length &&
+    repeated.length > 1 &&
+    (repeated[repeated.length - 1] as ContentItem).data.id === (repeated[0] as ContentItem).data.id
+  ) {
+    repeated.pop()
+  }
+
+  // Insere "Anuncie aqui" após o 2º item
   repeated.splice(2, 0, { type: 'anuncio' })
   return repeated
 }
@@ -92,33 +115,49 @@ function buildDisplayItems(eventos: Evento[]): CarouselItem[] {
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export function Carousel() {
-  const [current,  setCurrent]  = useState(0)
-  const [paused,   setPaused]   = useState(false)
-  const [eventos,  setEventos]  = useState<Evento[]>([])
-  const [loading,  setLoading]  = useState(true)
-  const [filtrado, setFiltrado] = useState(false)
+  const [current,        setCurrent]        = useState(0)
+  const [paused,         setPaused]         = useState(false)
+  const [eventos,        setEventos]        = useState<Evento[]>([])
+  const [bannersSistema, setBannersSistema] = useState<SystemBanner[]>([])
+  const [loading,        setLoading]        = useState(true)
+  const [filtrado,       setFiltrado]       = useState(false)
   const touchStartX             = useRef<number | null>(null)
 
   const { width } = useWindowSize()
-  const { city }  = useLocation()
+  const { city, state: estado } = useLocation()
   const config    = getCarouselConfig(width)
 
-  // Busca eventos sempre que a cidade mudar
+  // Busca eventos sempre que o estado (região) detectado mudar
   useEffect(() => {
     setLoading(true)
-    setCurrent(0)
-    const params = city ? `?cidade=${encodeURIComponent(city)}` : ''
+    const params = estado ? `?estado=${encodeURIComponent(estado)}` : ''
     fetch(`/api/eventos/destaque${params}`)
       .then(r => r.json())
       .then(data => {
         setEventos(data.eventos ?? [])
+        setBannersSistema(data.banners ?? [])
         setFiltrado(data.filtrado ?? false)
       })
       .finally(() => setLoading(false))
-  }, [city])
+  }, [estado])
 
-  const displayItems = useMemo(() => buildDisplayItems(eventos), [eventos])
+  const contentItems = useMemo<ContentItem[]>(() => [
+    ...eventos.map(e => ({ type: 'evento' as const, data: e })),
+    ...bannersSistema.map(b => ({ type: 'banner_sistema' as const, data: b })),
+  ], [eventos, bannersSistema])
+
+  const displayItems = useMemo(() => buildDisplayItems(contentItems), [contentItems])
   const total        = displayItems.length
+
+  // Posição inicial sincronizada por relógio (não sempre índice 0): quem
+  // entra no mesmo instante vê o mesmo banner; em instantes diferentes,
+  // banners diferentes — o giro avança de verdade pra quem só passa rápido,
+  // sem depender de ficar muito tempo na página. Cada "fatia" tem os mesmos
+  // 5s do auto-avanço, então o intervalo local já nasce grosso modo em fase.
+  useEffect(() => {
+    if (total === 0) return
+    setCurrent(Math.floor(Date.now() / 5000) % total)
+  }, [total])
 
   const next = useCallback(() => setCurrent(p => (p + 1) % total), [total])
   const prev = useCallback(() => setCurrent(p => (p - 1 + total) % total), [total])
@@ -147,14 +186,24 @@ export function Carousel() {
     return pos
   }
 
-  // Deslocamento horizontal dos cards laterais
+  // Config do nível "fantasma" — 1 posição além do último card visível de
+  // verdade, sempre com opacidade 0. Existe só pra dar um lugar de onde vir
+  // (entrando) e pra onde ir (saindo): sem ele, o card pipoca do nada na
+  // borda em vez de deslizar suavemente pra dentro/fora.
+  const getSideConfigAt = (i: number) => {
+    if (i < config.sideConfig.length) return config.sideConfig[i]
+    const last = config.sideConfig[config.sideConfig.length - 1]
+    return { width: last.width, gap: last.gap, opacity: 0, scale: last.scale * 0.9 }
+  }
+
+  // Deslocamento horizontal dos cards laterais (inclui o nível fantasma)
   const getSideTranslateX = (relPos: number): number => {
     const absPos = Math.abs(relPos)
-    if (absPos === 0 || absPos > config.maxSides) return 0
+    if (absPos === 0 || absPos > config.maxSides + 1) return 0
     const GAP = 1
     let x = config.centerWidth / 2
     for (let i = 0; i < absPos; i++) {
-      const cfg             = config.sideConfig[i]
+      const cfg             = getSideConfigAt(i)
       const visualHalfWidth = (cfg.width * cfg.scale) / 2
       x += GAP + visualHalfWidth
       if (i < absPos - 1) x += visualHalfWidth
@@ -204,7 +253,10 @@ export function Carousel() {
             const absPos   = Math.abs(relPos)
             const isCenter = relPos === 0
 
-            if (absPos > config.maxSides) return null
+            // Renderiza 1 posição a mais que o normal (o nível fantasma,
+            // invisível) — é por onde o card desliza pra dentro/fora, em
+            // vez de pipocar ao entrar ou sumir ao sair do grupo visível
+            if (absPos > config.maxSides + 1) return null
 
             // ── BANNER CENTRAL ──────────────────────────────────
             if (isCenter) {
@@ -309,6 +361,50 @@ export function Carousel() {
                 )
               }
 
+              // Banner promocional do sistema no centro — só imagem, sem
+              // link (é divulgação da própria plataforma, não de um evento)
+              if (item.type === 'banner_sistema') {
+                return (
+                  <div
+                    key={`banner-center-${item.data.id}-${index}`}
+                    className="absolute rounded-2xl overflow-hidden transition-all duration-500"
+                    style={{
+                      width:     config.centerWidth,
+                      height:    config.height,
+                      zIndex:    20,
+                      left:      '50%',
+                      transform: 'translateX(-50%)',
+                    }}
+                  >
+                    <Image
+                      src={item.data.image_url}
+                      alt="Tipo7"
+                      fill
+                      className="object-cover brightness-110"
+                      sizes="780px"
+                      priority={index === 0}
+                      unoptimized
+                    />
+                    <div
+                      className="absolute bottom-0 left-0 right-0 h-[2px]"
+                      style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }}
+                    />
+                    <button
+                      onClick={e => { e.stopPropagation(); prev() }}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-black/30 border border-white/15 text-white hover:bg-black/50 transition-all duration-200 backdrop-blur-sm"
+                      aria-label="Anterior">
+                      <ChevronLeft size={20} />
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); next() }}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-black/30 border border-white/15 text-white hover:bg-black/50 transition-all duration-200 backdrop-blur-sm"
+                      aria-label="Próximo">
+                      <ChevronRight size={20} />
+                    </button>
+                  </div>
+                )
+              }
+
               // Evento normal no centro
               const accent = ACCENT_COLORS[eventColorIndex(item, index)]
               const imgSrc = item.data.cover_url ?? `https://picsum.photos/seed/${item.data.id}/780/420`
@@ -368,7 +464,7 @@ export function Carousel() {
             }
 
             // ── CARDS LATERAIS ──────────────────────────────────
-            const sideConfig = config.sideConfig[absPos - 1]
+            const sideConfig = getSideConfigAt(absPos - 1)
             const translateX = getSideTranslateX(relPos)
             const shadowDir  = relPos > 0
               ? 'linear-gradient(to right, rgba(0,0,0,0.75) 0%, transparent 60%)'
@@ -393,6 +489,35 @@ export function Carousel() {
                   }}
                 >
                   <Megaphone size={18} style={{ color: GOLD, opacity: 0.5 }} />
+                  <div className="absolute inset-0 z-10" style={{ background: shadowDir }} />
+                </div>
+              )
+            }
+
+            // Banner promocional do sistema lateral
+            if (item.type === 'banner_sistema') {
+              return (
+                <div
+                  key={`banner-side-${item.data.id}-${index}`}
+                  onClick={() => { setCurrent(index); setPaused(true); setTimeout(() => setPaused(false), 3000) }}
+                  className="absolute rounded-xl overflow-hidden cursor-pointer transition-all duration-500"
+                  style={{
+                    width:     sideConfig.width,
+                    height:    config.height,
+                    opacity:   sideConfig.opacity,
+                    zIndex:    20 - absPos * 3,
+                    left:      '50%',
+                    transform: `translateX(calc(-50% + ${translateX}px)) scale(${sideConfig.scale})`,
+                  }}
+                >
+                  <Image
+                    src={item.data.image_url}
+                    alt="Tipo7"
+                    fill
+                    className="object-cover"
+                    sizes="175px"
+                    unoptimized
+                  />
                   <div className="absolute inset-0 z-10" style={{ background: shadowDir }} />
                 </div>
               )
@@ -458,6 +583,13 @@ export function Carousel() {
                 </a>
               </div>
             </>
+          ) : activeItem.type === 'banner_sistema' ? (
+            // Info do banner promocional do sistema — só a marca, sem CTA
+            <h2
+              className="text-white text-xl md:text-2xl leading-tight"
+              style={{ fontFamily: 'var(--font-outfit)', fontWeight: 500 }}>
+              <span style={{ color: GOLD }}>Tipo7</span>
+            </h2>
           ) : (
             // Info do evento ativo
             <>
@@ -497,8 +629,8 @@ export function Carousel() {
                   width:      current === index ? '22px' : '6px',
                   height:     '6px',
                   background: current === index
-                    ? (item.type === 'anuncio' ? GOLD : ACCENT_COLORS[eventColorIndex(item, index)])
-                    : item.type === 'anuncio'
+                    ? (item.type !== 'evento' ? GOLD : ACCENT_COLORS[eventColorIndex(item, index)])
+                    : item.type !== 'evento'
                       ? `${GOLD}40`
                       : 'rgba(255,255,255,0.2)',
                 }}

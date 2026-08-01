@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { Megaphone, ExternalLink, QrCode, Share2, BarChart2, Link as LinkIcon } from 'lucide-react'
+import { BannersPromocionaisClient, type BannerSistema } from './BannersPromocionaisClient'
 
 export default async function MarketingPage() {
   const admin = createServiceClient()
@@ -12,6 +13,12 @@ export default async function MarketingPage() {
     .gte('date_start', new Date().toISOString())
     .order('date_start', { ascending: true })
     .limit(20)
+
+  const { data: bannersData } = await admin
+    .from('system_banners')
+    .select('id, image_url, active, order_index, created_at')
+    .order('order_index')
+    .order('created_at', { ascending: false })
 
   const ACCENT = '#E8B84B'
 
@@ -60,6 +67,9 @@ export default async function MarketingPage() {
           </div>
         ))}
       </div>
+
+      {/* Banners promocionais do sistema */}
+      <BannersPromocionaisClient bannersIniciais={(bannersData ?? []) as BannerSistema[]} />
 
       {/* Lista de eventos publicados */}
       <div>

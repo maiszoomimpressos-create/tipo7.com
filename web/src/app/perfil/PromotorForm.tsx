@@ -98,7 +98,7 @@ const estadoDeOrg = (o: OrganizacaoItem): FormState => ({
   logoUrl:      o.logo_url,
 })
 
-type Aba = 'organizacoes' | 'pedidos'
+type Aba = 'organizacoes' | 'socios' | 'pedidos'
 
 export function PromotorForm({ nomeUsuario, initialOrganizacoes }: Props) {
   const router = useRouter()
@@ -111,6 +111,8 @@ export function PromotorForm({ nomeUsuario, initialOrganizacoes }: Props) {
   const [criandoNova, setCriandoNova] = useState(false)
   const [respondendoId, setRespondendoId] = useState<string | null>(null)
   const [pedidosEnviados, setPedidosEnviados] = useState<PedidoEnviado[] | null>(null)
+  const [sociosAtivos, setSociosAtivos] = useState<SocioAtivo[] | null>(null)
+  const [socioSelecionado, setSocioSelecionado] = useState<SocioAtivo | null>(null)
 
   const recarregar = async () => {
     const res = await fetch('/api/organizations')
@@ -125,7 +127,14 @@ export function PromotorForm({ nomeUsuario, initialOrganizacoes }: Props) {
     setPedidosEnviados(data.pedidos ?? [])
   }, [])
 
+  const carregarSociosAtivos = useCallback(async () => {
+    const res  = await fetch('/api/organizations/socios-ativos')
+    const data = await res.json() as { socios?: SocioAtivo[] }
+    setSociosAtivos(data.socios ?? [])
+  }, [])
+
   useEffect(() => { if (aba === 'pedidos' && pedidosEnviados === null) carregarPedidosEnviados() }, [aba, pedidosEnviados, carregarPedidosEnviados])
+  useEffect(() => { if (aba === 'socios' && sociosAtivos === null) carregarSociosAtivos() }, [aba, sociosAtivos, carregarSociosAtivos])
 
   const responderConvite = async (orgId: string, aceitar: boolean) => {
     setRespondendoId(orgId)
@@ -154,6 +163,20 @@ export function PromotorForm({ nomeUsuario, initialOrganizacoes }: Props) {
           )}
           style={{ fontFamily: 'var(--font-dm-sans)' }}>
           <Building2 size={13} /> Organizações
+        </button>
+        <button type="button" onClick={() => setAba('socios')}
+          className={cn(
+            'flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all',
+            aba === 'socios' ? 'bg-[#E8B84B]/10 text-[#E8B84B]' : 'text-[#666] hover:text-[#999]'
+          )}
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <Users size={13} /> Sócios
+          {sociosAtivos && sociosAtivos.length > 0 && (
+            <span className="flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full text-[10px] font-bold"
+              style={{ background: aba === 'socios' ? '#E8B84B' : '#1c1c1c', color: aba === 'socios' ? '#070707' : '#888' }}>
+              {sociosAtivos.length}
+            </span>
+          )}
         </button>
         <button type="button" onClick={() => setAba('pedidos')}
           className={cn(
@@ -206,6 +229,41 @@ export function PromotorForm({ nomeUsuario, initialOrganizacoes }: Props) {
             </p>
           )}
         </div>
+      )}
+
+      {/* ── Aba: Sócios — quem já aceitou administrar, com dados completos ── */}
+      {aba === 'socios' && (
+        <div className="flex flex-col gap-2.5">
+          {sociosAtivos === null && (
+            <Loader2 size={14} className="animate-spin text-[#E8B84B] mx-auto my-6" />
+          )}
+          {sociosAtivos?.length === 0 && (
+            <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Nenhum sócio ainda — só você administra suas organizações.
+            </p>
+          )}
+          {sociosAtivos && sociosAtivos.length > 0 && (
+            <div className="rounded-2xl border border-[#1a1a1a] bg-[#0d0d0d] overflow-hidden">
+              {sociosAtivos.map(s => (
+                <button key={s.id} type="button" onClick={() => setSocioSelecionado(s)}
+                  className="w-full flex items-center gap-3 px-4 py-3 border-b border-[#111] last:border-0 text-left hover:bg-white/[0.03] transition-colors">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-[#070707] shrink-0"
+                    style={{ background: '#E8B84B', fontFamily: 'var(--font-syne)' }}>
+                    {(s.nome ?? s.codigo ?? '?').charAt(0).toUpperCase()}
+                  </div>
+                  <span className="flex-1 min-w-0 text-white text-sm truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    {s.nome ?? s.codigo ?? 'Pessoa'}{s.voceMesmo && <span className="text-[#444]"> (você)</span>}
+                  </span>
+                  <ChevronDown size={13} className="text-[#444] -rotate-90 shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {socioSelecionado && (
+        <SocioDetalheModal socio={socioSelecionado} onFechar={() => setSocioSelecionado(null)} />
       )}
 
       {/* ── Aba: Pedidos pendentes (recebidos + enviados) ── */}
@@ -281,6 +339,76 @@ export function PromotorForm({ nomeUsuario, initialOrganizacoes }: Props) {
       )}
     </div>
   )
+}
+
+// ─── Modal de detalhes de um sócio ─────────────────────────────────────────
+
+function SocioDetalheModal({ socio, onFechar }: { socio: SocioAtivo; onFechar: () => void }) {
+  const linha = (label: string, valor: string | null) => (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[#666] text-[11px] font-medium tracking-widest uppercase" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+        {label}
+      </span>
+      <div className="bg-[#111] border border-[#222] rounded-xl px-3 py-2.5">
+        <span className="text-white text-sm break-all" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          {valor ?? '—'}
+        </span>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onFechar}>
+      <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl shadow-2xl shadow-black/60 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, #E8B84B, transparent)' }} />
+        <div className="p-6 flex flex-col gap-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold text-[#070707] shrink-0"
+                style={{ background: '#E8B84B', fontFamily: 'var(--font-syne)' }}>
+                {(socio.nome ?? socio.codigo ?? '?').charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="text-white text-base font-medium break-words" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  {socio.nome ?? 'Sem nome'}
+                </p>
+                {socio.voceMesmo && (
+                  <span className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>você</span>
+                )}
+              </div>
+            </div>
+            <button onClick={onFechar} className="text-[#444] hover:text-[#777] transition-colors shrink-0">
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            {linha('E-mail', socio.email)}
+            {linha('Código T7', socio.codigo)}
+            {linha('Organização', socio.organizacao)}
+            {linha('Participação', socio.participacao === 'integral' ? 'Proprietário integral' : `Sócio${socio.percentual ? ` · ${socio.percentual}%` : ''}`)}
+          </div>
+
+          <button type="button" onClick={onFechar}
+            className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] hover:brightness-110 transition-all"
+            style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface SocioAtivo {
+  id:           string
+  organizacao:  string
+  participacao: 'integral' | 'socio'
+  percentual:   number | null
+  nome:         string | null
+  codigo:       string | null
+  email:        string | null
+  voceMesmo:    boolean
 }
 
 interface PedidoEnviado {
