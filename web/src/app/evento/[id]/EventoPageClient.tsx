@@ -330,6 +330,13 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   const ingressosIndividual = ingressosAtivo.filter(t => t.eventDayId !== null)
   const modoSimples = ticketModeAtivo === null || ticketModeAtivo === 'individual'
   const isRascunho  = evento.status === 'rascunho'
+  // Evento encerrado: data final (ou inicial, se não tiver final) já passou.
+  // Bloqueia divulgação (organizador) e compra de ingresso (público) —
+  // a página em si continua acessível, só não permite mais ação.
+  const isEncerrado = (() => {
+    const ref = evento.dateEnd || evento.dateStart
+    return ref ? new Date(ref) < new Date() : false
+  })()
   const editFormUrl = `/criar-evento/${evento.id}`
   // Programação (dias/atrações/banners) é editada na etapa de Ingressos,
   // não na de Informações — link separado do editFormUrl genérico. Aponta
@@ -984,7 +991,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
             <>
               {/* ── Divulgação — QR, link, compartilhar ── */}
               <div className="rounded-2xl border border-[#1a1a1a] bg-[#0d0d0d] p-5 mb-4 flex flex-col items-center gap-4">
-                {evento.status === 'publicado' ? (
+                {evento.status === 'publicado' && !isEncerrado ? (
                   <>
                     <div className="relative shrink-0">
                       <div className="p-2 rounded-xl bg-white">
@@ -1058,17 +1065,21 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                       <Lock size={22} className="text-[#2a2a2a]" />
                     </div>
                     <p className="text-[#444] text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Divulgação bloqueada
+                      {isEncerrado ? 'Divulgação encerrada' : 'Divulgação bloqueada'}
                     </p>
                     <p className="text-[#2e2e2e] text-xs leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      O QR code, o link e o compartilhamento via WhatsApp ficam disponíveis assim que você publicar o evento.
+                      {isEncerrado
+                        ? 'O evento já aconteceu — o link, o QR code e o compartilhamento não ficam mais disponíveis.'
+                        : 'O QR code, o link e o compartilhamento via WhatsApp ficam disponíveis assim que você publicar o evento.'}
                     </p>
-                    <a
-                      href={`/criar-evento/${evento.id}/publicar`}
-                      className="mt-1 text-xs font-medium w-fit flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all hover:brightness-110"
-                      style={{ background: 'rgba(232,184,75,0.10)', border: '1px solid rgba(232,184,75,0.20)', color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-                      Publicar evento →
-                    </a>
+                    {!isEncerrado && (
+                      <a
+                        href={`/criar-evento/${evento.id}/publicar`}
+                        className="mt-1 text-xs font-medium w-fit flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all hover:brightness-110"
+                        style={{ background: 'rgba(232,184,75,0.10)', border: '1px solid rgba(232,184,75,0.20)', color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                        Publicar evento →
+                      </a>
+                    )}
                   </div>
                 )}
               </div>
@@ -1111,7 +1122,22 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
               </div>
 
               <div className="p-5 flex flex-col gap-5">
-
+                {isEncerrado ? (
+                  <div className="flex flex-col items-center text-center gap-2 py-6">
+                    <div
+                      className="w-[72px] h-[72px] rounded-xl flex items-center justify-center"
+                      style={{ background: '#111', border: '1px solid #1a1a1a' }}>
+                      <Lock size={22} className="text-[#2a2a2a]" />
+                    </div>
+                    <p className="text-[#444] text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Evento encerrado
+                    </p>
+                    <p className="text-[#2e2e2e] text-xs leading-relaxed max-w-[220px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Esse evento já aconteceu e não está mais vendendo ingressos.
+                    </p>
+                  </div>
+                ) : (
+                  <>
                 {/* ── Modo simples (individual ou sem modo definido) ─────── */}
                 {/* Mostra só os ingressos do dia selecionado na aba de Programação
                     acima — nunca empilha ingressos de todos os dias juntos. */}
@@ -1291,6 +1317,8 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                       </>
                     )}
                   </div>
+                )}
+                  </>
                 )}
               </div>
             </div>

@@ -21,6 +21,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
 import { buscarSaldoBilheteria, calcularContribuicaoSaldo } from '@/lib/saldoBilheteria'
 import { getMpToken } from '@/lib/mpToken'
+import { resolveEventGateway } from '@/lib/resolveGateway'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 type MpPayerCost = {
@@ -83,6 +84,20 @@ export async function POST(req: NextRequest) {
     if (eventoGateway?.payment_gateway === 'pagbank')
       return NextResponse.json({ error: 'Use /api/checkout/pagbank-card para este evento' }, { status: 400 })
 
+    // Resolve o dono do evento e exige conta Mercado Pago conectada — nunca cai
+    // de volta pro token da própria Tipo7 (senão o dinheiro do comprador cairia
+    // na conta da plataforma sem cobrar taxa nenhuma do promotor). A publicação
+    // já exige conta conectada (api/eventos/[id]/publicar), mas esse checkout
+    // ainda protege contra revogação depois de publicado / eventos legados.
+    const { ownerId: donoEvento } = await resolveEventGateway(eventoId, admin)
+    const mpTokenPromotor = donoEvento ? await getMpToken(donoEvento, admin) : null
+    if (!mpTokenPromotor) {
+      return NextResponse.json(
+        { error: 'O promotor deste evento ainda não conectou uma conta Mercado Pago. Pagamento indisponível.' },
+        { status: 503 }
+      )
+    }
+
     const ticketIds = items.map(i => i.ticketId)
     const [{ data: tickets }, { data: evento }] = await Promise.all([
       admin.from('event_tickets').select('id, name, price, quantity').in('id', ticketIds).eq('event_id', eventoId),
@@ -132,30 +147,8 @@ export async function POST(req: NextRequest) {
 
     const orderId = resultado.order_id as string
 
-    // Busca token do promotor e calcula taxa da plataforma
-    const { data: eventInfo } = await admin
-      .from('events')
-      .select('organization_id, organizations(owner_id)')
-      .eq('id', eventoId)
-      .single()
-
-    const orgRaw  = eventInfo?.organizations as unknown
-    const orgData = (Array.isArray(orgRaw) ? orgRaw[0] : orgRaw) as { owner_id: string } | null
-    const ownerId = orgData?.owner_id
-
     // Busca a config de taxa da plataforma (Financeiro > Tarifas > Ingressos on-line)
     const config = await buscarConfigTaxaIngressosOnline(admin)
-
-    let mpToken           = process.env.MP_ACCESS_TOKEN!
-    let temContaConectada = false
-
-    if (ownerId) {
-      const tokenPromotor = await getMpToken(ownerId, admin)
-      if (tokenPromotor) {
-        mpToken           = tokenPromotor
-        temContaConectada = true
-      }
-    }
 
     // Busca valor total com juros no MP (comprador paga o spread do parcelamento)
     // Base = faceValue — a taxa da plataforma é cobrada à parte como application_fee
@@ -168,7 +161,7 @@ export async function POST(req: NextRequest) {
       if (bin)      url.searchParams.set('bin',        bin.slice(0, 6))
 
       const mpRes = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${mpToken}` },
+        headers: { Authorization: `Bearer ${mpTokenPromotor}` },
       })
       if (mpRes.ok) {
         const data = await mpRes.json() as MpInstallmentsResponse
@@ -180,25 +173,23 @@ export async function POST(req: NextRequest) {
     }
 
     // application_fee = taxa configurada em Financeiro > Tarifas > Ingressos on-line
-    let applicationFee: number | undefined = undefined
-    if (ownerId && temContaConectada) {
-      applicationFee = await calcularTaxaPlataforma({
-        eventoId,
-        ownerId,
-        total:       faceValue,
-        ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
-        config,
-        admin,
-      })
+    // (conta já garantida conectada pela guarda no início do handler)
+    let applicationFee = await calcularTaxaPlataforma({
+      eventoId,
+      ownerId:     donoEvento!,
+      total:       faceValue,
+      ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
+      config,
+      admin,
+    })
 
-      const saldo = await buscarSaldoBilheteria(admin, eventoId)
-      if (saldo?.ativo) {
-        applicationFee += calcularContribuicaoSaldo(faceValue, applicationFee, saldo.retencao_pct)
-      }
+    const saldo = await buscarSaldoBilheteria(admin, eventoId)
+    if (saldo?.ativo) {
+      applicationFee += calcularContribuicaoSaldo(faceValue, applicationFee, saldo.retencao_pct)
     }
 
     // Cria pagamento no Mercado Pago
-    const mpClient = new MercadoPagoConfig({ accessToken: mpToken })
+    const mpClient = new MercadoPagoConfig({ accessToken: mpTokenPromotor })
     const payment  = new Payment(mpClient)
 
     const result = await payment.create({

@@ -3,6 +3,7 @@
 // Necessária para inicializar o SDK do MP no client (tokenização do cartão).
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getMpPlatformCredentials } from '@/lib/platformCredentials'
 
 export async function GET(req: NextRequest) {
   const eventoId = req.nextUrl.searchParams.get('eventoId')
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
   const ownerId = orgData?.owner_id
 
   // Fallback: usa a chave pública da plataforma se o promotor não conectou sua conta
-  let publicKey = process.env.NEXT_PUBLIC_MP_PUBLIC_KEY ?? null
+  let publicKey = (await getMpPlatformCredentials(admin)).publicKey
 
   if (ownerId) {
     const { data: mpAccount } = await admin

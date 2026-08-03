@@ -42,12 +42,13 @@ interface IngressoResumo {
 }
 
 interface Props {
-  eventoId:    string
-  statusAtual: 'rascunho' | 'publicado' | 'cancelado'
-  mpConectado: boolean
-  resumo:      Resumo
-  dias:        DiaResumo[]
-  ingressos:   IngressoResumo[]
+  eventoId:         string
+  statusAtual:      'rascunho' | 'publicado' | 'cancelado'
+  gateway:          'mercadopago' | 'pagbank'
+  gatewayConectado: boolean
+  resumo:           Resumo
+  dias:             DiaResumo[]
+  ingressos:        IngressoResumo[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -100,7 +101,7 @@ function CheckItem({ ok, label, sub, href, eventoId }: {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dias, ingressos }: Props) {
+export function PublicarClient({ eventoId, statusAtual, gateway, gatewayConectado, resumo, dias, ingressos }: Props) {
   const router   = useRouter()
   const supabase = createClient()
 
@@ -119,10 +120,12 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
     data:      !!resumo.dateStart,
     local:     !!(resumo.cidade || resumo.nomeLocal),
     ingressos: ingressos.length > 0 && ingressos.every(t => t.name && t.quantity > 0),
-    mp:        mpConectado,
+    gateway:   gatewayConectado,
   }
   const podePubilcar  = Object.values(checks).every(Boolean)
   const semBanner     = !resumo.bannerUrl
+  const gatewayLabel  = gateway === 'pagbank' ? 'PagBank' : 'Mercado Pago'
+  const gatewayAuthUrl = `/api/${gateway === 'pagbank' ? 'pagbank' : 'mp'}/auth?return_to=/criar-evento/${eventoId}/publicar`
 
   // ── Publica o evento (sem mexer no estacionamento) ──
   // Passa pela API em vez de atualizar direto — o servidor revalida os
@@ -251,7 +254,7 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
           <CheckItem ok={checks.data}      eventoId={eventoId} label="Data de início"    sub={resumo.dateStart ? formatData(resumo.dateStart) : undefined} href={`/criar-evento/${eventoId}`} />
           <CheckItem ok={checks.local}     eventoId={eventoId} label="Local do evento"   sub={resumo.nomeLocal || resumo.cidade || undefined} href={`/criar-evento/${eventoId}`} />
           <CheckItem ok={checks.ingressos} eventoId={eventoId} label="Ingressos configurados" sub={ingressos.length > 0 ? `${ingressos.length} tipo${ingressos.length > 1 ? 's' : ''}` : undefined} href={`/criar-evento/${eventoId}/ingressos`} />
-          <CheckItem ok={checks.mp}        eventoId={eventoId} label="Conta Mercado Pago conectada" sub={mpConectado ? 'Pagamentos habilitados' : undefined} href={`/api/mp/auth?return_to=/criar-evento/${eventoId}/publicar`} />
+          <CheckItem ok={checks.gateway}   eventoId={eventoId} label={`Conta ${gatewayLabel} conectada`} sub={gatewayConectado ? 'Pagamentos habilitados' : undefined} href={gatewayAuthUrl} />
 
           {/* Aviso de banner — não bloqueia publicação, só alerta */}
           {semBanner && (
@@ -277,8 +280,8 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
         </div>
       </div>
 
-      {/* ── Banner MP não conectado ── */}
-      {!mpConectado && (
+      {/* ── Banner gateway não conectado ── */}
+      {!gatewayConectado && (
         <div className="rounded-2xl p-5 flex flex-col gap-4" style={{ background: '#0d0d0d', border: '1px solid #E8B84B30' }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
@@ -287,17 +290,17 @@ export function PublicarClient({ eventoId, statusAtual, mpConectado, resumo, dia
             </div>
             <div>
               <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Conecte sua conta Mercado Pago
+                Conecte sua conta {gatewayLabel}
               </p>
               <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 Necessário para receber os pagamentos dos ingressos vendidos.
               </p>
             </div>
           </div>
-          <a href={`/api/mp/auth?return_to=/criar-evento/${eventoId}/publicar`}
+          <a href={gatewayAuthUrl}
              className="w-full py-3 rounded-xl text-sm font-semibold text-center transition-all hover:brightness-110"
              style={{ background: '#E8B84B', color: '#070707', fontFamily: 'var(--font-dm-sans)' }}>
-            Conectar Mercado Pago
+            Conectar {gatewayLabel}
           </a>
         </div>
       )}

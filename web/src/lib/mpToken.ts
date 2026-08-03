@@ -2,6 +2,7 @@
 // Tokens expiram em ~6 meses — esta função renova automaticamente
 // quando faltam menos de 7 dias para o vencimento.
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getMpPlatformCredentials } from '@/lib/platformCredentials'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://tipo7.com'
 const RENOVAR_ANTES_DE_MS = 7 * 24 * 60 * 60 * 1000 // 7 dias em ms
@@ -23,12 +24,14 @@ async function renovarToken(
     throw new Error('Sem refresh_token — promotor precisa reconectar a conta MP')
   }
 
+  const { clientId, clientSecret } = await getMpPlatformCredentials(admin)
+
   const res = await fetch('https://api.mercadopago.com/oauth/token', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      client_id:     process.env.MP_CLIENT_ID,
-      client_secret: process.env.MP_CLIENT_SECRET,
+      client_id:     clientId,
+      client_secret: clientSecret,
       grant_type:    'refresh_token',
       refresh_token: account.mp_refresh_token,
       redirect_uri:  `${APP_URL}/api/mp/callback`,

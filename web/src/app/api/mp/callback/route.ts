@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
+import { getMpPlatformCredentials } from '@/lib/platformCredentials'
 
 const REDIRECT_URI  = 'https://tipo7.com/api/mp/callback'
 const BASE          = 'https://tipo7.com'
@@ -36,12 +37,15 @@ export async function GET(req: NextRequest) {
   const destino     = isInternal ? returnTo : '/configuracoes/contas'
 
   // Troca o code pelo access_token
+  const admin = createServiceClient()
+  const { clientId, clientSecret } = await getMpPlatformCredentials(admin)
+
   const tokenRes = await fetch('https://api.mercadopago.com/oauth/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      client_id:     process.env.MP_CLIENT_ID,
-      client_secret: process.env.MP_CLIENT_SECRET,
+      client_id:     clientId,
+      client_secret: clientSecret,
       code,
       grant_type:    'authorization_code',
       redirect_uri:  REDIRECT_URI,

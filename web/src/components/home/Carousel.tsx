@@ -124,14 +124,22 @@ export function Carousel() {
   const touchStartX             = useRef<number | null>(null)
 
   const { width } = useWindowSize()
-  const { city, state: estado } = useLocation()
+  const { city, state: estado, lat, lng } = useLocation()
   const config    = getCarouselConfig(width)
 
-  // Busca eventos sempre que o estado (região) detectado mudar
+  // Busca eventos sempre que a localização detectada mudar — prioriza
+  // lat/lng (distância real) e só cai pro estado quando não há coordenada
   useEffect(() => {
     setLoading(true)
-    const params = estado ? `?estado=${encodeURIComponent(estado)}` : ''
-    fetch(`/api/eventos/destaque${params}`)
+    const params = new URLSearchParams()
+    if (lat != null && lng != null) {
+      params.set('lat', String(lat))
+      params.set('lng', String(lng))
+    } else if (estado) {
+      params.set('estado', estado)
+    }
+    const qs = params.toString()
+    fetch(`/api/eventos/destaque${qs ? `?${qs}` : ''}`)
       .then(r => r.json())
       .then(data => {
         setEventos(data.eventos ?? [])
@@ -139,7 +147,7 @@ export function Carousel() {
         setFiltrado(data.filtrado ?? false)
       })
       .finally(() => setLoading(false))
-  }, [estado])
+  }, [estado, lat, lng])
 
   const contentItems = useMemo<ContentItem[]>(() => [
     ...eventos.map(e => ({ type: 'evento' as const, data: e })),
@@ -448,13 +456,13 @@ export function Carousel() {
                     style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }}
                   />
                   <button
-                    onClick={e => { e.stopPropagation(); prev() }}
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); prev() }}
                     className="absolute left-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-black/30 border border-white/15 text-white hover:bg-black/50 transition-all duration-200 backdrop-blur-sm"
                     aria-label="Banner anterior">
                     <ChevronLeft size={20} />
                   </button>
                   <button
-                    onClick={e => { e.stopPropagation(); next() }}
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); next() }}
                     className="absolute right-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-black/30 border border-white/15 text-white hover:bg-black/50 transition-all duration-200 backdrop-blur-sm"
                     aria-label="Próximo banner">
                     <ChevronRight size={20} />

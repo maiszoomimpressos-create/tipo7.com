@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, Loader2, Check, Lock, User, MapPin, Search, ArrowRight, ShoppingBag } from 'lucide-react'
+import { ArrowLeft, Loader2, Check, Lock, User, MapPin, Search, ArrowRight, ShoppingBag, CreditCard } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SecaoBloqueavel } from '@/components/SecaoBloqueavel'
 
@@ -41,6 +41,8 @@ interface Inicial {
   bairro: string; cidade: string; estado: string; complemento: string
   capacidade: string
   feeMode: 'promotor' | 'comprador' | 'mista'
+  paymentGateway: 'mercadopago' | 'pagbank'
+  lat: number | null; lng: number | null
 }
 
 interface LocalRecente {
@@ -63,6 +65,8 @@ interface Props {
   perfilCidade:    string | null
   perfilEstado:    string | null
   locaisRecentes:  LocalRecente[]
+  mpConectado:      boolean
+  pagbankConectado: boolean
 }
 
 const CATEGORIAS = [
@@ -146,7 +150,7 @@ function DateTimeInput24h({ value, onChange, className }: { value: string; onCha
   )
 }
 
-export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, permitirVendaNoCaixaPaiInicial, tipoPessoa, responsavel, inicial, perfilCidade, perfilEstado, locaisRecentes }: Props) {
+export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, permitirVendaNoCaixaPaiInicial, tipoPessoa, responsavel, inicial, perfilCidade, perfilEstado, locaisRecentes, mpConectado, pagbankConectado }: Props) {
   const router   = useRouter()
   const supabase = createClient()
 
@@ -190,6 +194,14 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null)
   const [selectedLat,    setSelectedLat]    = useState<number | null>(null)
   const [selectedLng,    setSelectedLng]    = useState<number | null>(null)
+  // Coordenada já salva no evento (não muda com a digitação do usuário) —
+  // último fallback no save, pra nunca apagar um lat/lng que já era válido
+  // só porque a geocodificação desta sessão não rodou ou falhou
+  const savedLat = inicial.lat
+  const savedLng = inicial.lng
+  // Coordenada geocodificada a partir do CEP nesta sessão (ver buscarCEP)
+  const [cepLat,  setCepLat]  = useState<number | null>(null)
+  const [cepLng,  setCepLng]  = useState<number | null>(null)
   // true quando venueId veio da busca interna (venue já existe) — nesse
   // caso o save nunca sobrescreve o venue de quem já é responsável por ele
   const [venueJaExistente, setVenueJaExistente] = useState(!!inicial.venueId)
@@ -242,6 +254,10 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
   const [complemento, setComplemento] = useState(inicial.complemento)
   const [capacidade,  setCapacidade]  = useState(inicial.capacidade)
   const [feeMode,     setFeeMode]     = useState<'promotor' | 'comprador' | 'mista'>(inicial.feeMode)
+  // PagBank ainda não tem checkout pronto no site (PIX/Cartão do comprador) —
+  // só Mercado Pago é selecionável por enquanto, mesmo que a conta PagBank
+  // já esteja conectada em Configurações > Contas
+  const [gateway,     setGateway]     = useState<'mercadopago' | 'pagbank'>(inicial.paymentGateway)
   const [permitirVendaNoCaixaPai, setPermitirVendaNoCaixaPai] = useState(permitirVendaNoCaixaPaiInicial ?? true)
   const [cepLoading,  setCepLoading]  = useState(false)
   const [cepError,    setCepError]    = useState<string | null>(null)
@@ -373,6 +389,27 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
     buscarSugestoes(v)
   }
 
+  // Geocodifica o endereço resolvido pelo CEP (Nominatim, mesmo serviço já
+  // usado no reverse-geocode de localização) — roda em paralelo ao
+  // preenchimento dos campos, sem bloquear o formulário. Se falhar ou não
+  // achar nada, simplesmente não seta cepLat/cepLng — o save cai pro
+  // fallback (coordenada de um local selecionado, ou a que já existia).
+  const geocodificarEndereco = async (rua: string, cidade: string, estadoUf: string) => {
+    const query = [rua, cidade, estadoUf, 'Brasil'].filter(Boolean).join(', ')
+    if (!cidade) return
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(query)}`,
+        { headers: { 'Accept-Language': 'pt-BR', 'User-Agent': 'Tipo7/1.0' } }
+      )
+      const data = await res.json()
+      if (data?.[0]) {
+        setCepLat(parseFloat(data[0].lat))
+        setCepLng(parseFloat(data[0].lon))
+      }
+    } catch { /* sem coordenada nova — save usa o fallback existente */ }
+  }
+
   const buscarCEP = async (valor: string) => {
     const digitos = valor.replace(/\D/g,'')
     if (digitos.length !== 8) return
@@ -383,6 +420,7 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
       if (d.erro) { setCepError('CEP não encontrado.'); return }
       setRua(d.logradouro ?? ''); setBairro(d.bairro ?? '')
       setCidade(d.localidade ?? ''); setEstado(d.uf ?? '')
+      geocodificarEndereco(d.logradouro ?? '', d.localidade ?? '', d.uf ?? '')
     } catch { setCepError('Erro ao buscar o CEP.') }
     finally { setCepLoading(false) }
   }
@@ -444,6 +482,13 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
         complement:    complemento           || null,
         capacity:      capacidade ? parseInt(capacidade, 10) : null,
         fee_mode:      feeMode,
+        payment_gateway: gateway,
+        // Prioridade: local selecionado na busca (Google Places/venue — mais
+        // preciso, é o ponto exato) > geocode do CEP digitado manualmente >
+        // coordenada que já estava salva — nunca apaga um lat/lng válido só
+        // porque nada mudou nesta sessão
+        lat: selectedLat ?? cepLat ?? savedLat,
+        lng: selectedLng ?? cepLng ?? savedLng,
         ...(isChild ? { permitir_venda_no_caixa_pai: permitirVendaNoCaixaPai } : {}),
       }).eq('id', eventoId)
 
@@ -1019,6 +1064,83 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
               </div>
             </button>
           ))}
+        </div>
+      </div>
+      </SecaoBloqueavel>
+
+      {/* ── SEÇÃO: Forma de recebimento — qual gateway processa os pagamentos
+           deste evento. PagBank aparece travado até o checkout dele (PIX +
+           Cartão) estar pronto no site — selecionar agora quebraria a venda
+           pro comprador. ── */}
+      <SecaoBloqueavel ativo={!!(cidade.trim() || nomeLocal.trim())} mensagem="Preencha a cidade ou o nome do local primeiro">
+      <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#141414]">
+          <div className="flex items-center gap-2">
+            <CreditCard size={14} className="text-[#E8B84B]" />
+            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Forma de recebimento</p>
+          </div>
+          <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Qual conta processa os pagamentos dos ingressos deste evento
+          </p>
+        </div>
+        <div className="p-6 flex flex-col gap-3">
+
+          {/* Mercado Pago — único disponível por enquanto */}
+          <button
+            type="button"
+            onClick={() => setGateway('mercadopago')}
+            className="flex items-start gap-4 p-4 rounded-xl border text-left transition-all"
+            style={{
+              background: gateway === 'mercadopago' ? '#E8B84B10' : '#111',
+              border:     `1px solid ${gateway === 'mercadopago' ? '#E8B84B40' : '#222'}`,
+            }}
+          >
+            <div
+              className="w-4 h-4 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center"
+              style={{ borderColor: gateway === 'mercadopago' ? '#E8B84B' : '#333' }}
+            >
+              {gateway === 'mercadopago' && <div className="w-2 h-2 rounded-full" style={{ background: '#E8B84B' }} />}
+            </div>
+            <div className="flex-1">
+              <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Mercado Pago
+              </p>
+              <p className="text-[#555] text-xs mt-0.5 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                PIX e cartão de crédito para o comprador.
+              </p>
+              {!mpConectado && (
+                <p className="text-amber-400 text-xs mt-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Conta ainda não conectada —{' '}
+                  <a href="/configuracoes/contas" className="underline underline-offset-2">conectar agora</a>
+                </p>
+              )}
+            </div>
+          </button>
+
+          {/* PagBank — travado até o checkout dele estar pronto no site */}
+          <div
+            className="flex items-start gap-4 p-4 rounded-xl border text-left opacity-50 cursor-not-allowed"
+            style={{ background: '#111', border: '1px solid #222' }}
+            title="Em breve — o checkout do PagBank ainda não está disponível pro comprador"
+          >
+            <div className="w-4 h-4 rounded-full border-2 shrink-0 mt-0.5 border-[#333]" />
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  PagBank
+                </p>
+                <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full text-[#888] border border-[#222]"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  <Lock size={9} /> Em breve
+                </span>
+              </div>
+              <p className="text-[#555] text-xs mt-0.5 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                {pagbankConectado
+                  ? 'Conta conectada — checkout pro comprador ainda está sendo finalizado.'
+                  : 'PIX e cartão de crédito para o comprador (em finalização).'}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
       </SecaoBloqueavel>

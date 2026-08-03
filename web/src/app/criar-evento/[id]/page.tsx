@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import { Header }     from '@/components/layout/Header'
 import { EventoForm } from './EventoForm'
@@ -19,7 +19,7 @@ export default async function EditarEventoPage({ params }: Props) {
 
   const { data: evento } = await supabase
     .from('events')
-    .select('id, title, description, category, date_start, date_end, venue_name, venue_id, zip_code, street, street_number, neighborhood, city, state, complement, capacity, status, banner_url, fee_mode, parent_event_id, modulo_tenda, modulo_estacionamento, permitir_venda_no_caixa_pai, organization_id, organizations(cnpj)')
+    .select('id, title, description, category, date_start, date_end, venue_name, venue_id, zip_code, street, street_number, neighborhood, city, state, complement, capacity, status, banner_url, fee_mode, payment_gateway, parent_event_id, modulo_tenda, modulo_estacionamento, permitir_venda_no_caixa_pai, organization_id, lat, lng, organizations(cnpj, owner_id)')
     .eq('id', id)
     .single()
 
@@ -30,11 +30,24 @@ export default async function EditarEventoPage({ params }: Props) {
   // mais uma pergunta/flag separada do usuário (ver PromotorForm em /perfil)
   const orgData = Array.isArray(evento.organizations)
     ? evento.organizations[0]
-    : evento.organizations as { cnpj: string | null } | null
+    : evento.organizations as { cnpj: string | null; owner_id: string | null } | null
   const tipoPessoa: 'pf' | 'pj' = orgData?.cnpj ? 'pj' : 'pf'
+  const orgOwnerId = orgData?.owner_id ?? null
 
   const { data: profile } = await supabase
     .from('profiles').select('full_name, cpf, phone, city, state').eq('id', user.id).single()
+
+  // Contas de pagamento conectadas pelo dono da organização — decide quais
+  // gateways o promotor pode escolher pro evento (PagBank fica travado até
+  // o checkout dele estar pronto no frontend, mesmo que a conta já esteja
+  // conectada em Configurações > Contas)
+  const admin = createServiceClient()
+  const [{ data: contaMp }, { data: contaPagBank }] = orgOwnerId
+    ? await Promise.all([
+        admin.from('promotor_mp_accounts').select('id').eq('user_id', orgOwnerId).maybeSingle(),
+        admin.from('promotor_pagbank_accounts').select('id').eq('user_id', orgOwnerId).maybeSingle(),
+      ])
+    : [{ data: null }, { data: null }]
 
   // Locais que o usuário já usou em outros eventos — sugestão imediata ao
   // começar a preencher o local, sem precisar digitar nada
@@ -150,6 +163,8 @@ export default async function EditarEventoPage({ params }: Props) {
           perfilCidade={profile?.city  ?? null}
           perfilEstado={profile?.state ?? null}
           locaisRecentes={locaisRecentes}
+          mpConectado={!!contaMp}
+          pagbankConectado={!!contaPagBank}
           responsavel={tipoPessoa === 'pf' ? {
             nome:     profile?.full_name ?? '',
             cpf:      profile?.cpf       ?? '',
@@ -173,6 +188,9 @@ export default async function EditarEventoPage({ params }: Props) {
             complemento:   evento.complement     ?? '',
             capacidade:    (evento as unknown as { capacity: number | null }).capacity?.toString() ?? '',
             feeMode:       ((evento as unknown as { fee_mode: string | null }).fee_mode ?? 'promotor') as 'promotor' | 'comprador' | 'mista',
+            paymentGateway: ((evento as unknown as { payment_gateway: string | null }).payment_gateway ?? 'mercadopago') as 'mercadopago' | 'pagbank',
+            lat:           (evento as unknown as { lat: number | null }).lat ?? null,
+            lng:           (evento as unknown as { lng: number | null }).lng ?? null,
           }}
         />
 

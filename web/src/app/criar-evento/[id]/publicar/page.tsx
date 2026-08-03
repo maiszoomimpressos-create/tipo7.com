@@ -23,7 +23,7 @@ export default async function PublicarPage({ params }: Props) {
       venue_name, city, state, street,
       ticket_mode, package_discount_pct,
       banner_url,
-      organization_id,
+      organization_id, payment_gateway,
       organizations(owner_id)
     `)
     .eq('id', id)
@@ -34,15 +34,19 @@ export default async function PublicarPage({ params }: Props) {
 
   // Conta de pagamento é sempre a do dono da organização — quem publica pode
   // ser um co-admin, mas o dinheiro sempre cai na conta que o dono conectou.
+  // O gateway exigido é o escolhido pelo evento — checar sempre Mercado Pago
+  // aqui fazia o checklist mostrar "faltando" mesmo com PagBank já conectado
+  // (e vice-versa), incoerente com o que /api/eventos/[id]/publicar valida.
   const orgOwner = Array.isArray(evento.organizations)
     ? evento.organizations[0]
     : evento.organizations as { owner_id: string } | null
-  const { data: mpAccount } = await supabase
-    .from('promotor_mp_accounts')
+  const gateway = evento.payment_gateway === 'pagbank' ? 'pagbank' : 'mercadopago'
+  const { data: contaGateway } = await supabase
+    .from(gateway === 'pagbank' ? 'promotor_pagbank_accounts' : 'promotor_mp_accounts')
     .select('id')
     .eq('user_id', orgOwner?.owner_id ?? '')
     .maybeSingle()
-  const mpConectado = !!mpAccount
+  const gatewayConectado = !!contaGateway
 
   // Busca dias e ingressos para o resumo
   const { data: dias } = await supabase
@@ -112,7 +116,8 @@ export default async function PublicarPage({ params }: Props) {
         <PublicarClient
           eventoId={id}
           statusAtual={evento.status as 'rascunho' | 'publicado' | 'cancelado'}
-          mpConectado={mpConectado}
+          gateway={gateway}
+          gatewayConectado={gatewayConectado}
           resumo={{
             titulo:      evento.title       ?? '',
             descricao:   evento.description ?? '',

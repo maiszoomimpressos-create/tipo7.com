@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { randomBytes } from 'crypto'
+import { getMpPlatformCredentials } from '@/lib/platformCredentials'
 
 const REDIRECT_URI = 'https://tipo7.com/api/mp/callback'
 
@@ -33,8 +34,11 @@ export async function GET(req: NextRequest) {
     path: '/',
   })
 
+  const admin = createServiceClient()
+  const { clientId } = await getMpPlatformCredentials(admin)
+
   const url = new URL('https://auth.mercadopago.com.br/authorization')
-  url.searchParams.set('client_id',     process.env.MP_CLIENT_ID!)
+  url.searchParams.set('client_id',     clientId ?? '')
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('platform_id',   'mp')
   url.searchParams.set('redirect_uri',  REDIRECT_URI)

@@ -1,6 +1,7 @@
 import { NextResponse }                from 'next/server'
-import { createClient }               from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAdminMember, can }        from '@/lib/adminAuth'
+import { getMpPlatformCredentials }   from '@/lib/platformCredentials'
 
 // Taxas padrão públicas do MP Brasil (fallback quando API não retorna)
 const DEFAULT_RATES = {
@@ -21,7 +22,8 @@ export async function GET() {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
-  const token = process.env.MP_ACCESS_TOKEN
+  const admin = createServiceClient()
+  const token = (await getMpPlatformCredentials(admin)).accessToken
   if (!token) {
     return NextResponse.json({ rates: DEFAULT_RATES, source: 'default' })
   }

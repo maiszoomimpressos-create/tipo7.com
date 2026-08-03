@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { redirect }            from 'next/navigation'
 import { createClient }        from '@/lib/supabase/server'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
+import { MP_CRED_KEYS }        from '@/lib/platformCredentials'
 import { BancosClient }        from './BancosClient'
 
 const FEE_KEYS = [
@@ -24,13 +25,21 @@ export default async function BancosPage() {
 
   const admin = createServiceClient()
 
-  const [{ data: settings }, { data: platformFee }] = await Promise.all([
+  const [{ data: settings }, { data: platformFee }, { data: mpCred }, { data: logos }] = await Promise.all([
     admin.from('platform_settings').select('key, value').in('key', FEE_KEYS),
     admin.from('platform_settings').select('value').eq('key', 'default_fee_pct').single(),
+    admin.from('platform_settings').select('key, value').in('key', MP_CRED_KEYS),
+    admin.from('platform_settings').select('key, value').in('key', ['gateway_logo_mercadopago', 'gateway_logo_pagbank']),
   ])
 
   const s: Record<string, string> = {}
   for (const row of settings ?? []) s[row.key] = row.value
+
+  const c: Record<string, string> = {}
+  for (const row of mpCred ?? []) c[row.key] = row.value
+
+  const l: Record<string, string> = {}
+  for (const row of logos ?? []) l[row.key] = row.value
 
   return (
     <div className="p-8 max-w-2xl">
@@ -52,6 +61,15 @@ export default async function BancosPage() {
         pctCredito6x={s['fee_pct_credito_6x']   ?? '5,98'}
         pctCredito12x={s['fee_pct_credito_12x'] ?? '6,98'}
         notaExtra={s['fee_nota_extra']           ?? ''}
+        mpCredenciais={{
+          accessToken:   c['mp_access_token']   ?? '',
+          publicKey:     c['mp_public_key']      ?? '',
+          clientId:      c['mp_client_id']       ?? '',
+          clientSecret:  c['mp_client_secret']   ?? '',
+          webhookSecret: c['mp_webhook_secret']  ?? '',
+        }}
+        logoMercadoPago={l['gateway_logo_mercadopago'] ?? null}
+        logoPagbank={l['gateway_logo_pagbank']          ?? null}
       />
     </div>
   )

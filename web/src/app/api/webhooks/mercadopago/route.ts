@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getMpToken } from '@/lib/mpToken'
 import { issueTickets } from '@/lib/issueTickets'
 import { processarSaldoAposAprovacao } from '@/lib/saldoBilheteria'
+import { getMpPlatformCredentials } from '@/lib/platformCredentials'
 import { createHmac } from 'crypto'
 
 const STATUS_MAP: Record<string, string> = {
@@ -14,8 +16,8 @@ const STATUS_MAP: Record<string, string> = {
   cancelled:  'cancelled',
 }
 
-function verificarAssinatura(req: NextRequest, dataId: string): boolean {
-  const secret = process.env.MP_WEBHOOK_SECRET
+async function verificarAssinatura(req: NextRequest, dataId: string, admin: SupabaseClient): Promise<boolean> {
+  const { webhookSecret: secret } = await getMpPlatformCredentials(admin)
   if (!secret) {
     // Sem secret configurado: aceita mas avisa — nunca deve acontecer em produção
     console.warn('[webhook] MP_WEBHOOK_SECRET não configurado — verificação de assinatura ignorada')
@@ -47,17 +49,17 @@ export async function POST(req: NextRequest) {
   const paymentId = body.data?.id
   if (!paymentId) return NextResponse.json({ ok: true })
 
-  if (!verificarAssinatura(req, String(paymentId))) {
+  const admin = createServiceClient()
+
+  if (!(await verificarAssinatura(req, String(paymentId), admin))) {
     console.warn('[webhook] assinatura inválida — requisição rejeitada')
     return NextResponse.json({ error: 'Assinatura inválida' }, { status: 401 })
   }
 
-  const admin = createServiceClient()
-
   // Descobre o token correto para buscar o pagamento.
   // Pagamentos de bilheteria são criados com o token OAuth do dono do evento,
   // não com o token da plataforma — usar token errado retorna 403 no MP.
-  let mpAccessToken = process.env.MP_ACCESS_TOKEN!
+  let mpAccessToken = (await getMpPlatformCredentials(admin)).accessToken
 
   const { data: orderRow } = await admin
     .from('orders')

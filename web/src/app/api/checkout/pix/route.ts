@@ -21,6 +21,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
 import { buscarSaldoBilheteria, calcularContribuicaoSaldo } from '@/lib/saldoBilheteria'
 import { getMpToken } from '@/lib/mpToken'
+import { resolveEventGateway } from '@/lib/resolveGateway'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 export async function POST(req: NextRequest) {
@@ -60,6 +61,20 @@ export async function POST(req: NextRequest) {
     // Guarda de gateway: redireciona para o endpoint correto se o evento usar PagBank
     if (eventoFlag?.payment_gateway === 'pagbank')
       return NextResponse.json({ error: 'Use /api/checkout/pagbank-pix para este evento' }, { status: 400 })
+
+    // Resolve o dono do evento e exige conta Mercado Pago conectada — nunca cai
+    // de volta pro token da própria Tipo7 (senão o dinheiro do comprador cairia
+    // na conta da plataforma sem cobrar taxa nenhuma do promotor). A publicação
+    // já exige conta conectada (api/eventos/[id]/publicar), mas esse checkout
+    // ainda protege contra revogação depois de publicado / eventos legados.
+    const { ownerId: donoEvento } = await resolveEventGateway(eventoId, admin)
+    const mpTokenPromotor = donoEvento ? await getMpToken(donoEvento, admin) : null
+    if (!mpTokenPromotor) {
+      return NextResponse.json(
+        { error: 'O promotor deste evento ainda não conectou uma conta Mercado Pago. Pagamento indisponível.' },
+        { status: 503 }
+      )
+    }
 
     // Busca ingressos e dados do evento em paralelo para validar preços
     const ticketIds = items.map(i => i.ticketId)
@@ -119,46 +134,27 @@ export async function POST(req: NextRequest) {
     // Busca a config de taxa da plataforma (Financeiro > Tarifas > Ingressos on-line)
     const config = await buscarConfigTaxaIngressosOnline(admin)
 
-    // Busca conta MP do promotor do evento (split de pagamento)
-    const { data: eventOwnerInfo } = await admin
-      .from('events')
-      .select('organization_id, organizations(owner_id)')
-      .eq('id', eventoId)
-      .single()
-
-    const orgRaw2  = eventOwnerInfo?.organizations as unknown
-    const orgData2 = (Array.isArray(orgRaw2) ? orgRaw2[0] : orgRaw2) as { owner_id: string } | null
-    const ownerId2 = orgData2?.owner_id
-
-    let mpToken2:       string            = process.env.MP_ACCESS_TOKEN!
-    let applicationFee: number | undefined = undefined
     // PIX: comprador sempre paga o valor de face (sem juros de parcelamento)
     const transactionAmount = faceValue
 
-    if (ownerId2) {
-      const tokenPromotor2 = await getMpToken(ownerId2, admin)
+    // application_fee = taxa configurada em Financeiro > Tarifas > Ingressos on-line
+    // (conta já garantida conectada pela guarda no início do handler)
+    let applicationFee = await calcularTaxaPlataforma({
+      eventoId,
+      ownerId:     donoEvento!,
+      total:       faceValue,
+      ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
+      config,
+      admin,
+    })
 
-      if (tokenPromotor2) {
-        mpToken2 = tokenPromotor2
-        // application_fee = taxa configurada em Financeiro > Tarifas > Ingressos on-line
-        applicationFee = await calcularTaxaPlataforma({
-          eventoId,
-          ownerId:     ownerId2,
-          total:       faceValue,
-          ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
-          config,
-          admin,
-        })
-
-        const saldo = await buscarSaldoBilheteria(admin, eventoId)
-        if (saldo?.ativo) {
-          applicationFee += calcularContribuicaoSaldo(faceValue, applicationFee, saldo.retencao_pct)
-        }
-      }
+    const saldo = await buscarSaldoBilheteria(admin, eventoId)
+    if (saldo?.ativo) {
+      applicationFee += calcularContribuicaoSaldo(faceValue, applicationFee, saldo.retencao_pct)
     }
 
     // Chama a API de Pagamentos do Mercado Pago para gerar o QR PIX
-    const mpClient = new MercadoPagoConfig({ accessToken: mpToken2 })
+    const mpClient = new MercadoPagoConfig({ accessToken: mpTokenPromotor })
     const payment  = new Payment(mpClient)
 
     const fullName  = profile?.full_name ?? user.user_metadata?.full_name ?? ''

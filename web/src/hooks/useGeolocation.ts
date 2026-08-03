@@ -7,10 +7,14 @@ import { useState, useEffect, useCallback } from 'react'
 
 const STORAGE_KEY        = 'tipo7_cidade'
 const STORAGE_KEY_ESTADO = 'tipo7_estado'
+const STORAGE_KEY_LAT    = 'tipo7_lat'
+const STORAGE_KEY_LNG    = 'tipo7_lng'
 
 export interface GeolocationState {
   city:            string | null // nome da cidade detectada ou escolhida
   state:           string | null // sigla do estado (UF) detectado, ex: "PR"
+  lat:             number | null // coordenada bruta do GPS — usada pro carrossel calcular distância real
+  lng:             number | null
   loading:         boolean       // buscando localização
   denied:          boolean       // usuário negou a permissão
   askedPermission: boolean       // já perguntamos ao usuário
@@ -68,17 +72,28 @@ export function useGeolocation() {
   const [geo, setGeo] = useState<GeolocationState>({
     city:            null,
     state:           null,
+    lat:             null,
+    lng:             null,
     loading:         false,
     denied:          false,
     askedPermission: false,
   })
 
-  // Ao montar, verifica se já temos cidade/estado salvos no localStorage
+  // Ao montar, verifica se já temos cidade/estado/coordenada salvos no localStorage
   useEffect(() => {
     const savedCity  = localStorage.getItem(STORAGE_KEY)
     const savedState = localStorage.getItem(STORAGE_KEY_ESTADO)
+    const savedLat   = localStorage.getItem(STORAGE_KEY_LAT)
+    const savedLng   = localStorage.getItem(STORAGE_KEY_LNG)
     if (savedCity || savedState) {
-      setGeo(s => ({ ...s, city: savedCity, state: savedState, askedPermission: true }))
+      setGeo(s => ({
+        ...s,
+        city:            savedCity,
+        state:           savedState,
+        lat:             savedLat ? parseFloat(savedLat) : null,
+        lng:             savedLng ? parseFloat(savedLng) : null,
+        askedPermission: true,
+      }))
     }
   }, [])
 
@@ -91,37 +106,43 @@ export function useGeolocation() {
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        const { city, state } = await reverseGeocode(
-          position.coords.latitude,
-          position.coords.longitude
-        )
+        const { latitude: lat, longitude: lng } = position.coords
+        const { city, state } = await reverseGeocode(lat, lng)
         if (city) {
           localStorage.setItem(STORAGE_KEY, city)
           if (state) localStorage.setItem(STORAGE_KEY_ESTADO, state)
-          setGeo({ city, state, loading: false, denied: false, askedPermission: true })
+          localStorage.setItem(STORAGE_KEY_LAT, String(lat))
+          localStorage.setItem(STORAGE_KEY_LNG, String(lng))
+          setGeo({ city, state, lat, lng, loading: false, denied: false, askedPermission: true })
         } else {
           setGeo(s => ({ ...s, loading: false }))
         }
       },
       () => {
         // Usuário negou ou erro de timeout
-        setGeo({ city: null, state: null, loading: false, denied: true, askedPermission: true })
+        setGeo({ city: null, state: null, lat: null, lng: null, loading: false, denied: true, askedPermission: true })
       },
       { timeout: 10000, enableHighAccuracy: false }
     )
   }, [geo.loading])
 
-  // Permite que o usuário defina a cidade manualmente
+  // Permite que o usuário defina a cidade manualmente — sem GPS, não tem
+  // coordenada confiável pra distância, então lat/lng ficam de fora (o
+  // carrossel cai pro filtro por estado nesse caso)
   const setCity = useCallback((city: string) => {
     localStorage.setItem(STORAGE_KEY, city)
-    setGeo(s => ({ ...s, city, loading: false, denied: false, askedPermission: true }))
+    localStorage.removeItem(STORAGE_KEY_LAT)
+    localStorage.removeItem(STORAGE_KEY_LNG)
+    setGeo(s => ({ ...s, city, lat: null, lng: null, loading: false, denied: false, askedPermission: true }))
   }, [])
 
-  // Limpa a cidade/estado salvos (botão "mudar cidade")
+  // Limpa a cidade/estado/coordenada salvos (botão "mudar cidade")
   const clearCity = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY)
     localStorage.removeItem(STORAGE_KEY_ESTADO)
-    setGeo({ city: null, state: null, loading: false, denied: false, askedPermission: false })
+    localStorage.removeItem(STORAGE_KEY_LAT)
+    localStorage.removeItem(STORAGE_KEY_LNG)
+    setGeo({ city: null, state: null, lat: null, lng: null, loading: false, denied: false, askedPermission: false })
   }, [])
 
   return { ...geo, requestLocation, setCity, clearCity }

@@ -4,6 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { calcularTaxaPlataforma, buscarConfigTaxaIngressosOnline } from '@/lib/feeRules'
 import { buscarSaldoBilheteria, calcularContribuicaoSaldo } from '@/lib/saldoBilheteria'
 import { getMpToken } from '@/lib/mpToken'
+import { getMpPlatformCredentials } from '@/lib/platformCredentials'
 import { rateLimit, getIp, tooManyRequests } from '@/lib/rateLimit'
 
 export async function POST(req: NextRequest) {
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest) {
     const orgData = (Array.isArray(orgRaw) ? orgRaw[0] : orgRaw) as { owner_id: string } | null
     const ownerId = orgData?.owner_id
 
-    let mpToken:       string           = process.env.MP_ACCESS_TOKEN!
+    let mpToken:       string           = (await getMpPlatformCredentials(admin)).accessToken
     let marketplaceFee: number | undefined = undefined
 
     if (ownerId) {
