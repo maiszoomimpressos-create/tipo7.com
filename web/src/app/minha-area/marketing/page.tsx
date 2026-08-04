@@ -1,4 +1,5 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
@@ -8,8 +9,7 @@ import { Megaphone, ExternalLink, QrCode, Share2, Copy, Link as LinkIcon } from 
 const ACCENT = '#E8B84B'
 
 export default async function MarketingPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/minha-area/marketing')
 
   const admin = createServiceClient()

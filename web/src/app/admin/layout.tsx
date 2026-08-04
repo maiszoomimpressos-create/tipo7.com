@@ -1,11 +1,10 @@
-import { createClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect } from 'next/navigation'
 import { getAdminMember } from '@/lib/adminAuth'
 import { AdminSidebar } from './AdminSidebar'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/admin')
 
   const member = await getAdminMember(user.id)

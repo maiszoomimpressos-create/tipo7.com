@@ -1,16 +1,19 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
+import { areaRestritaDesbloqueada } from '@/lib/areaRestrita'
 import { redirect } from 'next/navigation'
 import { Webhook } from 'lucide-react'
 import { IntegracoesAccordion } from './IntegracoesAccordion'
+import { AreaRestritaWatcher } from '@/app/admin/area-restrita/AreaRestritaWatcher'
 
 export default async function ApiPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth')
 
   const me = await getAdminMember(user.id)
   if (!me || !temAcessoRestrito(me)) redirect('/admin')
+  if (!(await areaRestritaDesbloqueada(user.id))) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/api')}`)
 
   const admin = createServiceClient()
   const [{ data: integracoes }, { data: rotas }] = await Promise.all([
@@ -25,6 +28,7 @@ export default async function ApiPage() {
 
   return (
     <div className="p-8 max-w-4xl">
+      <AreaRestritaWatcher currentPath="/admin/api" />
       <div className="mb-8">
         <h1 className="text-2xl text-white font-semibold flex items-center gap-2.5" style={{ fontFamily: 'var(--font-outfit)' }}>
           <Webhook size={22} className="text-[#E8B84B]" />

@@ -1,4 +1,5 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect, notFound } from 'next/navigation'
 import { Header }     from '@/components/layout/Header'
 import { EventoForm } from './EventoForm'
@@ -14,7 +15,7 @@ export default async function EditarEventoPage({ params }: Props) {
   const { id }   = await params
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/criar-evento')
 
   const { data: evento } = await supabase

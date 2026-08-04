@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { getSession, initSession } from '@/lib/auth/session'
 import { Loader2, CheckCircle, AlertCircle, CalendarPlus, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -164,10 +165,11 @@ export function CompletarCadastroForm({ profile, faltando, todos }: Props) {
       if (precisa('state')         && state.trim())                    update.state         = state.trim().toUpperCase().slice(0,2)
       if (precisa('address_type')  && addressType)                     update.address_type  = addressType
 
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Não autenticado')
+      await initSession()
+      const session = getSession()
+      if (!session) throw new Error('Não autenticado')
 
-      const { error } = await supabase.from('profiles').update(update).eq('id', user.id)
+      const { error } = await supabase.from('profiles').update(update).eq('id', session.user.id)
       if (error) throw error
 
       // Recarrega a Server Component — se tudo estiver ok, abre o fluxo de evento

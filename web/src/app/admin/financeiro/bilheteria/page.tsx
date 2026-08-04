@@ -1,16 +1,19 @@
 import { redirect }              from 'next/navigation'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
+import { areaRestritaDesbloqueada } from '@/lib/areaRestrita'
 import { TarifaModuloClient }    from '@/components/admin/TarifaModuloClient'
 import { SaldoBilheteriaAdmin }  from '@/components/admin/SaldoBilheteriaAdmin'
+import { AreaRestritaWatcher }   from '@/app/admin/area-restrita/AreaRestritaWatcher'
 
 export default async function BilheteriaFinanceiroPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/admin/financeiro/bilheteria')
 
   const member = await getAdminMember(user.id)
   if (!member || !temAcessoRestrito(member)) redirect('/admin')
+  if (!(await areaRestritaDesbloqueada(user.id))) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/financeiro/bilheteria')}`)
 
   const admin = createServiceClient()
   const { data: settings } = await admin.from('platform_settings').select('key, value')
@@ -20,6 +23,7 @@ export default async function BilheteriaFinanceiroPage() {
 
   return (
     <div className="p-8 max-w-2xl">
+      <AreaRestritaWatcher currentPath="/admin/financeiro/bilheteria" />
       <div className="mb-8">
         <h1 className="text-2xl text-white font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
           Bilheteria

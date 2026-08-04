@@ -1,11 +1,11 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser }                       from '@/lib/auth/server'
 import { getAdminMember }                   from '@/lib/adminAuth'
 import { redirect }                          from 'next/navigation'
 import { AtributosClient }                   from './AtributosClient'
 
 export default async function AtributosPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth')
 
   // Apenas super_admin pode acessar esta página (mesma regra da página Conteúdo)

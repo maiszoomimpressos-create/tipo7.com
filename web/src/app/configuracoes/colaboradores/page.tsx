@@ -4,6 +4,7 @@
 // aqui — convidar/gerenciar continua na tela de Equipe de cada evento; a
 // própria pessoa convidada aceita/recusa em /trabalhos.
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser }    from '@/lib/auth/server'
 import { redirect }       from 'next/navigation'
 import { Header }         from '@/components/layout/Header'
 import { PromoterLayout } from '@/components/layout/PromoterLayout'
@@ -11,7 +12,7 @@ import { ColaboradoresClient, type ColaboradorRow } from './ColaboradoresClient'
 
 export default async function ColaboradoresPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/configuracoes/colaboradores')
 
   // Organizações que o usuário administra ativamente

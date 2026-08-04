@@ -1,4 +1,5 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser }                       from '@/lib/auth/server'
 import { redirect }                          from 'next/navigation'
 import { ShieldX }                           from 'lucide-react'
 import { Header }                            from '@/components/layout/Header'
@@ -12,8 +13,7 @@ interface Props {
 export default async function TrabalhoPage({ params }: Props) {
   const { eventoId } = await params
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect(`/auth?next=/trabalho/${eventoId}`)
 
   const admin = createServiceClient()

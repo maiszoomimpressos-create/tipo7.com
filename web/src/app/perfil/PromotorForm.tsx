@@ -8,7 +8,6 @@
 // não pergunta PF ou PJ, o tamanho já diz.
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import {
   Loader2, CheckCircle, AlertCircle, Building2, Plus,
@@ -433,7 +432,6 @@ function OrganizacaoCard({
   onToggle:     () => void
   onSalvo:      () => void | Promise<void>
 }) {
-  const supabase = createClient()
   const isNova = !org
 
   const [form, setForm] = useState<FormState>(org ? estadoDeOrg(org) : estadoVazio(nomeUsuario ?? ''))
@@ -485,14 +483,12 @@ function OrganizacaoCard({
         if (!logoFile) return
         setUploadingLogo(true)
         try {
-          const ext  = logoFile.name.split('.').pop() ?? 'jpg'
-          const path = `${orgId}/logo.${ext}`
-          const { error: upErr } = await supabase.storage
-            .from('organization-logos')
-            .upload(path, logoFile, { upsert: true, contentType: logoFile.type })
-          if (upErr) throw upErr
-          const { data } = supabase.storage.from('organization-logos').getPublicUrl(path)
-          logoUrl = `${data.publicUrl}?t=${Date.now()}`
+          const formData = new FormData()
+          formData.append('file', logoFile)
+          const res = await apiFetchAuth(`/api/uploads/organization-logo/${orgId}`, { method: 'POST', body: formData })
+          if (!res.ok) throw new Error('upload failed')
+          const { url } = await res.json()
+          logoUrl = `${url}?t=${Date.now()}`
         } finally {
           setUploadingLogo(false)
         }

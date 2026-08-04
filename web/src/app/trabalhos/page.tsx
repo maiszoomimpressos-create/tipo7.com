@@ -1,12 +1,11 @@
-import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { TrabalhosClient } from './TrabalhosClient'
 
 export default async function TrabalhosPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/trabalhos')
 
   const admin = createServiceClient()

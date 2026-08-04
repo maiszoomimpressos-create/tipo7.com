@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect, notFound } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { CheckCircle2, ExternalLink, CalendarPlus } from 'lucide-react'
@@ -12,7 +13,7 @@ export default async function PublicadoPage({ params }: Props) {
   const { id }   = await params
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth')
 
   const { data: evento } = await supabase

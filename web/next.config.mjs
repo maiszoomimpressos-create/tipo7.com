@@ -108,6 +108,20 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/eventos/:id/criar-filho',
   '/api/carrossel/upload',
   '/api/carrossel/:slideId',
+  '/api/auth/register',
+  '/api/auth/login',
+  '/api/auth/refresh',
+  '/api/auth/logout',
+  '/api/auth/session',
+  '/api/auth/verify-password',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+  '/api/auth/google',
+  '/api/auth/google/callback',
+  '/api/auth/google/onetap',
+  '/api/uploads/avatar',
+  '/api/uploads/event-image/:eventoId',
+  '/api/uploads/organization-logo/:orgId',
 ]
 
 const nextConfig = {

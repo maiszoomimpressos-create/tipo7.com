@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AreaRestritaModule } from '../area-restrita/area-restrita.module';
+import { AuthCoreModule } from '../auth-core/auth-core.module';
 import { PlatformAdminModule } from '../platform-admin/platform-admin.module';
 import { AdminAreaRestritaController } from './admin-area-restrita.controller';
 import { AdminBannersController } from './admin-banners.controller';
@@ -14,7 +15,7 @@ import { AdminTeamController } from './admin-team.controller';
 import { AdminService } from './admin.service';
 
 @Module({
-  imports: [PlatformAdminModule, AreaRestritaModule],
+  imports: [PlatformAdminModule, AreaRestritaModule, AuthCoreModule],
   controllers: [
     AdminContentController,
     AdminTeamController,

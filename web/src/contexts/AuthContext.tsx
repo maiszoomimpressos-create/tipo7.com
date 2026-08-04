@@ -1,10 +1,18 @@
 'use client'
 
-// Contexto de autenticação — compartilha o usuário logado com toda a aplicação
-// Conecta com o Supabase Auth para login, cadastro, logout e sessão
+// Contexto de autenticação — compartilha o usuário logado com toda a aplicação.
+// Fase 6: AuthModule próprio no NestJS (server/src/auth-core/), substitui o
+// Supabase Auth por completo. A assinatura pública (useAuth()) continua
+// idêntica de propósito — só troca o que tem por baixo (ver web/src/lib/auth/session.ts).
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { type User, type Session } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/client'
+import {
+  clearSession,
+  getSession,
+  initSession,
+  setSessionFromAccessToken,
+  subscribe,
+} from '@/lib/auth/session'
+import type { Session as InternalSession } from '@/lib/auth/types'
 import { apiFetchAuth } from '@/lib/apiFetch'
 
 interface SignUpData {
@@ -26,9 +34,23 @@ interface SignUpData {
   complement?:    string
 }
 
+// Formato compatível com o que os componentes já consumiam do supabase-js
+// (user.id, user.email, user.user_metadata?.full_name) — evita tocar em
+// todo consumidor de useAuth() espalhado pela base.
+interface AuthUser {
+  id: string
+  email: string
+  user_metadata: { full_name?: string }
+}
+
+interface AuthSession {
+  accessToken: string
+  expiresAt: number
+}
+
 interface AuthContextValue {
-  user:             User | null
-  session:          Session | null
+  user:             AuthUser | null
+  session:          AuthSession | null
   loading:          boolean
   signIn:           (email: string, password: string) => Promise<{ error: string | null }>
   signUp:           (data: SignUpData) => Promise<{ error: string | null }>
@@ -38,70 +60,77 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+function toAuthUser(session: InternalSession | null): AuthUser | null {
+  if (!session) return null
+  return {
+    id: session.user.id,
+    email: session.user.email,
+    user_metadata: { full_name: session.user.fullName ?? undefined },
+  }
+}
+
+function toAuthSession(session: InternalSession | null): AuthSession | null {
+  if (!session) return null
+  return { accessToken: session.accessToken, expiresAt: session.expiresAt }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const supabase = createClient()
-  const [user,    setUser]    = useState<User | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
+  const [internalSession, setInternalSession] = useState<InternalSession | null>(() => getSession())
   const [loading, setLoading] = useState(true)
 
-  // Verifica a sessão ao carregar e escuta mudanças de autenticação
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setUser(data.session?.user ?? null)
-      setLoading(false)
-    })
-
-    // Listener — atualiza quando o usuário loga, desloga ou token é renovado
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-    })
-
-    return () => subscription.unsubscribe()
+    const unsubscribe = subscribe(setInternalSession)
+    initSession().finally(() => setLoading(false))
+    return unsubscribe
   }, [])
 
-  // Faz login com email e senha
+  // Login com email e senha
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) return { error: 'Email ou senha incorretos.' }
-    return { error: null }
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      })
+      if (!res.ok) return { error: 'Email ou senha incorretos.' }
+      const data = await res.json() as { accessToken: string }
+      setSessionFromAccessToken(data.accessToken)
+      return { error: null }
+    } catch {
+      return { error: 'Erro de conexão. Tente novamente.' }
+    }
   }
 
-  // Cria uma nova conta e envia email de confirmação
-  // Todos os dados extras são salvos via trigger no banco (tabela profiles)
+  // Cria uma nova conta — dados extras salvos direto pelo AuthService.register()
   const signUp = async ({
     name, email, password, phone, cpf, birthDate,
     rg, zipCode, street, streetNumber, neighborhood, city, state, complement,
   }: SignUpData) => {
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name:     name,
-            phone:         phone         || null,
-            cpf:           cpf           || null,
-            birth_date:    birthDate     || null,
-            rg:            rg            || null,
-            zip_code:      zipCode       || null,
-            street:        street        || null,
-            street_number: streetNumber  || null,
-            neighborhood:  neighborhood  || null,
-            city:          city          || null,
-            state:         state         || null,
-            complement:    complement    || null,
-          },
-          emailRedirectTo: `${location.origin}/auth/callback`,
-        },
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email, password,
+          fullName:     name,
+          phone:        phone        || undefined,
+          cpf:          cpf          || undefined,
+          birthDate:    birthDate    || undefined,
+          rg:           rg           || undefined,
+          zipCode:      zipCode      || undefined,
+          street:       street       || undefined,
+          streetNumber: streetNumber || undefined,
+          neighborhood: neighborhood || undefined,
+          city:         city         || undefined,
+          state:        state        || undefined,
+          complement:   complement   || undefined,
+        }),
       })
-      if (error) {
-        const msg = error.message && !error.message.startsWith('{') && !error.message.startsWith('[')
-          ? error.message
-          : error.code ?? 'Erro ao criar conta. Tente novamente.'
-        return { error: msg }
-      }
+      const data = await res.json() as { accessToken?: string; message?: string }
+      if (!res.ok) return { error: data.message ?? 'Erro ao criar conta. Tente novamente.' }
+      if (data.accessToken) setSessionFromAccessToken(data.accessToken)
       // Manda o cadastro recém-criado pra Autosave (best-effort — não
       // espera nem bloqueia o cadastro se a Autosave estiver fora do ar)
       apiFetchAuth('/api/auth/sync-autosave', { method: 'POST' }).catch(() => {})
@@ -113,31 +142,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Desloga o usuário
   const signOut = async () => {
-    await supabase.auth.signOut()
+    await clearSession()
   }
 
-  // Login social via Facebook
+  // Login social — Google usa navegação de página inteira (mesmo padrão de
+  // mp/pagbank connect); o One Tap (auth/page.tsx) chama /auth/google/onetap
+  // direto e não passa por aqui. Facebook não está configurado hoje.
   const signInWithSocial = async (provider: 'google' | 'facebook') => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${location.origin}/auth/callback`,
-          scopes: provider === 'facebook' ? 'email,public_profile' : undefined,
-        },
-      })
-      if (error) return { error: 'Não foi possível conectar. Tente novamente.' }
-      return { error: null }
-    } catch {
-      return { error: 'Erro ao conectar com provedor social.' }
-    }
+    if (provider === 'facebook') return { error: 'Login com Facebook indisponível no momento.' }
+    window.location.href = `/api/auth/google?next=${encodeURIComponent(location.pathname + location.search)}`
+    return { error: null }
   }
 
-  return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut, signInWithSocial }}>
-      {children}
-    </AuthContext.Provider>
-  )
+  const value: AuthContextValue = {
+    user: toAuthUser(internalSession),
+    session: toAuthSession(internalSession),
+    loading,
+    signIn,
+    signUp,
+    signOut,
+    signInWithSocial,
+  }
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 // Hook para consumir o contexto em qualquer componente

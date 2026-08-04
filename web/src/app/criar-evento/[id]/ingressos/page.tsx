@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect, notFound } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { IngressosClient } from './IngressosClient'
@@ -12,17 +13,22 @@ export default async function IngressosPage({ params }: Props) {
   const { id }   = await params
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/criar-evento')
 
   const { data: evento } = await supabase
     .from('events')
-    .select('id, title, date_start, date_end, ticket_mode, package_discount_pct, parent_event_id, modulo_tenda, modulo_estacionamento, organization_id')
+    .select('id, title, date_start, date_end, venue_name, city, ticket_mode, package_discount_pct, parent_event_id, modulo_tenda, modulo_estacionamento, organization_id')
     .eq('id', id)
     .single()
 
   if (!evento) notFound()
   if (!(await isOrgAdmin(supabase, evento.organization_id, user.id))) notFound()
+
+  // Se o promotor chegou direto nesta etapa (ex: atalho na lista de eventos)
+  // sem ter completado Informações, o "continuar" precisa saber disso pra
+  // voltar pra lá em vez de seguir adiante achando que já está tudo pronto.
+  const infoCompleta = !!evento.title && !!evento.date_start && !!(evento.venue_name || evento.city)
 
   // Tenda/Estacionamento não geram um intervalo contínuo de dias — o promotor
   // escolhe quais dias específicos do calendário do PAI se aplicam a este filho.
@@ -115,6 +121,7 @@ export default async function IngressosPage({ params }: Props) {
 
         <IngressosClient
           eventoId={id}
+          infoCompleta={infoCompleta}
           numDias={numDias}
           dateStart={evento.date_start ?? ''}
           dateEnd={evento.date_end ?? ''}

@@ -1,15 +1,18 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
+import { areaRestritaDesbloqueada } from '@/lib/areaRestrita'
 import { redirect } from 'next/navigation'
 import { EquipeClient } from './EquipeClient'
+import { AreaRestritaWatcher } from '@/app/admin/area-restrita/AreaRestritaWatcher'
 
 export default async function EquipePage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth')
 
   const me = await getAdminMember(user.id)
   if (!me || !temAcessoRestrito(me)) redirect('/admin')
+  if (!(await areaRestritaDesbloqueada(user.id))) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/equipe')}`)
 
   const admin = createServiceClient()
 
@@ -33,6 +36,7 @@ export default async function EquipePage() {
 
   return (
     <div className="p-8 max-w-3xl">
+      <AreaRestritaWatcher currentPath="/admin/equipe" />
       <div className="mb-8">
         <h1 className="text-2xl text-white font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
           Equipe

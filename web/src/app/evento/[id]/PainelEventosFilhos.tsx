@@ -132,14 +132,12 @@ function CriarTendaModal({ eventoId, onFechar }: { eventoId: string; onFechar: (
       // subir depois na etapa de Imagens normalmente.
       if (bannerFile) {
         try {
-          const ext = bannerFile.name.split('.').pop() ?? 'jpg'
-          const path = `${data.id}/banner.${ext}`
-          const { error: uploadErr } = await supabase.storage
-            .from('event-images')
-            .upload(path, bannerFile, { upsert: true, contentType: bannerFile.type })
-          if (!uploadErr) {
-            const { data: pub } = supabase.storage.from('event-images').getPublicUrl(path)
-            await supabase.from('events').update({ banner_url: pub.publicUrl }).eq('id', data.id)
+          const formData = new FormData()
+          formData.append('file', bannerFile)
+          const upRes = await apiFetchAuth(`/api/uploads/event-image/${data.id}`, { method: 'POST', body: formData })
+          if (upRes.ok) {
+            const { url } = await upRes.json()
+            await supabase.from('events').update({ banner_url: url }).eq('id', data.id)
           }
         } catch { /* segue sem banner, promotor sobe depois */ }
       }

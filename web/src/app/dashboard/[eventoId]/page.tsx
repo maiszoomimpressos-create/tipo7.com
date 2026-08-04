@@ -1,4 +1,5 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect, notFound } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { DashboardClient, type DashboardData } from './DashboardClient'
@@ -10,9 +11,8 @@ interface Props {
 
 export default async function DashboardPage({ params }: Props) {
   const { eventoId } = await params
-  const supabase     = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect(`/auth?next=/dashboard/${eventoId}`)
 
   const admin = createServiceClient()

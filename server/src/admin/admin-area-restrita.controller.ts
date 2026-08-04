@@ -1,11 +1,11 @@
 import { BadRequestException, Body, ConflictException, Controller, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AreaRestritaService } from '../area-restrita/area-restrita.service';
+import { AuthCoreService } from '../auth-core/auth-core.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtGuard } from '../auth/guards/supabase-jwt.guard';
 import type { AuthenticatedUser } from '../auth/strategies/supabase-jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
-import { SupabaseCompatService } from '../supabase-compat/supabase-compat.service';
 import { AdminService } from './admin.service';
 
 @UseGuards(SupabaseJwtGuard)
@@ -15,7 +15,7 @@ export class AdminAreaRestritaController {
     private readonly admin: AdminService,
     private readonly prisma: PrismaService,
     private readonly areaRestrita: AreaRestritaService,
-    private readonly supabaseCompat: SupabaseCompatService,
+    private readonly authCore: AuthCoreService,
   ) {}
 
   @Post('senha')
@@ -101,7 +101,7 @@ export class AdminAreaRestritaController {
       throw new BadRequestException('A nova senha precisa ter pelo menos 6 caracteres');
     }
 
-    const ok = await this.supabaseCompat.verificarSenhaLogin(user.email, body.senhaLogin);
+    const ok = await this.authCore.verifyPassword(user.id, body.senhaLogin);
     if (!ok) throw new UnauthorizedException('Senha de login incorreta');
 
     await this.prisma.platformTeam.update({

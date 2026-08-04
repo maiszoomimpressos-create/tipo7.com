@@ -1,5 +1,6 @@
 // Página "Meus Ingressos" — lista todos os pedidos do comprador com status e detalhes
 import { createClient }  from '@/lib/supabase/server'
+import { getAuthUser }   from '@/lib/auth/server'
 import { redirect }      from 'next/navigation'
 import { Header }        from '@/components/layout/Header'
 import { Ticket }        from 'lucide-react'
@@ -8,7 +9,7 @@ import { MeusIngressosClient } from './MeusIngressosClient'
 export default async function MeusIngressosPage() {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/meus-ingressos')
 
   // Busca pedidos com evento, itens e portadores já cadastrados

@@ -1,11 +1,12 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { revalidatePath } from 'next/cache'
 
 export async function desconectarContaMP() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) throw new Error('Não autenticado')
 
   const { error } = await supabase
@@ -19,7 +20,7 @@ export async function desconectarContaMP() {
 
 export async function desconectarContaPagBank() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) throw new Error('Não autenticado')
 
   const { error } = await supabase

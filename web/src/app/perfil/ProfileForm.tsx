@@ -383,19 +383,14 @@ export function ProfileForm({ userId, secaoAtiva, initial }: Props) {
 
     setUploadingAvatar(true)
     try {
-      // Path: {userId}/avatar (sobrescreve o anterior automaticamente)
-      const path = `${userId}/avatar`
+      const formData = new FormData()
+      formData.append('file', avatarFile)
 
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(path, avatarFile, { upsert: true, contentType: avatarFile.type })
-
-      if (uploadError) throw uploadError
-
-      // Pega a URL pública do arquivo enviado
-      const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+      const res = await apiFetchAuth('/api/uploads/avatar', { method: 'POST', body: formData })
+      if (!res.ok) throw new Error('upload failed')
+      const { url } = await res.json()
       // Adiciona timestamp para evitar cache antigo do browser
-      return `${data.publicUrl}?t=${Date.now()}`
+      return `${url}?t=${Date.now()}`
     } catch {
       throw new Error('Erro ao enviar a foto. Tente novamente.')
     } finally {

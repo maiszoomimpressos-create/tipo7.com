@@ -1,6 +1,7 @@
 // Página de perfil do usuário — busca dados do banco e exibe formulário editável
 // Rota protegida: o proxy redireciona para /auth se não estiver logado
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect }      from 'next/navigation'
 import { Header }        from '@/components/layout/Header'
 import { CodigoOrg }     from './CodigoOrg'
@@ -11,7 +12,7 @@ export default async function PerfilPage() {
   const supabase = await createClient()
 
   // Busca o usuário logado (garantido pelo proxy, mas verificamos por segurança)
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth')
 
   // Busca o perfil completo da tabela profiles — inclui endereço e avatar
@@ -34,7 +35,9 @@ export default async function PerfilPage() {
   }
 
   const dataCadastro  = formatarData(profile?.created_at)
-  const ultimoAcesso  = formatarData(user.last_sign_in_at)
+  // last_sign_in_at não existe mais (era campo do Supabase Auth) — Fase 6
+  // não trackeia último acesso ainda, então essa info fica oculta por ora.
+  const ultimoAcesso  = null as string | null
 
   // Calcula campos faltando para exibir banner de aviso
   const camposFaltando = [

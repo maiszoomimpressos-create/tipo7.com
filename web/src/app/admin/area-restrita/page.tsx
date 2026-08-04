@@ -1,4 +1,5 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect } from 'next/navigation'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
 import { AreaRestritaClient } from './AreaRestritaClient'
@@ -9,8 +10,7 @@ interface Props {
 
 export default async function AreaRestritaPage({ searchParams }: Props) {
   const { next } = await searchParams
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect(`/auth?next=/admin/area-restrita${next ? `?next=${encodeURIComponent(next)}` : ''}`)
 
   const member = await getAdminMember(user.id)

@@ -1,4 +1,5 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect } from 'next/navigation'
 import { ShieldX, ArrowLeft } from 'lucide-react'
 import { GerenciadorCaixas } from './GerenciadorCaixas'
@@ -10,9 +11,8 @@ interface Props {
 
 export default async function BilheteriaPage({ params }: Props) {
   const { eventoId } = await params
-  const supabase     = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect(`/auth?next=/bilheteria/${eventoId}`)
 
   const admin = createServiceClient()

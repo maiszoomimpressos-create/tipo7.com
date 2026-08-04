@@ -1,6 +1,8 @@
 // Proxy de autenticação — executado em toda requisição (Next.js 16: renomeado de middleware para proxy)
-// Protege rotas privadas redirecionando para login se não houver sessão
-import { createServerClient } from '@supabase/ssr'
+// Protege rotas privadas redirecionando para login se não houver sessão.
+// Fase 6: verifica o JWT do AuthModule próprio localmente (jose, edge-safe)
+// em vez de round-trip pra Supabase — mesmo JWT_SECRET do server/.
+import { jwtVerify } from 'jose'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // Rotas que exigem usuário logado
@@ -30,28 +32,24 @@ function isSafeRedirect(url: string): boolean {
   } catch { return false }
 }
 
+const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? '')
+
+async function getUserFromRequest(request: NextRequest): Promise<{ id: string } | null> {
+  const token = request.cookies.get('access_token')?.value
+  if (!token) return null
+  try {
+    const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] })
+    return typeof payload.sub === 'string' ? { id: payload.sub } : null
+  } catch {
+    // Cobre tanto token ausente/inválido quanto expirado — nesse caso o
+    // usuário é tratado como deslogado aqui (a sessão no browser ainda pode
+    // se renovar sozinha via /api/auth/refresh assim que o JS rodar).
+    return null
+  }
+}
+
 export async function proxy(request: NextRequest) {
-  const response = NextResponse.next({ request })
-
-  // Cria o cliente Supabase com leitura/escrita de cookies para manter sessão
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => request.cookies.getAll(),
-        setAll: (cookiesToSet) => {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  // Verifica sessão do usuário
-  const { data: { user } } = await supabase.auth.getUser()
-
+  const user = await getUserFromRequest(request)
   const pathname = request.nextUrl.pathname
 
   // Se a rota é privada e o usuário não está logado → redireciona para login
@@ -68,14 +66,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
-  return response
+  return NextResponse.next({ request })
 }
 
 // Define em quais rotas o proxy é executado — só as que realmente precisam
-// (rotas privadas da lista acima + /auth). Antes rodava em praticamente toda
-// requisição (inclusive /api/* e páginas públicas), custando uma chamada de
-// rede ao Supabase (150-870ms observados) sem nenhum efeito útil nelas —
-// rotas de API já fazem seu próprio getUser() dentro do handler.
+// (rotas privadas da lista acima + /auth). Verificação é local (jose), sem
+// round-trip de rede — mais rápido que a versão anterior mesmo rodando em
+// mais rotas.
 export const config = {
   matcher: [
     '/promotor/:path*',

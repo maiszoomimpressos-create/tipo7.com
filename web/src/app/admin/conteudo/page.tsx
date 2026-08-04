@@ -1,11 +1,11 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { getAdminMember } from '@/lib/adminAuth'
 import { redirect } from 'next/navigation'
 import { ConteudoClient } from './ConteudoClient'
 
 export default async function ConteudoPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth')
 
   const me = await getAdminMember(user.id)

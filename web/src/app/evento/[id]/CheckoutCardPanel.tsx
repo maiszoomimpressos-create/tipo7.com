@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, X, CreditCard, AlertCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
+import { getSession, initSession } from '@/lib/auth/session'
 
 const ACCENT = '#E8B84B'
 
@@ -119,9 +120,10 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
 
     // Preenche CPF salvo no perfil
     const supabase = createClient()
-    const loadCpf = supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
-      const { data } = await supabase.from('profiles').select('cpf').eq('id', user.id).single()
+    const loadCpf = initSession().then(async () => {
+      const session = getSession()
+      if (!session) return
+      const { data } = await supabase.from('profiles').select('cpf').eq('id', session.user.id).single()
       if (mounted && data?.cpf) setCpf(formatCpf(data.cpf))
     })
 

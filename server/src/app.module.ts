@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AdminModule } from './admin/admin.module';
 import { AreaRestritaModule } from './area-restrita/area-restrita.module';
 import { AuthModule } from './auth/auth.module';
+import { AuthCoreModule } from './auth-core/auth-core.module';
 import { BilheteriaModule } from './bilheteria/bilheteria.module';
 import { CadastroModule } from './cadastro/cadastro.module';
 import { CaixasModule } from './caixas/caixas.module';
@@ -33,6 +34,7 @@ import { StaffFunctionTemplatesModule } from './staff-function-templates/staff-f
 import { StatsModule } from './stats/stats.module';
 import { SupabaseCompatModule } from './supabase-compat/supabase-compat.module';
 import { TrabalhosModule } from './trabalhos/trabalhos.module';
+import { UploadsModule } from './uploads/uploads.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { VenuesModule } from './venues/venues.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -44,6 +46,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     SupabaseCompatModule,
     CommonModule,
     AuthModule,
+    AuthCoreModule,
     OrgAdminModule,
     EventPermissionsModule,
     PlatformAdminModule,
@@ -74,6 +77,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     HoldersModule,
     IngressosModule,
     CarrosselModule,
+    UploadsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

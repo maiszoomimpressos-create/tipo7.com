@@ -190,4 +190,21 @@ export class EmailService {
       html: buildHTML({ buyerName, event, tickets }),
     });
   }
+
+  async sendPasswordResetEmail({ to, resetUrl }: { to: string; resetUrl: string }): Promise<void> {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    await resend.emails.send({
+      from: 'Tipo7 <contato@tipo7.com>',
+      to: [to],
+      subject: 'Redefinir sua senha — Tipo7',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 16px;">
+          <p style="font-size: 22px; font-weight: 800; color: #070707;">tipo<span style="color:#E8B84B;">7</span></p>
+          <p style="font-size: 15px; color: #333;">Recebemos um pedido pra redefinir sua senha. Se não foi você, ignore este email.</p>
+          <a href="${resetUrl}" style="display: inline-block; background: #E8B84B; color: #070707; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 10px; margin-top: 12px;">Redefinir senha</a>
+          <p style="font-size: 12px; color: #999; margin-top: 24px;">Este link expira em 30 minutos.</p>
+        </div>
+      `,
+    });
+  }
 }

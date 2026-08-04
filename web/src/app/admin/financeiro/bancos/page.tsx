@@ -1,9 +1,11 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { redirect }            from 'next/navigation'
-import { createClient }        from '@/lib/supabase/server'
+import { getAuthUser }         from '@/lib/auth/server'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
-import { MP_CRED_KEYS }        from '@/lib/platformCredentials'
+import { areaRestritaDesbloqueada } from '@/lib/areaRestrita'
+import { MP_CRED_KEYS, PAGBANK_CRED_KEYS } from '@/lib/platformCredentials'
 import { BancosClient }        from './BancosClient'
+import { AreaRestritaWatcher } from '@/app/admin/area-restrita/AreaRestritaWatcher'
 
 const FEE_KEYS = [
   'fee_desc_plataforma',
@@ -16,19 +18,20 @@ const FEE_KEYS = [
 ]
 
 export default async function BancosPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/admin/financeiro/bancos')
 
   const member = await getAdminMember(user.id)
   if (!member || !temAcessoRestrito(member)) redirect('/admin')
+  if (!(await areaRestritaDesbloqueada(user.id))) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/financeiro/bancos')}`)
 
   const admin = createServiceClient()
 
-  const [{ data: settings }, { data: platformFee }, { data: mpCred }, { data: logos }] = await Promise.all([
+  const [{ data: settings }, { data: platformFee }, { data: mpCred }, { data: pagbankCred }, { data: logos }] = await Promise.all([
     admin.from('platform_settings').select('key, value').in('key', FEE_KEYS),
     admin.from('platform_settings').select('value').eq('key', 'default_fee_pct').single(),
     admin.from('platform_settings').select('key, value').in('key', MP_CRED_KEYS),
+    admin.from('platform_settings').select('key, value').in('key', PAGBANK_CRED_KEYS),
     admin.from('platform_settings').select('key, value').in('key', ['gateway_logo_mercadopago', 'gateway_logo_pagbank']),
   ])
 
@@ -38,11 +41,15 @@ export default async function BancosPage() {
   const c: Record<string, string> = {}
   for (const row of mpCred ?? []) c[row.key] = row.value
 
+  const p: Record<string, string> = {}
+  for (const row of pagbankCred ?? []) p[row.key] = row.value
+
   const l: Record<string, string> = {}
   for (const row of logos ?? []) l[row.key] = row.value
 
   return (
     <div className="p-8 max-w-2xl">
+      <AreaRestritaWatcher currentPath="/admin/financeiro/bancos" />
       <div className="mb-8">
         <h1 className="text-2xl text-white font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
           Tarifas expostas ao promotor
@@ -67,6 +74,12 @@ export default async function BancosPage() {
           clientId:      c['mp_client_id']       ?? '',
           clientSecret:  c['mp_client_secret']   ?? '',
           webhookSecret: c['mp_webhook_secret']  ?? '',
+        }}
+        pagbankCredenciais={{
+          token:        p['pagbank_token']         ?? '',
+          accountId:    p['pagbank_account_id']    ?? '',
+          clientId:     p['pagbank_client_id']     ?? '',
+          clientSecret: p['pagbank_client_secret'] ?? '',
         }}
         logoMercadoPago={l['gateway_logo_mercadopago'] ?? null}
         logoPagbank={l['gateway_logo_pagbank']          ?? null}

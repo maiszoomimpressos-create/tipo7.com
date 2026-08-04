@@ -1,4 +1,5 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect }       from 'next/navigation'
 import { Header }         from '@/components/layout/Header'
 import { PromoterLayout } from '@/components/layout/PromoterLayout'
@@ -17,7 +18,7 @@ const FEE_KEYS = [
 
 export default async function ContasPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/configuracoes/contas')
 
   const { data: orgs } = await supabase

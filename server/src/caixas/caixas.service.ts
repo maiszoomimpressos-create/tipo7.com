@@ -1,9 +1,9 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { AuthCoreService } from '../auth-core/auth-core.service';
 import { EventFamilyService } from '../common/event-family.service';
 import { SaldoBilheteriaService } from '../common/saldo-bilheteria.service';
 import { OrgAdminService } from '../org-admin/org-admin.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { SupabaseCompatService } from '../supabase-compat/supabase-compat.service';
 
 interface CaixaLote {
   nome: string;
@@ -21,7 +21,7 @@ export class CaixasService {
     private readonly orgAdmin: OrgAdminService,
     private readonly eventFamily: EventFamilyService,
     private readonly saldoBilheteria: SaldoBilheteriaService,
-    private readonly supabaseCompat: SupabaseCompatService,
+    private readonly authCore: AuthCoreService,
   ) {}
 
   // GET /eventos/:id/caixas
@@ -301,15 +301,10 @@ export class CaixasService {
       if (!body.senhaPromotor) {
         throw new ForbiddenException('Esta transferência requer autorização do promotor.');
       }
-      // Autorização por senha de login do dono. Precisa do email do dono —
-      // busca via profile+auth (mesmo padrão do original: qualquer erro
-      // (sem email/senha errada) bloqueia a transferência).
+      // Autorização por senha de login do dono (bcrypt local — qualquer erro
+      // bloqueia a transferência, mesmo padrão do original).
       const org = await this.prisma.organization.findUnique({ where: { id: origem.evento.organizationId }, select: { ownerId: true } });
-      const emailRows = org?.ownerId
-        ? await this.prisma.$queryRaw<{ id: string; email: string }[]>`SELECT * FROM get_user_emails(ARRAY[${org.ownerId}::uuid])`
-        : [];
-      const ownerEmail = emailRows[0]?.email;
-      const senhaOk = ownerEmail ? await this.supabaseCompat.verificarSenhaLogin(ownerEmail, body.senhaPromotor) : false;
+      const senhaOk = org?.ownerId ? await this.authCore.verifyPassword(org.ownerId, body.senhaPromotor) : false;
       if (!senhaOk) throw new ForbiddenException('Senha do promotor incorreta');
     }
 

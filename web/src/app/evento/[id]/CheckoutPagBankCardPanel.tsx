@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Loader2, X, CreditCard, AlertCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
+import { getSession, initSession } from '@/lib/auth/session'
 
 const ACCENT = '#E8B84B'
 
@@ -105,10 +106,11 @@ export function CheckoutPagBankCardPanel({ eventoId, items, total, onClose }: Pr
       .then(r => r.json() as Promise<{ publicKey?: string; error?: string }>)
 
     const supabase = createClient()
-    const loadProfile = supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
-      buyerEmailRef.current = user.email ?? ''
-      const { data } = await supabase.from('profiles').select('cpf').eq('id', user.id).single()
+    const loadProfile = initSession().then(async () => {
+      const session = getSession()
+      if (!session) return
+      buyerEmailRef.current = session.user.email ?? ''
+      const { data } = await supabase.from('profiles').select('cpf').eq('id', session.user.id).single()
       if (mounted && data?.cpf) setCpf(formatCpf(data.cpf))
     })
 

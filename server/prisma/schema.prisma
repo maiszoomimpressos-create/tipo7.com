@@ -80,8 +80,13 @@ enum TicketMode {
 // ==================================================================
 
 model Profile {
-  // FK -> users.id(id), Supabase Auth (nao modelado ate a Fase 6)
+  // Fase 6: id deixa de ser FK solta pra auth.users(id) da Supabase e vira
+  // dono da própria identidade (email + senha) — mesmo uuid preservado na
+  // migração de dados, então nenhuma FK no resto do schema precisa mudar.
   id                        String                   @id @db.Uuid
+  email                     String                   @unique
+  encryptedPassword         String?                  @map("encrypted_password")
+  emailVerified             Boolean                  @default(false) @map("email_verified")
   fullName                  String?                  @map("full_name")
   cpf                       String?                  @unique
   phone                     String?                  @unique
@@ -99,6 +104,8 @@ model Profile {
   complement                String?
   rg                        String?
   userCode                  String                   @unique @map("user_code")
+  refreshTokens             RefreshToken[]           @relation("RefreshToken_userId")
+  passwordResetTokens       PasswordResetToken[]     @relation("PasswordResetToken_userId")
   auditLogs                 AuditLog[]               @relation("AuditLog_userId")
   estacionamentoSessoes     EstacionamentoSessao[]   @relation("EstacionamentoSessao_registradoPor")
   estacionamentos           Estacionamento[]         @relation("Estacionamento_createdBy")
@@ -121,6 +128,36 @@ model Profile {
   venueAdminsUser           VenueAdmin[]             @relation("VenueAdmin_userId")
 
   @@map("profiles")
+}
+
+// Sessões emitidas pelo AuthModule próprio (Fase 6). Guarda o hash do
+// refresh token, não o valor cru — permite revogar sessão por sessão
+// (multi-dispositivo: scanner, caixa, promotor no desktop).
+model RefreshToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      Profile   @relation("RefreshToken_userId", fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// Tokens de recuperação de senha (Fase 6) — expiração curta, uso único.
+model PasswordResetToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      Profile   @relation("PasswordResetToken_userId", fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 model UserPlatformRole {

@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import {
   ArrowLeft, ArrowRight, Upload, X, ImageIcon,
   Loader2, Check, Plus, Trash2,
@@ -11,6 +12,8 @@ import { cn } from '@/lib/utils'
 
 interface Props {
   eventoId:           string
+  infoCompleta:       boolean
+  ingressosCompleta:  boolean
   bannerUrlInicial:   string | null
   galleryUrlsIniciais: string[]
 }
@@ -18,20 +21,16 @@ interface Props {
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif'
 const MAX_MB  = 10
 
-// ─── Upload para Supabase Storage ────────────────────────────────────────────
+// ─── Upload de imagem via NestJS (service_role, bypassa RLS de Storage) ──────
 
-async function uploadImagem(
-  supabase: ReturnType<typeof createClient>,
-  file: File,
-  path: string,
-): Promise<string> {
+async function uploadImagem(eventoId: string, file: File): Promise<string> {
   if (file.size > MAX_MB * 1024 * 1024) throw new Error(`Imagem maior que ${MAX_MB} MB`)
-  const { error } = await supabase.storage
-    .from('event-images')
-    .upload(path, file, { upsert: true, contentType: file.type })
-  if (error) throw error
-  const { data } = supabase.storage.from('event-images').getPublicUrl(path)
-  return data.publicUrl
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await apiFetchAuth(`/api/uploads/event-image/${eventoId}`, { method: 'POST', body: formData })
+  if (!res.ok) throw new Error('Erro ao enviar imagem')
+  const { url } = await res.json()
+  return url
 }
 
 // ─── Preview de imagem com botão remover ─────────────────────────────────────
@@ -127,9 +126,18 @@ function DropZone({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function ImagensClient({ eventoId, bannerUrlInicial, galleryUrlsIniciais }: Props) {
+export function ImagensClient({ eventoId, infoCompleta, ingressosCompleta, bannerUrlInicial, galleryUrlsIniciais }: Props) {
   const router   = useRouter()
   const supabase = createClient()
+
+  // Se faltou uma etapa anterior (ex: chegou aqui direto pelo atalho de foto
+  // na tela de Informações), o "continuar" leva de volta pra ela em vez de
+  // pular direto pra Publicar com dados incompletos.
+  const destinoContinuar = !infoCompleta
+    ? `/criar-evento/${eventoId}`
+    : !ingressosCompleta
+      ? `/criar-evento/${eventoId}/ingressos`
+      : `/criar-evento/${eventoId}/publicar`
 
   // cacheBust força o browser a ignorar o cache quando o banner é re-enviado
   const [cacheBust,   setCacheBust]   = useState(0)
@@ -147,8 +155,7 @@ export function ImagensClient({ eventoId, bannerUrlInicial, galleryUrlsIniciais 
   const handleBanner = async (file: File) => {
     setUploadingBanner(true); setErro(null)
     try {
-      const ext = file.name.split('.').pop() ?? 'jpg'
-      const url = await uploadImagem(supabase, file, `${eventoId}/banner.${ext}`)
+      const url = await uploadImagem(eventoId, file)
       setBannerUrl(url)
       setCacheBust(Date.now())
     } catch (e) {
@@ -161,8 +168,7 @@ export function ImagensClient({ eventoId, bannerUrlInicial, galleryUrlsIniciais 
   const handleGallery = async (file: File) => {
     setUploadingGallery(true); setErro(null)
     try {
-      const name = `gallery_${Date.now()}_${file.name.replace(/\s/g, '_')}`
-      const url  = await uploadImagem(supabase, file, `${eventoId}/${name}`)
+      const url = await uploadImagem(eventoId, file)
       setGalleryUrls(prev => [...prev, url])
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao enviar imagem')
@@ -205,14 +211,20 @@ export function ImagensClient({ eventoId, bannerUrlInicial, galleryUrlsIniciais 
         <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}`)} disabled={saving}
           className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
           style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          <span className="w-5 h-5 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-500 text-[10px]">✓</span>
+          {infoCompleta
+            ? <span className="w-5 h-5 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-500 text-[10px]">✓</span>
+            : <span className="w-5 h-5 rounded-full bg-[#111] border border-[#222] flex items-center justify-center text-[10px]">1</span>
+          }
           Informações
         </button>
         <div className="h-px flex-1 bg-[#1a1a1a]" />
         <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}/ingressos`)} disabled={saving}
           className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
           style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          <span className="w-5 h-5 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-500 text-[10px]">✓</span>
+          {ingressosCompleta
+            ? <span className="w-5 h-5 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-500 text-[10px]">✓</span>
+            : <span className="w-5 h-5 rounded-full bg-[#111] border border-[#222] flex items-center justify-center text-[10px]">2</span>
+          }
           Ingressos
         </button>
         <div className="h-px flex-1 bg-[#1a1a1a]" />
@@ -327,7 +339,7 @@ export function ImagensClient({ eventoId, bannerUrlInicial, galleryUrlsIniciais 
           style={{ fontFamily: 'var(--font-dm-sans)' }}>
           {saved ? <><Check size={15} /><span>Salvo!</span></> : <span>Salvar rascunho</span>}
         </button>
-        <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}/publicar`)}
+        <button type="button" onClick={() => handleSalvar(destinoContinuar)}
           disabled={saving}
           className="flex-1 py-3.5 rounded-xl text-sm font-semibold text-[#070707] hover:brightness-110 transition-all flex items-center justify-center gap-2 disabled:opacity-40"
           style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>

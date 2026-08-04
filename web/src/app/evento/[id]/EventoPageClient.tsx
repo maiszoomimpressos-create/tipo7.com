@@ -310,16 +310,14 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
     if (file.size > 10 * 1024 * 1024) return
     setBannerUploading(true)
     try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await apiFetchAuth(`/api/uploads/event-image/${evento.id}`, { method: 'POST', body: formData })
+      if (!res.ok) throw new Error('upload failed')
+      const { url } = await res.json()
       const supabase = createClient()
-      const ext  = file.name.split('.').pop() ?? 'jpg'
-      const path = `${evento.id}/banner.${ext}`
-      const { error } = await supabase.storage
-        .from('event-images')
-        .upload(path, file, { upsert: true, contentType: file.type })
-      if (error) throw error
-      const { data } = supabase.storage.from('event-images').getPublicUrl(path)
-      await supabase.from('events').update({ banner_url: data.publicUrl }).eq('id', evento.id)
-      setCurrentBanner(`${data.publicUrl}?t=${Date.now()}`)
+      await supabase.from('events').update({ banner_url: url }).eq('id', evento.id)
+      setCurrentBanner(`${url}?t=${Date.now()}`)
     } finally { setBannerUploading(false) }
   }
 

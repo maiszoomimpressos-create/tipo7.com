@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Ticket, Loader2, AlertCircle, Mail, ArrowLeft, Eye, EyeOff, CheckCircle } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 
 const pwdRules = {
   length:  (v: string) => v.length >= 8,
@@ -15,12 +14,25 @@ const pwdRules = {
 const isStrongPassword = (v: string) => Object.values(pwdRules).every(fn => fn(v))
 
 export default function RecuperarPage() {
-  const router  = useRouter()
-  const supabase = createClient()
+  return (
+    <Suspense fallback={
+      <div className="min-h-dvh bg-[#070707] flex items-center justify-center">
+        <Loader2 size={24} className="animate-spin text-[#E8B84B]" />
+      </div>
+    }>
+      <RecuperarPageContent />
+    </Suspense>
+  )
+}
 
-  // Detecta se o usuário chegou via link de recuperação (tem sessão ativa)
-  const [mode, setMode]       = useState<'request' | 'reset' | 'done'>('request')
-  const [checking, setChecking] = useState(true)
+function RecuperarPageContent() {
+  const router  = useRouter()
+  const searchParams = useSearchParams()
+  // Chegou via link de recuperação de senha (?token=... no email enviado
+  // por AuthCoreService.forgotPassword) — sem token, é o pedido inicial.
+  const token = searchParams.get('token')
+
+  const [mode, setMode] = useState<'request' | 'reset' | 'done'>(token ? 'reset' : 'request')
 
   // Estado: solicitar email
   const [email, setEmail]         = useState('')
@@ -36,62 +48,49 @@ export default function RecuperarPage() {
   const [resetLoading, setResetLoading] = useState(false)
   const [resetError, setResetError] = useState<string | null>(null)
 
-  useEffect(() => {
-    // Verifica se tem sessão ativa — se sim, o usuário chegou pelo link de recuperação
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        setMode('reset')
-      }
-      setChecking(false)
-    })
-
-    // Escuta evento de recuperação de senha do Supabase
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setMode('reset')
-        setChecking(false)
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
   const handleRequest = async (e: React.FormEvent) => {
     e.preventDefault()
     setReqLoading(true)
     setReqError(null)
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/auth/recuperar`,
-    })
-    setReqLoading(false)
-    if (error) {
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email }),
+      })
+      if (!res.ok) throw new Error()
+      setReqSent(true)
+    } catch {
       setReqError('Não foi possível enviar o email. Verifique o endereço e tente novamente.')
-      return
+    } finally {
+      setReqLoading(false)
     }
-    setReqSent(true)
   }
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!isStrongPassword(password)) { setResetError('A senha não atende todos os requisitos.'); return }
     if (password !== confirm)        { setResetError('As senhas não coincidem.'); return }
+    if (!token) { setResetError('Link inválido ou expirado.'); return }
     setResetLoading(true)
     setResetError(null)
-    const { error } = await supabase.auth.updateUser({ password })
-    setResetLoading(false)
-    if (error) {
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ token, password }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null) as { message?: string } | null
+        setResetError(data?.message ?? 'Erro ao atualizar a senha. Tente solicitar um novo link de recuperação.')
+        return
+      }
+      setMode('done')
+    } catch {
       setResetError('Erro ao atualizar a senha. Tente solicitar um novo link de recuperação.')
-      return
+    } finally {
+      setResetLoading(false)
     }
-    setMode('done')
-  }
-
-  if (checking) {
-    return (
-      <div className="min-h-dvh bg-[#070707] flex items-center justify-center">
-        <Loader2 size={24} className="animate-spin text-[#E8B84B]" />
-      </div>
-    )
   }
 
   return (

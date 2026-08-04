@@ -1,4 +1,5 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser }      from '@/lib/auth/server'
 import { notFound }         from 'next/navigation'
 import { Header }           from '@/components/layout/Header'
 import { EventoPageClient } from './EventoPageClient'
@@ -29,7 +30,7 @@ export default async function EventoPage({ params }: Props) {
   if (!evento) notFound()
 
   // Verifica se o usuário logado é o dono do evento
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   let isOwner = false
   if (user && evento.organization_id) {
     isOwner = await isOrgAdmin(supabase, evento.organization_id, user.id)

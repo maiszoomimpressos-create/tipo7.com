@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import {
   Users, Package, Layers, Plus, Trash2, Loader2,
   Ticket, ArrowRight, Check, ArrowLeft, CalendarCheck, ImageIcon, X,
@@ -50,6 +51,7 @@ interface Props {
   packageDiscountInicial: number
   diasIniciais:          DiaConfig[]
   ingressosIniciais:     IngressoConfig[]
+  infoCompleta:          boolean
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -207,9 +209,17 @@ export function IngressosClient({
   packageDiscountInicial,
   diasIniciais,
   ingressosIniciais,
+  infoCompleta,
 }: Props) {
   const router   = useRouter()
   const supabase = createClient()
+
+  // Se chegou aqui direto (ex: atalho da lista de eventos) sem ter completado
+  // Informações, o "continuar" deve voltar pra lá em vez de seguir adiante —
+  // senão o promotor acaba na última etapa com dados básicos faltando.
+  const destinoContinuar = infoCompleta
+    ? `/criar-evento/${eventoId}/imagens`
+    : `/criar-evento/${eventoId}`
 
   const modoHeranca = !!diasHerdaveis
   const isMultiDay  = modoHeranca ? true : numDias > 1
@@ -463,21 +473,19 @@ export function IngressosClient({
     setUploadingDiaBanner(dayNumber)
     setErro(null)
     try {
-      const ext = file.name.split('.').pop() ?? 'jpg'
-      const path = `${eventoId}/banner-dia${dayNumber}.${ext}`
-      const { error } = await supabase.storage
-        .from('event-images')
-        .upload(path, file, { upsert: true, contentType: file.type })
-      if (error) {
-        setErro(`Erro ao subir banner do dia: ${error.message}`)
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await apiFetchAuth(`/api/uploads/event-image/${eventoId}`, { method: 'POST', body: formData })
+      if (!res.ok) {
+        setErro('Erro ao subir banner do dia')
         return
       }
-      const { data } = supabase.storage.from('event-images').getPublicUrl(path)
-      updateDia(dayNumber, { banner_url: data.publicUrl })
+      const { url } = await res.json()
+      updateDia(dayNumber, { banner_url: url })
 
       const diaAtual = dias.find(d => d.day_number === dayNumber)
       if (diaAtual?.id) {
-        await supabase.from('event_days').update({ banner_url: data.publicUrl }).eq('id', diaAtual.id)
+        await supabase.from('event_days').update({ banner_url: url }).eq('id', diaAtual.id)
       } else if (diaAtual) {
         const { data: diaDb } = await supabase.from('event_days').upsert({
           event_id:   eventoId,
@@ -485,7 +493,7 @@ export function IngressosClient({
           date:       diaAtual.date,
           start_time: diaAtual.start_time || null,
           end_time:   diaAtual.end_time   || null,
-          banner_url: data.publicUrl,
+          banner_url: url,
         }, { onConflict: 'event_id,day_number' }).select('id').single()
         if (diaDb) updateDia(dayNumber, { id: diaDb.id })
       }
@@ -504,17 +512,15 @@ export function IngressosClient({
     setUploadingAttraction(key)
     setErro(null)
     try {
-      const ext = file.name.split('.').pop() ?? 'jpg'
-      const path = `${eventoId}/atracao-dia${dayNumber}-${idx}.${ext}`
-      const { error } = await supabase.storage
-        .from('event-images')
-        .upload(path, file, { upsert: true, contentType: file.type })
-      if (error) {
-        setErro(`Erro ao subir imagem da atração: ${error.message}`)
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await apiFetchAuth(`/api/uploads/event-image/${eventoId}`, { method: 'POST', body: formData })
+      if (!res.ok) {
+        setErro('Erro ao subir imagem da atração')
         return
       }
-      const { data } = supabase.storage.from('event-images').getPublicUrl(path)
-      updateAttraction(dayNumber, idx, { image_url: data.publicUrl })
+      const { url } = await res.json()
+      updateAttraction(dayNumber, idx, { image_url: url })
     } catch (e) {
       setErro(`Erro ao subir imagem da atração: ${e instanceof Error ? e.message : 'erro desconhecido'}`)
     } finally {
@@ -533,7 +539,10 @@ export function IngressosClient({
         <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}`)} disabled={saving}
           className="flex items-center gap-1.5 text-[#555] hover:text-white text-xs transition-colors disabled:opacity-40"
           style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          <span className="w-5 h-5 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-500 text-[10px]">✓</span>
+          {infoCompleta
+            ? <span className="w-5 h-5 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-500 text-[10px]">✓</span>
+            : <span className="w-5 h-5 rounded-full bg-[#111] border border-[#222] flex items-center justify-center text-[10px]">1</span>
+          }
           Informações
         </button>
         <div className="h-px flex-1 bg-[#1a1a1a]" />
@@ -972,7 +981,7 @@ export function IngressosClient({
               style={{ fontFamily: 'var(--font-dm-sans)' }}>
               {saved ? <><Check size={15} /><span>Salvo!</span></> : <span>Salvar rascunho</span>}
             </button>
-            <button type="button" onClick={() => handleSalvar(`/criar-evento/${eventoId}/imagens`)} disabled={saving}
+            <button type="button" onClick={() => handleSalvar(destinoContinuar)} disabled={saving}
               className="flex-1 py-3.5 rounded-xl text-sm font-semibold text-[#070707] hover:brightness-110 transition-all flex items-center justify-center gap-2 disabled:opacity-40"
               style={{ background: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
               {saving

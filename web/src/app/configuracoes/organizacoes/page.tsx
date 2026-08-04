@@ -4,6 +4,7 @@
 // (antes só existia escondido dentro de /perfil) — é aqui que quem
 // trabalha no dia a dia (/minha-area, /criar-evento) espera encontrar.
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/auth/server'
 import { redirect }       from 'next/navigation'
 import { Header }         from '@/components/layout/Header'
 import { PromoterLayout } from '@/components/layout/PromoterLayout'
@@ -11,7 +12,7 @@ import { PromotorForm, type OrganizacaoItem } from '@/app/perfil/PromotorForm'
 
 export default async function OrganizacoesPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/configuracoes/organizacoes')
 
   const { data: profile } = await supabase

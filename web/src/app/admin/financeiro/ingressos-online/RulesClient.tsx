@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { Plus, Trash2, Loader2, Check, Tag, Users, Globe, AlertTriangle, ShieldAlert, Eye, EyeOff } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { FeeValueField, ExtraFeeField, type FeeValueState, type ExtraFeeState } from '@/components/admin/TaxaCards'
 
@@ -115,11 +114,13 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
     if (!senha.trim()) { setErrSenha('Digite sua senha'); return }
     setVerificando(true); setErrSenha(null)
     try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user?.email) throw new Error('Usuário não encontrado')
-      const { error } = await supabase.auth.signInWithPassword({ email: user.email, password: senha })
-      if (error) throw new Error('Senha incorreta')
+      const res = await apiFetchAuth('/api/auth/verify-password', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ password: senha }),
+      })
+      const data = await res.json() as { ok?: boolean }
+      if (!res.ok || !data.ok) throw new Error('Senha incorreta')
       setBypassMin(true)
       setModalSenha(false)
       setSenha('')

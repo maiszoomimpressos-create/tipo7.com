@@ -2,6 +2,7 @@
 // Fluxo: perfil 100% completo → modal (nicho + nome do evento) → formulário de evento.
 // CNPJ é opcional e fica em /perfil (aba "Dados de promotor"), não aqui.
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { getAuthUser }  from '@/lib/auth/server'
 import { redirect }     from 'next/navigation'
 import { Header }       from '@/components/layout/Header'
 import { PromoterLayout } from '@/components/layout/PromoterLayout'
@@ -25,7 +26,7 @@ const CAMPOS_OBRIGATORIOS = [
 export default async function CriarEventoPage() {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/auth?next=/criar-evento')
 
   const { data: profile } = await supabase
