@@ -28,12 +28,37 @@ const securityHeaders = [
   },
 ]
 
+// Rotas já migradas pro serviço NestJS (server/) — ver plano de migração em
+// memória do projeto. Proxy transparente: o browser continua chamando
+// /api/... (mesma origem, sem precisar mexer em CSP connect-src), o Next.js
+// que redireciona pro backend novo. API_URL aponta pro NestJS local em dev
+// (padrão localhost:3001) e pro domínio real em produção (env var na EasyPanel).
+const API_URL = process.env.API_URL ?? 'http://localhost:3001'
+const ROTAS_MIGRADAS_NESTJS = [
+  '/api/eventos/buscar',
+  '/api/eventos/destaque',
+  '/api/stats',
+  '/api/check-cpf',
+  '/api/check-cnpj',
+  '/api/check-phone',
+  '/api/staff-function-templates',
+  '/api/places/autocomplete',
+  '/api/places/details',
+  '/api/codigo',
+]
+
 const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
   turbopack: {
     root: import.meta.dirname,
+  },
+  async rewrites() {
+    return ROTAS_MIGRADAS_NESTJS.map((source) => ({
+      source,
+      destination: `${API_URL}${source.replace(/^\/api/, '')}`,
+    }))
   },
   async headers() {
     return [

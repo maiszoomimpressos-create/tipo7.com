@@ -5,6 +5,7 @@
 // Aparece uma vez por sessão enquanto houver campos de endereço vazios
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProfileStatus, PROFILE_UPDATED_EVENT } from '@/hooks/useProfileStatus'
 import { useLocation } from '@/contexts/LocationContext'
@@ -133,7 +134,7 @@ export function ProfileCompletionModal() {
       try {
         const params = new URLSearchParams({ q: valor })
         if (cidadeDetectada) params.set('cidade', cidadeDetectada)
-        const res  = await fetch(`/api/places/autocomplete?${params.toString()}`)
+        const res  = await apiFetchAuth(`/api/places/autocomplete?${params.toString()}`)
         const data = await res.json()
         if (!res.ok) {
           setAddrSearchError('Busca de endereço indisponível no momento. Preencha manualmente abaixo.')
@@ -158,7 +159,7 @@ export function ProfileCompletionModal() {
     setAddrSuggestions([])
     setAddrHighlight(-1)
     try {
-      const res  = await fetch(`/api/places/details?place_id=${s.placeId}`)
+      const res  = await apiFetchAuth(`/api/places/details?place_id=${s.placeId}`)
       const data = await res.json()
       if (data.cep)    { setZipCode(formatCEP(data.cep)); setCepError(null) }
       if (data.rua)    setStreet(data.rua)

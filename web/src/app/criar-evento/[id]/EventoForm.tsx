@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { ArrowLeft, Loader2, Check, Lock, User, MapPin, Search, ArrowRight, ShoppingBag, CreditCard } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SecaoBloqueavel } from '@/components/SecaoBloqueavel'
@@ -321,7 +322,7 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
         const params = new URLSearchParams({ q: valor })
         if (biasCidade) params.set('cidade', biasCidade)
         if (biasEstado) params.set('estado', biasEstado)
-        const res  = await fetch(`/api/places/autocomplete?${params.toString()}`)
+        const res  = await apiFetchAuth(`/api/places/autocomplete?${params.toString()}`)
         const data = await res.json()
         if (!res.ok) {
           setPlaceSearchError('Busca de local indisponível no momento. Preencha o endereço manualmente abaixo.')
@@ -368,7 +369,7 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
     setVenueId(null) // será definido no save
     setVenueJaExistente(false)
     try {
-      const res  = await fetch(`/api/places/details?place_id=${s.placeId}`)
+      const res  = await apiFetchAuth(`/api/places/details?place_id=${s.placeId}`)
       const data = await res.json()
       if (data.cep)    { setCep(formatCEP(data.cep)); setCepError(null) }
       if (data.rua)    setRua(data.rua)
@@ -394,9 +395,14 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
   // preenchimento dos campos, sem bloquear o formulário. Se falhar ou não
   // achar nada, simplesmente não seta cepLat/cepLng — o save cai pro
   // fallback (coordenada de um local selecionado, ou a que já existia).
-  const geocodificarEndereco = async (rua: string, cidade: string, estadoUf: string) => {
+  // Retorna a coordenada encontrada (além de já setar cepLat/cepLng, pro
+  // caso de uso em background) — handleSalvar usa o retorno como rede de
+  // segurança quando a chamada em paralelo não terminou a tempo do save.
+  const geocodificarEndereco = async (
+    rua: string, cidade: string, estadoUf: string,
+  ): Promise<{ lat: number; lng: number } | null> => {
     const query = [rua, cidade, estadoUf, 'Brasil'].filter(Boolean).join(', ')
-    if (!cidade) return
+    if (!cidade) return null
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(query)}`,
@@ -404,10 +410,14 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
       )
       const data = await res.json()
       if (data?.[0]) {
-        setCepLat(parseFloat(data[0].lat))
-        setCepLng(parseFloat(data[0].lon))
+        const lat = parseFloat(data[0].lat)
+        const lng = parseFloat(data[0].lon)
+        setCepLat(lat)
+        setCepLng(lng)
+        return { lat, lng }
       }
     } catch { /* sem coordenada nova — save usa o fallback existente */ }
+    return null
   }
 
   const buscarCEP = async (valor: string) => {
@@ -465,6 +475,23 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
         }
       }
 
+      // Prioridade: local selecionado na busca (Google Places/venue — mais
+      // preciso, é o ponto exato) > geocode do CEP digitado manualmente >
+      // coordenada que já estava salva — nunca apaga um lat/lng válido só
+      // porque nada mudou nesta sessão
+      let latToSave = selectedLat ?? cepLat ?? savedLat
+      let lngToSave = selectedLng ?? cepLng ?? savedLng
+
+      // Rede de segurança: o geocode do CEP roda em paralelo e não bloqueia
+      // o formulário — se o usuário digitar o CEP e salvar rápido demais,
+      // a busca no Nominatim pode não ter terminado ainda e cepLat/cepLng
+      // continuam null mesmo com endereço completo preenchido. Sem isso o
+      // evento salva sem coordenada e o carrossel regional não localiza ele.
+      if (latToSave == null && lngToSave == null && (rua.trim() || cidade.trim())) {
+        const geo = await geocodificarEndereco(rua, cidade, estado)
+        if (geo) { latToSave = geo.lat; lngToSave = geo.lng }
+      }
+
       await supabase.from('events').update({
         title:         titulo.trim()         || 'Novo evento',
         description:   descricao             || null,
@@ -483,12 +510,8 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
         capacity:      capacidade ? parseInt(capacidade, 10) : null,
         fee_mode:      feeMode,
         payment_gateway: gateway,
-        // Prioridade: local selecionado na busca (Google Places/venue — mais
-        // preciso, é o ponto exato) > geocode do CEP digitado manualmente >
-        // coordenada que já estava salva — nunca apaga um lat/lng válido só
-        // porque nada mudou nesta sessão
-        lat: selectedLat ?? cepLat ?? savedLat,
-        lng: selectedLng ?? cepLng ?? savedLng,
+        lat: latToSave,
+        lng: lngToSave,
         ...(isChild ? { permitir_venda_no_caixa_pai: permitirVendaNoCaixaPai } : {}),
       }).eq('id', eventoId)
 
@@ -1069,9 +1092,8 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
       </SecaoBloqueavel>
 
       {/* ── SEÇÃO: Forma de recebimento — qual gateway processa os pagamentos
-           deste evento. PagBank aparece travado até o checkout dele (PIX +
-           Cartão) estar pronto no site — selecionar agora quebraria a venda
-           pro comprador. ── */}
+           deste evento (Mercado Pago ou PagBank, ambos com checkout de PIX
+           e cartão prontos pro comprador). ── */}
       <SecaoBloqueavel ativo={!!(cidade.trim() || nomeLocal.trim())} mensagem="Preencha a cidade ou o nome do local primeiro">
       <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-[#141414]">
@@ -1117,30 +1139,37 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
             </div>
           </button>
 
-          {/* PagBank — travado até o checkout dele estar pronto no site */}
-          <div
-            className="flex items-start gap-4 p-4 rounded-xl border text-left opacity-50 cursor-not-allowed"
-            style={{ background: '#111', border: '1px solid #222' }}
-            title="Em breve — o checkout do PagBank ainda não está disponível pro comprador"
+          {/* PagBank — checkout de PIX e cartão já funcionam no site */}
+          <button
+            type="button"
+            onClick={() => setGateway('pagbank')}
+            className="flex items-start gap-4 p-4 rounded-xl border text-left transition-all"
+            style={{
+              background: gateway === 'pagbank' ? '#E8B84B10' : '#111',
+              border:     `1px solid ${gateway === 'pagbank' ? '#E8B84B40' : '#222'}`,
+            }}
           >
-            <div className="w-4 h-4 rounded-full border-2 shrink-0 mt-0.5 border-[#333]" />
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  PagBank
-                </p>
-                <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full text-[#888] border border-[#222]"
-                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  <Lock size={9} /> Em breve
-                </span>
-              </div>
-              <p className="text-[#555] text-xs mt-0.5 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                {pagbankConectado
-                  ? 'Conta conectada — checkout pro comprador ainda está sendo finalizado.'
-                  : 'PIX e cartão de crédito para o comprador (em finalização).'}
-              </p>
+            <div
+              className="w-4 h-4 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center"
+              style={{ borderColor: gateway === 'pagbank' ? '#E8B84B' : '#333' }}
+            >
+              {gateway === 'pagbank' && <div className="w-2 h-2 rounded-full" style={{ background: '#E8B84B' }} />}
             </div>
-          </div>
+            <div className="flex-1">
+              <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                PagBank
+              </p>
+              <p className="text-[#555] text-xs mt-0.5 leading-relaxed" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                PIX e cartão de crédito para o comprador.
+              </p>
+              {!pagbankConectado && (
+                <p className="text-amber-400 text-xs mt-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Conta ainda não conectada —{' '}
+                  <a href="/configuracoes/contas" className="underline underline-offset-2">conectar agora</a>
+                </p>
+              )}
+            </div>
+          </button>
         </div>
       </div>
       </SecaoBloqueavel>

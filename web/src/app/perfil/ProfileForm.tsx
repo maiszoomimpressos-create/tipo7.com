@@ -4,6 +4,7 @@
 // Atualiza a tabela profiles e faz upload de avatar no Supabase Storage
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { useLocation } from '@/contexts/LocationContext'
 import { PROFILE_UPDATED_EVENT } from '@/hooks/useProfileStatus'
 import { Loader2, CheckCircle, AlertCircle, Camera, MapPin, Search } from 'lucide-react'
@@ -281,7 +282,7 @@ export function ProfileForm({ userId, secaoAtiva, initial }: Props) {
         const cidadeBias = city || cidadeDetectada
         if (cidadeBias) params.set('cidade', cidadeBias)
         if (city && uf) params.set('estado', uf)
-        const res  = await fetch(`/api/places/autocomplete?${params.toString()}`)
+        const res  = await apiFetchAuth(`/api/places/autocomplete?${params.toString()}`)
         const data = await res.json()
         if (!res.ok) {
           setAddrSearchError('Busca de endereço indisponível no momento. Preencha manualmente abaixo.')
@@ -307,7 +308,7 @@ export function ProfileForm({ userId, secaoAtiva, initial }: Props) {
     setAddrSuggestions([])
     setAddrHighlight(-1)
     try {
-      const res  = await fetch(`/api/places/details?place_id=${s.placeId}`)
+      const res  = await apiFetchAuth(`/api/places/details?place_id=${s.placeId}`)
       const data = await res.json()
       if (data.cep)    { setZipCode(formatCEP(data.cep)); setCepError(null) }
       if (data.rua)    setStreet(data.rua)
