@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { PiggyBank, ChevronDown, AlertTriangle, Loader2 } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -41,7 +42,7 @@ export function SaldoBilheteriaAdmin() {
   const [carregandoMov, setCarregandoMov] = useState(false)
 
   useEffect(() => {
-    fetch('/api/admin/saldo-bilheteria')
+    apiFetchAuth('/api/admin/saldo-bilheteria')
       .then(r => r.json())
       .then(d => setSaldos(d.saldos ?? []))
       .finally(() => setCarregando(false))
@@ -49,7 +50,7 @@ export function SaldoBilheteriaAdmin() {
 
   async function toggleBloqueio(eventId: string, atual: boolean) {
     setSaldos(prev => prev.map(s => s.event_id === eventId ? { ...s, bloqueio_ativo: !atual } : s))
-    await fetch('/api/admin/saldo-bilheteria', {
+    await apiFetchAuth('/api/admin/saldo-bilheteria', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ event_id: eventId, bloqueio_ativo: !atual }),
@@ -60,7 +61,7 @@ export function SaldoBilheteriaAdmin() {
     if (expandido === eventId) { setExpandido(null); return }
     setExpandido(eventId)
     setCarregandoMov(true)
-    const res  = await fetch(`/api/admin/saldo-bilheteria/movimentos?event_id=${eventId}`)
+    const res  = await apiFetchAuth(`/api/admin/saldo-bilheteria/movimentos?event_id=${eventId}`)
     const data = await res.json()
     setMovimentos(data.movimentos ?? [])
     setCarregandoMov(false)

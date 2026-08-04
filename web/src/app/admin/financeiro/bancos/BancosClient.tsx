@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { Check, Loader2, RefreshCw, Info, AlertTriangle, Wallet, Eye, EyeOff, ShieldCheck, ImagePlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -14,6 +15,13 @@ interface MpCredenciais {
   webhookSecret: string
 }
 
+interface PagBankCredenciais {
+  token:        string
+  accountId:    string
+  clientId:     string
+  clientSecret: string
+}
+
 interface Props {
   platformFeePct: string
   descPlataforma: string
@@ -23,7 +31,8 @@ interface Props {
   pctCredito6x:   string
   pctCredito12x:  string
   notaExtra:      string
-  mpCredenciais:  MpCredenciais
+  mpCredenciais:      MpCredenciais
+  pagbankCredenciais: PagBankCredenciais
   logoMercadoPago: string | null
   logoPagbank:     string | null
 }
@@ -42,7 +51,7 @@ type MpRates = {
 }
 
 async function saveKey(key: string, value: string) {
-  return fetch('/api/admin/settings', {
+  return apiFetchAuth('/api/admin/settings', {
     method:  'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ [key]: value }),
@@ -76,7 +85,7 @@ export function BancosClient(props: Props) {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('gateway', gateway)
-      const res  = await fetch('/api/admin/gateway-logo', { method: 'POST', body: fd })
+      const res  = await apiFetchAuth('/api/admin/gateway-logo', { method: 'POST', body: fd })
       const data = await res.json()
       if (res.ok) {
         if (gateway === 'mercadopago') setLogoMp(data.url)
@@ -108,6 +117,29 @@ export function BancosClient(props: Props) {
       setTimeout(() => setCredSaved(false), 2500)
     } finally {
       setCredSaving(false)
+    }
+  }
+
+  const [pbToken,        setPbToken]        = useState(props.pagbankCredenciais.token)
+  const [pbAccountId,    setPbAccountId]    = useState(props.pagbankCredenciais.accountId)
+  const [pbClientId,     setPbClientId]     = useState(props.pagbankCredenciais.clientId)
+  const [pbClientSecret, setPbClientSecret] = useState(props.pagbankCredenciais.clientSecret)
+  const [pbCredSaving, setPbCredSaving] = useState(false)
+  const [pbCredSaved,  setPbCredSaved]  = useState(false)
+
+  async function salvarCredenciaisPagbank() {
+    setPbCredSaving(true); setPbCredSaved(false)
+    try {
+      await Promise.all([
+        saveCredKey('pagbank_token',         pbToken.trim()),
+        saveCredKey('pagbank_account_id',    pbAccountId.trim()),
+        saveCredKey('pagbank_client_id',     pbClientId.trim()),
+        saveCredKey('pagbank_client_secret', pbClientSecret.trim()),
+      ])
+      setPbCredSaved(true)
+      setTimeout(() => setPbCredSaved(false), 2500)
+    } finally {
+      setPbCredSaving(false)
     }
   }
 
@@ -147,7 +179,7 @@ export function BancosClient(props: Props) {
   async function buscarDoMp() {
     setFetchingMp(true); setMpErr(null); setMpInfo(null)
     try {
-      const res  = await fetch('/api/admin/mp-rates')
+      const res  = await apiFetchAuth('/api/admin/mp-rates')
       const data = await res.json() as { rates: MpRates; source: string; account?: { id: number; email: string } }
 
       setPix(data.rates.pix)
@@ -326,17 +358,71 @@ export function BancosClient(props: Props) {
             </div>
           )}
 
-          {/* Painel PagBank — ainda não integrado nessa tela */}
+          {/* Painel PagBank — credenciais salvas, mas o checkout de cartão do
+               comprador ainda não existe no site (só o backend está pronto) */}
           {gatewayAberto === 'pagbank' && (
-            <div className="rounded-2xl p-8 flex flex-col items-center justify-center gap-2 text-center"
-                 style={{ background: '#0d0d0d', border: '1.5px dashed #1e1e1e' }}>
-              <Wallet size={20} className="text-[#333] mb-1" />
-              <p className="text-[#555] text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Credenciais do PagBank em breve
-              </p>
-              <p className="text-[#333] text-xs max-w-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Essa aba vai ganhar os mesmos campos assim que integrarmos o PagBank por aqui.
-              </p>
+            <div className="rounded-2xl p-6" style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+              <div className="flex items-start justify-between gap-3 mb-1">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Credenciais PagBank
+                    </p>
+                    <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                          style={{ background: '#E8B84B12', color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                      Checkout de cartão em breve
+                    </span>
+                  </div>
+                  <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Conta própria da Tipo7 — Token vem de &quot;Gerar token&quot; em minhaconta.pagbank.com.br &gt; Vendas Online &gt; Integrações
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMostrarSegredos(v => !v)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium shrink-0 transition-all"
+                  style={{ background: '#111', border: '1px solid #222', color: '#888', fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  {mostrarSegredos ? <EyeOff size={12} /> : <Eye size={12} />}
+                  {mostrarSegredos ? 'Ocultar' : 'Mostrar'}
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-3 mt-4">
+                {([
+                  { label: 'Token',          value: pbToken,         set: setPbToken,         secreto: true,  placeholder: '' },
+                  { label: 'Account ID',     value: pbAccountId,     set: setPbAccountId,     secreto: false, placeholder: 'ID da conta Tipo7 que recebe a taxa no split' },
+                  { label: 'Client ID',      value: pbClientId,      set: setPbClientId,      secreto: false, placeholder: 'App do PagBank Connect' },
+                  { label: 'Client Secret',  value: pbClientSecret,  set: setPbClientSecret,  secreto: true,  placeholder: '' },
+                ] as const).map(({ label, value, set, secreto, placeholder }) => (
+                  <div key={label} className="flex flex-col gap-1">
+                    <label className="text-[#666] text-[11px] font-medium tracking-widest uppercase" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {label}
+                    </label>
+                    <input
+                      type={secreto && !mostrarSegredos ? 'password' : 'text'}
+                      value={value}
+                      onChange={e => set(e.target.value)}
+                      placeholder={placeholder}
+                      autoComplete="off"
+                      className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#2e2e2e]"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end mt-5">
+                <button
+                  type="button"
+                  onClick={salvarCredenciaisPagbank}
+                  disabled={pbCredSaving}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-60"
+                  style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+                >
+                  {pbCredSaving ? <Loader2 size={14} className="animate-spin" /> : pbCredSaved ? <><Check size={14} /> Salvo!</> : 'Salvar credenciais'}
+                </button>
+              </div>
             </div>
           )}
         </div>

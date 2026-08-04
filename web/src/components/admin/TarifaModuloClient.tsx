@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Check, Loader2 } from 'lucide-react'
 import { TaxaPadraoCard, TaxaMinimaCard, type ExtraFeeState, type FeeValueState } from './TaxaCards'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -28,7 +29,7 @@ export function TarifaModuloClient({ keyPrefix, defaultFeePct, defaultFeeType, m
     setSaving(true)
     setSaved(false)
     try {
-      await fetch('/api/admin/settings', {
+      await apiFetchAuth('/api/admin/settings', {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({

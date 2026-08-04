@@ -6,6 +6,7 @@ import {
   ChevronUp, ChevronDown, Trash2, Plus, Save,
   Loader2,
 } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 export type ItemStatus = 'pendente' | 'andamento' | 'feito'
 
@@ -264,7 +265,7 @@ export default function RoadmapClient({ initialItems }: { initialItems: RoadmapI
   async function save() {
     setSaving(true)
     try {
-      await fetch('/api/admin/roadmap', {
+      await apiFetchAuth('/api/admin/roadmap', {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ items }),

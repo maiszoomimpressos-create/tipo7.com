@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Check, Loader2, Wifi, WifiOff, Pencil, X } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -27,7 +28,7 @@ function FeeEditor({ row, onSaved }: { row: Row; onSaved: (pct: number) => void 
   async function save() {
     setSaving(true)
     try {
-      await fetch(`/api/admin/promotores/${row.userId}`, {
+      await apiFetchAuth(`/api/admin/promotores/${row.userId}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ fee_pct: parseFloat(value) }),

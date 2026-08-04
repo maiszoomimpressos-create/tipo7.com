@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Save, Loader2, Check, FileText, Shield } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -42,7 +43,7 @@ export function ConteudoClient({ termos: initialTermos, privacidade: initialPriv
   async function handleSalvar() {
     setSalvando(true); setErro(null); setSucesso(false)
     try {
-      const res = await fetch('/api/admin/conteudo', {
+      const res = await apiFetchAuth('/api/admin/conteudo', {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ key: tab, content }),

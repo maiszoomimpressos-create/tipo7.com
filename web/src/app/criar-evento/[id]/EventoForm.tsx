@@ -518,7 +518,7 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
       // Assume o lugar como responsável — só cuida dos dados do venue
       // (endereço/capacidade/estacionamento), nunca de dinheiro/caixa
       if (souResponsavel && venueIdToSave) {
-        await fetch(`/api/venues/${venueIdToSave}/tornar-responsavel`, {
+        await apiFetchAuth(`/api/venues/${venueIdToSave}/tornar-responsavel`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

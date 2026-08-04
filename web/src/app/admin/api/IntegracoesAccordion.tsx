@@ -9,6 +9,7 @@ import {
   ArrowRight, ArrowLeft, Radio, Users, Car, ChevronDown, Eye, EyeOff,
   Pencil, Check, X, Loader2, KeyRound,
 } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 type Direcao = 'entra' | 'sai' | 'push'
 
@@ -103,7 +104,7 @@ function CredenciaisForm({ integracao }: { integracao: Integracao }) {
   const salvar = async () => {
     setSaving(true); setErro(false)
     try {
-      const res = await fetch(`/api/admin/integracoes/${integracao.id}`, {
+      const res = await apiFetchAuth(`/api/admin/integracoes/${integracao.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ base_url: baseUrl, api_key: apiKey, ...(temWebhook ? { webhook_secret: webhookSecret } : {}) }),
@@ -176,7 +177,7 @@ function RotaCard({ item }: { item: Rota }) {
     const novaEnvia  = enviaTexto.split(',').map(s => s.trim()).filter(Boolean)
     const novaRecebe = recebeTexto.split(',').map(s => s.trim()).filter(Boolean)
     try {
-      const res = await fetch(`/api/admin/integracoes/rotas/${item.id}`, {
+      const res = await apiFetchAuth(`/api/admin/integracoes/rotas/${item.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gatilho, campos_envia: novaEnvia, campos_recebe: novaRecebe, observacao }),

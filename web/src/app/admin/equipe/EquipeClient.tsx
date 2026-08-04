@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { UserPlus, Trash2, Loader2, Check, Shield, AlertTriangle } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -57,7 +58,7 @@ export function EquipeClient({ rows: initial, isSuperAdmin }: Props) {
     if (!email.trim()) { setErr('Email é obrigatório'); return }
     setSalvando(true); setErr(null); setSucesso(false)
     try {
-      const res  = await fetch('/api/admin/equipe', {
+      const res  = await apiFetchAuth('/api/admin/equipe', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ email: email.trim(), role, permissions: role === 'admin' ? [] : perms }),
@@ -79,7 +80,7 @@ export function EquipeClient({ rows: initial, isSuperAdmin }: Props) {
   async function handleRemover(id: string) {
     setRemovendo(id)
     try {
-      await fetch(`/api/admin/equipe?memberId=${id}`, { method: 'DELETE' })
+      await apiFetchAuth(`/api/admin/equipe?memberId=${id}`, { method: 'DELETE' })
       setRows(prev => prev.filter(r => r.id !== id))
     } finally {
       setRemovendo(null)

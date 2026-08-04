@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Plus, Trash2, Loader2, Check, Tag, Users, Globe, AlertTriangle, ShieldAlert, Eye, EyeOff } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { FeeValueField, ExtraFeeField, type FeeValueState, type ExtraFeeState } from '@/components/admin/TaxaCards'
 
 const ACCENT = '#E8B84B'
@@ -136,7 +137,7 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
 
     setSalvando(true); setErr(null)
     try {
-      const res  = await fetch('/api/admin/fee-rules', {
+      const res  = await apiFetchAuth('/api/admin/fee-rules', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -184,7 +185,7 @@ export function RulesClient({ initialRules, eventos, promotores }: Props) {
   async function handleRemover(id: string) {
     setRemovendo(id)
     try {
-      await fetch(`/api/admin/fee-rules?id=${id}`, { method: 'DELETE' })
+      await apiFetchAuth(`/api/admin/fee-rules?id=${id}`, { method: 'DELETE' })
       setRules(prev => prev.filter(r => r.id !== id))
     } finally {
       setRemovendo(null)

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { Image as ImageIcon, Loader2, Plus, Trash2 } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 export interface BannerSistema {
   id:          string
@@ -25,7 +26,7 @@ export function BannersPromocionaisClient({ bannersIniciais }: { bannersIniciais
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const res  = await fetch('/api/admin/banners-sistema', { method: 'POST', body: formData })
+      const res  = await apiFetchAuth('/api/admin/banners-sistema', { method: 'POST', body: formData })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? 'Erro ao enviar imagem'); return }
       setBanners(prev => [data.banner, ...prev])
@@ -38,7 +39,7 @@ export function BannersPromocionaisClient({ bannersIniciais }: { bannersIniciais
 
   async function handleToggleActive(id: string, active: boolean) {
     setBanners(prev => prev.map(b => b.id === id ? { ...b, active } : b))
-    await fetch(`/api/admin/banners-sistema/${id}`, {
+    await apiFetchAuth(`/api/admin/banners-sistema/${id}`, {
       method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ active }),
@@ -47,7 +48,7 @@ export function BannersPromocionaisClient({ bannersIniciais }: { bannersIniciais
 
   async function handleDelete(id: string) {
     setBanners(prev => prev.filter(b => b.id !== id))
-    await fetch(`/api/admin/banners-sistema/${id}`, { method: 'DELETE' }).catch(() => {})
+    await apiFetchAuth(`/api/admin/banners-sistema/${id}`, { method: 'DELETE' }).catch(() => {})
   }
 
   return (

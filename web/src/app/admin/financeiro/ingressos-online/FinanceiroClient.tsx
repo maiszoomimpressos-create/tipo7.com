@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Check, Loader2, DollarSign, Percent } from 'lucide-react'
 import { TaxaPadraoCard, TaxaMinimaCard, type ExtraFeeState, type FeeValueState } from '@/components/admin/TaxaCards'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -42,7 +43,7 @@ export function FinanceiroClient({
     setSaving(true)
     setSaved(false)
     try {
-      await fetch('/api/admin/settings', {
+      await apiFetchAuth('/api/admin/settings', {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -68,7 +69,7 @@ export function FinanceiroClient({
     setSavingMP(true)
     setSavedMP(false)
     try {
-      await fetch('/api/admin/settings', {
+      await apiFetchAuth('/api/admin/settings', {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
