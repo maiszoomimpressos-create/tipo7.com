@@ -24,12 +24,16 @@ function setSessionCookies(res: Response, session: SessionResult) {
   // apiFetchAuth continua anexando via Authorization: Bearer como sempre.
   res.cookie(ACCESS_COOKIE, session.accessToken, { ...base, httpOnly: false, maxAge: session.expiresIn * 1000, path: '/' });
   // refresh_token: httpOnly sempre — só o endpoint /auth/refresh (e /auth/logout) lê.
-  res.cookie(REFRESH_COOKIE, session.refreshToken, { ...base, httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000, path: '/auth' });
+  // Path precisa ser '/api/auth' (não '/auth'): o browser sempre chama a rota
+  // pelo caminho público do Next.js (rewrite de /api/auth/* pro NestJS), então
+  // é esse o path que o cookie jar usa pra decidir se manda o cookie ou não —
+  // '/auth' (nome da rota dentro do NestJS) nunca aparece na barra de endereço.
+  res.cookie(REFRESH_COOKIE, session.refreshToken, { ...base, httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000, path: '/api/auth' });
 }
 
 function clearSessionCookies(res: Response) {
   res.clearCookie(ACCESS_COOKIE, { path: '/' });
-  res.clearCookie(REFRESH_COOKIE, { path: '/auth' });
+  res.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
 }
 
 function toResponseBody(session: SessionResult) {
