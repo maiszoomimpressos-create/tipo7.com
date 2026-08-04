@@ -5,8 +5,12 @@ import { AppService } from './app.service';
 import { AdminModule } from './admin/admin.module';
 import { AreaRestritaModule } from './area-restrita/area-restrita.module';
 import { AuthModule } from './auth/auth.module';
+import { BilheteriaModule } from './bilheteria/bilheteria.module';
+import { CaixasModule } from './caixas/caixas.module';
 import { ChecksModule } from './checks/checks.module';
+import { CommonModule } from './common/common.module';
 import { CodigoModule } from './codigo/codigo.module';
+import { EstacionamentoModule } from './estacionamento/estacionamento.module';
 import { EventPermissionsModule } from './event-permissions/event-permissions.module';
 import { EventosModule } from './eventos/eventos.module';
 import { EventsModule } from './events/events.module';
@@ -15,6 +19,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { PlacesModule } from './places/places.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ScannerModule } from './scanner/scanner.module';
 import { StaffFunctionTemplatesModule } from './staff-function-templates/staff-function-templates.module';
 import { StatsModule } from './stats/stats.module';
 import { SupabaseCompatModule } from './supabase-compat/supabase-compat.module';
@@ -25,6 +30,7 @@ import { VenuesModule } from './venues/venues.module';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     SupabaseCompatModule,
+    CommonModule,
     AuthModule,
     OrgAdminModule,
     EventPermissionsModule,
@@ -40,6 +46,10 @@ import { VenuesModule } from './venues/venues.module';
     EventosModule,
     VenuesModule,
     AdminModule,
+    CaixasModule,
+    EstacionamentoModule,
+    ScannerModule,
+    BilheteriaModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { RateLimitDbService } from '../common/rate-limit-db.service';
 import { PlatformAdminService, type AdminMember } from '../platform-admin/platform-admin.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -7,21 +8,13 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly platformAdmin: PlatformAdminService,
+    private readonly rateLimitDbService: RateLimitDbService,
   ) {}
 
-  // Rate limit centralizado via banco (function SQL check_rate_limit) —
-  // funciona entre todas as instâncias, ao contrário do rate limit em
-  // memória. Fail-open em caso de erro do banco (não derruba o serviço).
+  // Mantido por compatibilidade com os controllers de area-restrita — repassa
+  // pro RateLimitDbService compartilhado (ver server/src/common/).
   async rateLimitDb(ip: string, key: string, max: number, windowMs: number): Promise<boolean> {
-    try {
-      const windowSeconds = Math.ceil(windowMs / 1000);
-      const rows = await this.prisma.$queryRaw<{ check_rate_limit: boolean }[]>`
-        SELECT check_rate_limit(${ip}, ${key}, ${max}, ${windowSeconds})
-      `;
-      return rows[0]?.check_rate_limit === true;
-    } catch {
-      return true;
-    }
+    return this.rateLimitDbService.check(ip, key, max, windowMs);
   }
 
   // ── helpers de permissão (lançam ForbiddenException) ────────────────────
