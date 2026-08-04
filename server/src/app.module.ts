@@ -9,6 +9,7 @@ import { CodigoModule } from './codigo/codigo.module';
 import { EventPermissionsModule } from './event-permissions/event-permissions.module';
 import { EventsModule } from './events/events.module';
 import { OrgAdminModule } from './org-admin/org-admin.module';
+import { OrganizationsModule } from './organizations/organizations.module';
 import { PlacesModule } from './places/places.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -30,6 +31,7 @@ import { StatsModule } from './stats/stats.module';
     ChecksModule,
     StaffFunctionTemplatesModule,
     CodigoModule,
+    OrganizationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
