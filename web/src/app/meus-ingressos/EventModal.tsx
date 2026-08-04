@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { X, CalendarDays, MapPin, Ticket, Pencil, Check, Loader2, Users, QrCode } from 'lucide-react'
 import QRCode from 'react-qr-code'
 import type { EventGroup } from './MeusIngressosClient'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
 
@@ -106,7 +107,7 @@ function SlotRow({
         setSaving(false)
         return
       }
-      const res = await fetch('/api/holders', {
+      const res = await apiFetchAuth('/api/holders', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

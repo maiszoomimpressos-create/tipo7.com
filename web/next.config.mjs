@@ -94,6 +94,20 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/mp/:path*',
   '/api/pagbank/:path*',
   '/api/admin/payment-credentials',
+  '/api/qz/:path*',
+  '/api/qr/:token',
+  '/api/auth/cpf-lookup',
+  '/api/auth/cpf-confirmar',
+  '/api/auth/sync-autosave',
+  '/api/webhooks/autosave',
+  '/api/trabalhos',
+  '/api/trabalhos/responder',
+  '/api/usuarios/buscar',
+  '/api/holders',
+  '/api/ingressos/:id',
+  '/api/eventos/:id/criar-filho',
+  '/api/carrossel/upload',
+  '/api/carrossel/:slideId',
 ]
 
 const nextConfig = {

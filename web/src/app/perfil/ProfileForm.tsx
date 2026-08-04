@@ -459,7 +459,7 @@ export function ProfileForm({ userId, secaoAtiva, initial }: Props) {
 
       // Manda o perfil atualizado pra Autosave (best-effort — não espera
       // nem bloqueia o salvamento se a Autosave estiver fora do ar)
-      fetch('/api/auth/sync-autosave', { method: 'POST' }).catch(() => {})
+      apiFetchAuth('/api/auth/sync-autosave', { method: 'POST' }).catch(() => {})
 
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)

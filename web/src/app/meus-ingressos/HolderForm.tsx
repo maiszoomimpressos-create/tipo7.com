@@ -3,6 +3,7 @@
 // Formulário inline para cadastro de portadores de ingresso por slot
 import { useState } from 'react'
 import { User, Check, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 type Holder = {
   full_name:  string
@@ -89,7 +90,7 @@ function SlotCard({
     setSaving(true)
     setErr(null)
     try {
-      const res = await fetch('/api/holders', {
+      const res = await apiFetchAuth('/api/holders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

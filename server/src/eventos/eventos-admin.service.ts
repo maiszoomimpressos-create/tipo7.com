@@ -334,4 +334,87 @@ export class EventosAdminService {
     await this.prisma.event.update({ where: { id: eventoId }, data: { status: 'publicado' } });
     return { ok: true };
   }
+
+  // ==== criar-filho ====
+  // "evento dentro do evento" — mesma organização do pai, ingresso/caixa/
+  // status próprios. Só permite um nível de aninhamento.
+
+  async listFilhos(userId: string, eventoId: string) {
+    await this.assertOwner(userId, eventoId);
+
+    const filhos = await this.prisma.event.findMany({
+      where: { parentEventId: eventoId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, title: true, status: true, dateStart: true, createdAt: true },
+    });
+    return {
+      filhos: filhos.map((f) => ({
+        id: f.id,
+        title: f.title,
+        status: f.status,
+        date_start: f.dateStart,
+        created_at: f.createdAt,
+      })),
+    };
+  }
+
+  async criarFilho(
+    userId: string,
+    eventoId: string,
+    body: { titulo?: string; moduloIngressos?: boolean; moduloEstacionamento?: boolean; moduloTenda?: boolean; permitirVendaNoCaixaPai?: boolean },
+  ) {
+    await this.assertOwner(userId, eventoId);
+
+    const pai = await this.prisma.event.findUnique({
+      where: { id: eventoId },
+      select: {
+        id: true, organizationId: true, parentEventId: true,
+        dateStart: true, dateEnd: true,
+        venueName: true, venueId: true, city: true, state: true, street: true,
+        streetNumber: true, neighborhood: true, complement: true, zipCode: true, capacity: true,
+      },
+    });
+    if (!pai) throw new NotFoundException('Evento não encontrado');
+    if (pai.parentEventId) {
+      throw new BadRequestException('Este evento já é um evento filho — não é possível criar um filho dele.');
+    }
+
+    if (!body.titulo?.trim()) throw new BadRequestException('Nome é obrigatório');
+
+    const herdaDadosDoPai = body.moduloTenda || body.moduloEstacionamento;
+
+    const filho = await this.prisma.event.create({
+      data: {
+        organizationId: pai.organizationId, // sempre do pai, nunca do cliente
+        parentEventId: pai.id,
+        title: body.titulo.trim(),
+        status: 'rascunho',
+        createdBy: userId,
+        moduloIngressos: body.moduloIngressos ?? true,
+        moduloEstacionamento: body.moduloEstacionamento ?? false,
+        moduloTenda: body.moduloTenda ?? false,
+        permitirVendaNoCaixaPai: body.permitirVendaNoCaixaPai ?? true,
+        // Tenda/Estacionamento herdam data e local do pai (editável depois)
+        ...(herdaDadosDoPai
+          ? {
+              dateStart: pai.dateStart,
+              dateEnd: pai.dateEnd,
+              venueName: pai.venueName,
+              venueId: pai.venueId,
+              city: pai.city,
+              state: pai.state,
+              street: pai.street,
+              streetNumber: pai.streetNumber,
+              neighborhood: pai.neighborhood,
+              complement: pai.complement,
+              zipCode: pai.zipCode,
+              capacity: pai.capacity,
+            }
+          : {}),
+      },
+      select: { id: true },
+    });
+
+    return { ok: true, id: filho.id };
+  }
 }

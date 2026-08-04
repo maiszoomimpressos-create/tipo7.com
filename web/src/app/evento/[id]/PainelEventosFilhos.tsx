@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Tent, Plus, Loader2, ArrowUpRight, X, Upload, ImageIcon, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -32,7 +33,7 @@ export function PainelEventosFilhos({ eventoId, isChild }: Props) {
   const [modalAberto, setModalAberto] = useState(false)
 
   const carregar = useCallback(async () => {
-    const res  = await fetch(`/api/eventos/${eventoId}/criar-filho`)
+    const res  = await apiFetchAuth(`/api/eventos/${eventoId}/criar-filho`)
     const data = await res.json()
     setFilhos(data.filhos ?? [])
     setCarregando(false)
@@ -113,7 +114,7 @@ function CriarTendaModal({ eventoId, onFechar }: { eventoId: string; onFechar: (
     if (!titulo.trim()) return
     setSalvando(true); setErro(null)
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/criar-filho`, {
+      const res = await apiFetchAuth(`/api/eventos/${eventoId}/criar-filho`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({

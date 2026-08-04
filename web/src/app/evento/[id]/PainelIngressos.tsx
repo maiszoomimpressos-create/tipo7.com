@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Ticket, Pencil, Check, X, Loader2, AlertTriangle, TrendingUp } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 export type IngressoEditavel = {
   id:         string
@@ -285,7 +286,7 @@ export function PainelIngressos({ eventoId, ingressos, capacity, dias, diaSeleci
   const capacidadePct = capacity ? Math.round((totalEmUso / capacity) * 100) : null
 
   async function handleSave(ticketId: string, fields: { name?: string; price?: number; quantity?: number }) {
-    const res = await fetch(`/api/ingressos/${ticketId}`, {
+    const res = await apiFetchAuth(`/api/ingressos/${ticketId}`, {
       method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(fields),

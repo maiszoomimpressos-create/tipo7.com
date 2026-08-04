@@ -5,6 +5,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { type User, type Session } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 interface SignUpData {
   name:      string
@@ -103,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       // Manda o cadastro recém-criado pra Autosave (best-effort — não
       // espera nem bloqueia o cadastro se a Autosave estiver fora do ar)
-      fetch('/api/auth/sync-autosave', { method: 'POST' }).catch(() => {})
+      apiFetchAuth('/api/auth/sync-autosave', { method: 'POST' }).catch(() => {})
       return { error: null }
     } catch {
       return { error: 'Erro ao criar conta. Verifique sua conexão.' }

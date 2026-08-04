@@ -6,6 +6,7 @@ import {
   Briefcase, Calendar, MapPin, Shield, Check, X,
   Loader2, Bell, Clock,
 } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -366,7 +367,7 @@ export function TrabalhosClient({ registros }: Props) {
     if (!conviteSelecionado) return
     setRespondendo(true)
     try {
-      await fetch('/api/trabalhos/responder', {
+      await apiFetchAuth('/api/trabalhos/responder', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ staffId: conviteSelecionado.id, acao }),

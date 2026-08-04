@@ -64,4 +64,14 @@ export class EventosAdminController {
   publicar(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.eventos.publicar(user.id, id);
   }
+
+  @Get('criar-filho')
+  listFilhos(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.eventos.listFilhos(user.id, id);
+  }
+
+  @Post('criar-filho')
+  criarFilho(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
+    return this.eventos.criarFilho(user.id, id, body);
+  }
 }

@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException, Logger, UnauthorizedException } from '@nestjs/common';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { IssueTicketsService } from '../common/issue-tickets.service';
 import { MpTokenService } from '../common/mp-token.service';
@@ -7,6 +7,25 @@ import { PlatformCredentialsService } from '../common/platform-credentials.servi
 import { SaldoBilheteriaService } from '../common/saldo-bilheteria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
+
+// Mapeia o nome do campo no payload da Autosave (snake_case, contrato
+// externo) pro nome do campo no Prisma (camelCase). Regra de reconciliação:
+// só completa campos vazios no profile local — nunca sobrescreve o que o
+// usuário já preencheu diretamente aqui.
+const CAMPOS_SINCRONIZAVEIS_AUTOSAVE: Array<{ payloadKey: string; prismaKey: string }> = [
+  { payloadKey: 'full_name', prismaKey: 'fullName' },
+  { payloadKey: 'cpf', prismaKey: 'cpf' },
+  { payloadKey: 'phone', prismaKey: 'phone' },
+  { payloadKey: 'rg', prismaKey: 'rg' },
+  { payloadKey: 'birth_date', prismaKey: 'birthDate' },
+  { payloadKey: 'zip_code', prismaKey: 'zipCode' },
+  { payloadKey: 'street', prismaKey: 'street' },
+  { payloadKey: 'street_number', prismaKey: 'streetNumber' },
+  { payloadKey: 'neighborhood', prismaKey: 'neighborhood' },
+  { payloadKey: 'city', prismaKey: 'city' },
+  { payloadKey: 'state', prismaKey: 'state' },
+  { payloadKey: 'complement', prismaKey: 'complement' },
+];
 
 const MP_STATUS_MAP: Record<string, string> = {
   approved: 'approved',
@@ -167,6 +186,67 @@ export class WebhooksService {
     await this.prisma.order.update({ where: { id: orderId }, data: { status: newStatus, pagbankChargeId: chargeId } });
 
     if (newStatus === 'approved') await this.issueTicketsService.issueTickets(orderId);
+
+    return { ok: true };
+  }
+
+  private assinaturaValidaAutosave(rawBody: string, assinatura: string | null, segredo: string): boolean {
+    if (!assinatura) return false;
+    const esperada = createHmac('sha256', segredo).update(rawBody).digest('hex');
+    if (esperada.length !== assinatura.length) return false;
+    return timingSafeEqual(Buffer.from(esperada), Buffer.from(assinatura));
+  }
+
+  // Webhook recebido da Autosave — notifica quando um customer é criado ou
+  // atualizado (inclusive por outro sistema do mesmo grupo, não só o
+  // Tipo7), pra manter o profile local enriquecido sem precisar de
+  // polling.
+  async autosave(rawBody: Buffer | undefined, assinatura: string | null) {
+    const integracao = await this.prisma.apiIntegracao.findUnique({
+      where: { areaSlug: 'usuarios' },
+      select: { webhookSecret: true },
+    });
+    const segredo = integracao?.webhookSecret;
+    if (!segredo) throw new InternalServerErrorException('Webhook não configurado');
+
+    const rawText = rawBody?.toString('utf-8') ?? '';
+    if (!this.assinaturaValidaAutosave(rawText, assinatura, segredo)) {
+      throw new UnauthorizedException('Assinatura inválida');
+    }
+
+    const payload = JSON.parse(rawText) as {
+      event?: 'created' | 'updated';
+      resource?: string;
+      data?: Record<string, unknown>;
+    };
+
+    if (payload.resource !== 'customers' || !payload.data) return { ok: true };
+
+    const externalId = payload.data.external_id;
+    if (typeof externalId !== 'string') return { ok: true };
+
+    const perfilAtual = await this.prisma.profile.findUnique({
+      where: { id: externalId },
+      select: {
+        fullName: true, cpf: true, phone: true, rg: true, birthDate: true,
+        zipCode: true, street: true, streetNumber: true, neighborhood: true,
+        city: true, state: true, complement: true,
+      },
+    });
+    if (!perfilAtual) return { ok: true };
+
+    const atualizacoes: Record<string, unknown> = {};
+    for (const { payloadKey, prismaKey } of CAMPOS_SINCRONIZAVEIS_AUTOSAVE) {
+      const valorAtual = (perfilAtual as Record<string, unknown>)[prismaKey];
+      const valorNovo = payload.data[payloadKey];
+      if ((valorAtual === null || valorAtual === '') && valorNovo) {
+        atualizacoes[prismaKey] = prismaKey === 'birthDate' ? new Date(String(valorNovo)) : valorNovo;
+      }
+    }
+
+    if (Object.keys(atualizacoes).length > 0) {
+      await this.prisma.profile.update({ where: { id: externalId }, data: atualizacoes });
+    }
 
     return { ok: true };
   }

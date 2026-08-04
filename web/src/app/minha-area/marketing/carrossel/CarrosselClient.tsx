@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { GalleryHorizontal, ImagePlus, Trash2, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -34,7 +35,7 @@ export function CarrosselClient({ orgId, slidesIniciais }: Props) {
       form.append('file',   file)
       form.append('org_id', orgId)
 
-      const res  = await fetch('/api/carrossel/upload', { method: 'POST', body: form })
+      const res  = await apiFetchAuth('/api/carrossel/upload', { method: 'POST', body: form })
       const data = await res.json()
 
       if (!res.ok) { setErro(data.error ?? 'Erro ao fazer upload'); continue }
@@ -46,7 +47,7 @@ export function CarrosselClient({ orgId, slidesIniciais }: Props) {
 
   async function deletar(id: string) {
     setDeletingId(id)
-    await fetch(`/api/carrossel/${id}`, { method: 'DELETE' })
+    await apiFetchAuth(`/api/carrossel/${id}`, { method: 'DELETE' })
     setSlides(prev => {
       const next = prev.filter(s => s.id !== id)
       if (previewIdx >= next.length) setPreviewIdx(Math.max(0, next.length - 1))

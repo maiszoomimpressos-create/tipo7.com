@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post, Req } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Req, type RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { WebhooksService } from './webhooks.service';
 
@@ -20,5 +20,11 @@ export class WebhooksController {
   @HttpCode(200)
   pagbank(@Body() body: any) {
     return this.webhooks.pagbank(body);
+  }
+
+  @Post('autosave')
+  @HttpCode(200)
+  autosave(@Req() req: RawBodyRequest<Request>) {
+    return this.webhooks.autosave(req.rawBody, (req.headers['x-autosave-signature'] as string | undefined) ?? null);
   }
 }
