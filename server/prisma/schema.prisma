@@ -1,0 +1,980 @@
+// ==================================================================
+// Schema Prisma gerado a partir de introspeccao manual via SQL
+// (npx prisma db pull bloqueado nesta maquina por politica WDAC).
+// Fonte: information_schema/pg_catalog do Postgres da Supabase
+// (projeto emgkdnxvdfbdhsqmykom), consultado via Management API
+// read-only em 03/08/2026. Fase 0 do plano de migracao NestJS/Prisma.
+//
+// organization_members: tabela legada NAO modelada aqui - confirmado
+// 0 linhas em producao, substituida por organization_admins.
+//
+// user_order_stats: e uma VIEW (nao tabela) - agregado de orders por
+// usuario. Nao modelada como Prisma model; recalcular via query/
+// service quando a rota admin/usuarios for portada.
+// ==================================================================
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================================================================
+// Enums
+// ==================================================================
+
+enum EventPermission {
+  validar_ingresso
+  ver_lista_convidados
+  ver_relatorios
+  gerenciar_checkin
+  gerenciar_equipe
+  vender_ingresso
+  gerenciar_estacionamento
+  estacionamento_entrada
+  estacionamento_saida
+
+  @@map("event_permission")
+}
+
+enum EventStatus {
+  rascunho
+  publicado
+  cancelado
+  encerrado
+
+  @@map("event_status")
+}
+
+enum OrganizationType {
+  promotora
+  estabelecimento
+
+  @@map("organization_type")
+}
+
+enum PlatformRole {
+  comprador
+  promotor
+  estabelecimento
+  gestor
+  admin
+
+  @@map("platform_role")
+}
+
+enum TicketMode {
+  individual
+  pacote
+  ambos
+
+  @@map("ticket_mode")
+}
+
+// ==================================================================
+// Identidade & Organizacoes
+// ==================================================================
+
+model Profile {
+  // FK -> users.id(id), Supabase Auth (nao modelado ate a Fase 6)
+  id                        String                   @id @db.Uuid
+  fullName                  String?                  @map("full_name")
+  cpf                       String?                  @unique
+  phone                     String?                  @unique
+  avatarUrl                 String?                  @map("avatar_url")
+  createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                 @default(now()) @map("updated_at") @db.Timestamptz(6)
+  birthDate                 DateTime?                @map("birth_date") @db.Date
+  zipCode                   String?                  @map("zip_code")
+  street                    String?
+  streetNumber              String?                  @map("street_number")
+  neighborhood              String?
+  city                      String?
+  state                     String?                  @db.VarChar(2)
+  addressType               String?                  @map("address_type")
+  complement                String?
+  rg                        String?
+  userCode                  String                   @unique @map("user_code")
+  auditLogs                 AuditLog[]               @relation("AuditLog_userId")
+  estacionamentoSessoes     EstacionamentoSessao[]   @relation("EstacionamentoSessao_registradoPor")
+  estacionamentos           Estacionamento[]         @relation("Estacionamento_createdBy")
+  eventStaffsProfile        EventStaff[]             @relation("EventStaff_invitedBy")
+  eventStaffsUser           EventStaff[]             @relation("EventStaff_userId")
+  events                    Event[]                  @relation("Event_createdBy")
+  feeRulesProfile           FeeRule[]                @relation("FeeRule_createdBy")
+  feeRulesUser              FeeRule[]                @relation("FeeRule_userId")
+  organizationAdminsProfile OrganizationAdmin[]      @relation("OrganizationAdmin_invitedBy")
+  organizationAdminsUser    OrganizationAdmin[]      @relation("OrganizationAdmin_userId")
+  organizations             Organization[]           @relation("Organization_ownerId")
+  platformTeamsProfile      PlatformTeam[]           @relation("PlatformTeam_addedBy")
+  platformTeamsUser         PlatformTeam[]           @relation("PlatformTeam_userId")
+  promotorMpAccounts        PromotorMpAccount[]      @relation("PromotorMpAccount_userId")
+  promotorPagbankAccounts   PromotorPagbankAccount[] @relation("PromotorPagbankAccount_userId")
+  ticketValidations         TicketValidation[]       @relation("TicketValidation_scannedBy")
+  tickets                   Ticket[]                 @relation("Ticket_validatedBy")
+  userPlatformRoles         UserPlatformRole[]       @relation("UserPlatformRole_userId")
+  venueAdminsProfile        VenueAdmin[]             @relation("VenueAdmin_invitedBy")
+  venueAdminsUser           VenueAdmin[]             @relation("VenueAdmin_userId")
+
+  @@map("profiles")
+}
+
+model UserPlatformRole {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String       @map("user_id") @db.Uuid
+  user      Profile      @relation("UserPlatformRole_userId", fields: [userId], references: [id], onDelete: Cascade)
+  role      PlatformRole
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([userId, role])
+  @@map("user_platform_roles")
+}
+
+model Organization {
+  id                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String
+  type                 OrganizationType
+  ownerId              String?             @map("owner_id") @db.Uuid
+  owner                Profile?            @relation("Organization_ownerId", fields: [ownerId], references: [id], onDelete: SetNull)
+  logoUrl              String?             @map("logo_url")
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+  cnpj                 String?             @unique
+  nomeFantasia         String?             @map("nome_fantasia")
+  codigo               String?             @unique
+  phone                String?
+  capacity             Int?
+  zipCode              String?             @map("zip_code")
+  street               String?
+  streetNumber         String?             @map("street_number")
+  neighborhood         String?
+  city                 String?
+  state                String?             @db.VarChar(2)
+  complement           String?
+  contratoTipo         String?             @map("contrato_tipo")
+  mensalidadeValidaAte DateTime?           @map("mensalidade_valida_ate") @db.Date
+  nicho                String?
+  carrosselSlides      CarrosselSlide[]    @relation("CarrosselSlide_organizationId")
+  events               Event[]             @relation("Event_organizationId")
+  organizationAdmins   OrganizationAdmin[] @relation("OrganizationAdmin_organizationId")
+  venues               Venue[]             @relation("Venue_ownerOrgId")
+
+  @@unique([ownerId, type])
+  @@map("organizations")
+}
+
+model OrganizationAdmin {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  organization   Organization @relation("OrganizationAdmin_organizationId", fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String       @map("user_id") @db.Uuid
+  user           Profile      @relation("OrganizationAdmin_userId", fields: [userId], references: [id], onDelete: Cascade)
+  role           String       @default("admin")
+  status         String       @default("ativo")
+  invitedBy      String?      @map("invited_by") @db.Uuid
+  profile        Profile?     @relation("OrganizationAdmin_invitedBy", fields: [invitedBy], references: [id])
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  participacao   String       @default("integral")
+  percentual     Decimal?     @db.Decimal(5, 2)
+
+  @@unique([organizationId, userId])
+  @@map("organization_admins")
+}
+
+model VenueAdmin {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  venueId   String   @map("venue_id") @db.Uuid
+  venue     Venue    @relation("VenueAdmin_venueId", fields: [venueId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id") @db.Uuid
+  user      Profile  @relation("VenueAdmin_userId", fields: [userId], references: [id], onDelete: Cascade)
+  role      String   @default("admin")
+  status    String   @default("ativo")
+  invitedBy String?  @map("invited_by") @db.Uuid
+  profile   Profile? @relation("VenueAdmin_invitedBy", fields: [invitedBy], references: [id])
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([venueId, userId])
+  @@map("venue_admins")
+}
+
+model PromotorProfile {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // FK -> users.id(id), Supabase Auth (nao modelado ate a Fase 6)
+  userId         String          @unique @map("user_id") @db.Uuid
+  tipoPessoa     String          @map("tipo_pessoa")
+  tipoEspaco     String          @map("tipo_espaco")
+  numSocios      String          @map("num_socios")
+  createdAt      DateTime?       @default(now()) @map("created_at") @db.Timestamptz(6)
+  promotorSocios PromotorSocio[] @relation("PromotorSocio_promotorId")
+
+  @@map("promotor_profiles")
+}
+
+model PromotorSocio {
+  id         String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  promotorId String          @map("promotor_id") @db.Uuid
+  promotor   PromotorProfile @relation("PromotorSocio_promotorId", fields: [promotorId], references: [id], onDelete: Cascade)
+  nome       String
+  cpf        String
+  email      String?
+  telefone   String?
+  createdAt  DateTime?       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("promotor_socios")
+}
+
+// ==================================================================
+// Eventos & Conteudo
+// ==================================================================
+
+model Event {
+  id                        String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId            String                     @map("organization_id") @db.Uuid
+  organization              Organization               @relation("Event_organizationId", fields: [organizationId], references: [id], onDelete: Cascade)
+  title                     String?
+  description               String?
+  coverUrl                  String?                    @map("cover_url")
+  dateStart                 DateTime?                  @map("date_start") @db.Timestamptz(6)
+  dateEnd                   DateTime?                  @map("date_end") @db.Timestamptz(6)
+  address                   String?
+  city                      String?
+  state                     String?
+  status                    EventStatus                @default(rascunho)
+  createdBy                 String?                    @map("created_by") @db.Uuid
+  profile                   Profile?                   @relation("Event_createdBy", fields: [createdBy], references: [id])
+  createdAt                 DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                   @default(now()) @map("updated_at") @db.Timestamptz(6)
+  venueName                 String?                    @map("venue_name")
+  ticketMode                TicketMode?                @map("ticket_mode")
+  packageDiscountPct        Int?                       @default(0) @map("package_discount_pct")
+  bannerUrl                 String?                    @map("banner_url")
+  galleryUrls               String[]                   @default(dbgenerated("ARRAY[]::text[]")) @map("gallery_urls")
+  venueId                   String?                    @map("venue_id") @db.Uuid
+  venue                     Venue?                     @relation("Event_venueId", fields: [venueId], references: [id])
+  capacity                  Int?
+  feeMode                   String?                    @default("promotor") @map("fee_mode")
+  category                  String?
+  zipCode                   String?                    @map("zip_code")
+  street                    String?
+  streetNumber              String?                    @map("street_number")
+  neighborhood              String?
+  complement                String?
+  vendasOnlinePausadas      Boolean                    @default(false) @map("vendas_online_pausadas")
+  transferenciaRequerSenha  Boolean                    @default(false) @map("transferencia_requer_senha")
+  paymentGateway            String                     @default("mercadopago") @map("payment_gateway")
+  moduloIngressos           Boolean                    @default(true) @map("modulo_ingressos")
+  moduloEstacionamento      Boolean                    @default(false) @map("modulo_estacionamento")
+  parentEventId             String?                    @map("parent_event_id") @db.Uuid
+  parentEvent               Event?                     @relation("Event_parentEventId", fields: [parentEventId], references: [id], onDelete: SetNull)
+  moduloTenda               Boolean                    @default(false) @map("modulo_tenda")
+  permitirVendaNoCaixaPai   Boolean                    @default(true) @map("permitir_venda_no_caixa_pai")
+  lat                       Float?
+  lng                       Float?
+  caixaTransferencias       CaixaTransferencia[]       @relation("CaixaTransferencia_eventoId")
+  caixas                    Caixa[]                    @relation("Caixa_eventoId")
+  estacionamentos           Estacionamento[]           @relation("Estacionamento_eventId")
+  eventAttributeValues      EventAttributeValue[]      @relation("EventAttributeValue_eventId")
+  eventDays                 EventDay[]                 @relation("EventDay_eventId")
+  eventPositions            EventPosition[]            @relation("EventPosition_eventId")
+  eventPresenceConfigs      EventPresenceConfig[]      @relation("EventPresenceConfig_eventId")
+  eventStaffs               EventStaff[]               @relation("EventStaff_eventId")
+  eventTickets              EventTicket[]              @relation("EventTicket_eventId")
+  events                    Event[]                    @relation("Event_parentEventId")
+  feeRules                  FeeRule[]                  @relation("FeeRule_eventId")
+  orders                    Order[]                    @relation("Order_eventId")
+  presenceEntries           PresenceEntry[]            @relation("PresenceEntry_eventId")
+  saldoBilheterias          SaldoBilheteria[]          @relation("SaldoBilheteria_eventId")
+  saldoBilheteriaMovimentos SaldoBilheteriaMovimento[] @relation("SaldoBilheteriaMovimento_eventId")
+  ticketValidations         TicketValidation[]         @relation("TicketValidation_eventId")
+
+  @@index([organizationId])
+  @@index([parentEventId])
+  @@index([status])
+  @@map("events")
+}
+
+model EventPosition {
+  id                       String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId                  String                    @map("event_id") @db.Uuid
+  event                    Event                     @relation("EventPosition_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  name                     String
+  description              String?
+  createdAt                DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  eventPositionPermissions EventPositionPermission[] @relation("EventPositionPermission_eventPositionId")
+  eventStaffs              EventStaff[]              @relation("EventStaff_eventPositionId")
+
+  @@map("event_positions")
+}
+
+model EventPositionPermission {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventPositionId String          @map("event_position_id") @db.Uuid
+  eventPosition   EventPosition   @relation("EventPositionPermission_eventPositionId", fields: [eventPositionId], references: [id], onDelete: Cascade)
+  permission      EventPermission
+
+  @@unique([eventPositionId, permission])
+  @@map("event_position_permissions")
+}
+
+model EventStaff {
+  id              String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId         String                @map("event_id") @db.Uuid
+  event           Event                 @relation("EventStaff_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  eventPositionId String?               @map("event_position_id") @db.Uuid
+  eventPosition   EventPosition?        @relation("EventStaff_eventPositionId", fields: [eventPositionId], references: [id], onDelete: SetNull)
+  userId          String                @map("user_id") @db.Uuid
+  user            Profile               @relation("EventStaff_userId", fields: [userId], references: [id], onDelete: Cascade)
+  status          String                @default("pending")
+  invitedBy       String?               @map("invited_by") @db.Uuid
+  profile         Profile?              @relation("EventStaff_invitedBy", fields: [invitedBy], references: [id])
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime              @default(now()) @map("updated_at") @db.Timestamptz(6)
+  portaoId        String?               @map("portao_id") @db.Uuid
+  portao          EstacionamentoPortao? @relation("EventStaff_portaoId", fields: [portaoId], references: [id], onDelete: SetNull)
+
+  @@unique([eventId, userId])
+  @@map("event_staff")
+}
+
+model EventDay {
+  id                  String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId             String               @map("event_id") @db.Uuid
+  event               Event                @relation("EventDay_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  dayNumber           Int                  @map("day_number")
+  date                DateTime             @db.Date
+  startTime           DateTime?            @map("start_time") @db.Time(6)
+  endTime             DateTime?            @map("end_time") @db.Time(6)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  bannerUrl           String?              @map("banner_url")
+  eventDayAttractions EventDayAttraction[] @relation("EventDayAttraction_eventDayId")
+  eventTickets        EventTicket[]        @relation("EventTicket_eventDayId")
+
+  @@unique([eventId, dayNumber])
+  @@index([eventId])
+  @@map("event_days")
+}
+
+model EventDayAttraction {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventDayId    String    @map("event_day_id") @db.Uuid
+  eventDay      EventDay  @relation("EventDayAttraction_eventDayId", fields: [eventDayId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  orderIndex    Int?      @default(0) @map("order_index")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  scheduledTime DateTime? @map("scheduled_time") @db.Time(6)
+  imageUrl      String?   @map("image_url")
+
+  @@map("event_day_attractions")
+}
+
+model EventTicket {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String      @map("event_id") @db.Uuid
+  event       Event       @relation("EventTicket_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  eventDayId  String?     @map("event_day_id") @db.Uuid
+  eventDay    EventDay?   @relation("EventTicket_eventDayId", fields: [eventDayId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  price       Decimal     @default(0) @db.Decimal(10, 2)
+  quantity    Int         @default(0)
+  orderIndex  Int?        @default(0) @map("order_index")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @default(now()) @map("updated_at") @db.Timestamptz(6)
+  orderItems  OrderItem[] @relation("OrderItem_ticketId")
+
+  @@index([eventDayId])
+  @@index([eventId])
+  @@map("event_tickets")
+}
+
+model EventAttribute {
+  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String
+  icon                 String                @default("Tag")
+  active               Boolean               @default(true)
+  orderIndex           Int                   @default(0) @map("order_index")
+  createdAt            DateTime?             @default(now()) @map("created_at") @db.Timestamptz(6)
+  eventAttributeValues EventAttributeValue[] @relation("EventAttributeValue_attributeId")
+
+  @@map("event_attributes")
+}
+
+model EventAttributeValue {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String         @map("event_id") @db.Uuid
+  event       Event          @relation("EventAttributeValue_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  attributeId String         @map("attribute_id") @db.Uuid
+  attribute   EventAttribute @relation("EventAttributeValue_attributeId", fields: [attributeId], references: [id], onDelete: Cascade)
+  createdAt   DateTime?      @default(now()) @map("created_at") @db.Timestamptz(6)
+  valueJson   Json?          @map("value_json")
+
+  @@unique([eventId, attributeId])
+  @@map("event_attribute_values")
+}
+
+model Venue {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  googlePlaceId String?       @unique @map("google_place_id")
+  zipCode       String?       @map("zip_code")
+  street        String?
+  streetNumber  String?       @map("street_number")
+  neighborhood  String?
+  city          String?
+  state         String?       @db.VarChar(2)
+  complement    String?
+  lat           Decimal?      @db.Decimal(10, 7)
+  lng           Decimal?      @db.Decimal(10, 7)
+  capacity      Int?
+  ownerOrgId    String?       @map("owner_org_id") @db.Uuid
+  ownerOrg      Organization? @relation("Venue_ownerOrgId", fields: [ownerOrgId], references: [id])
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  hasParking    Boolean?      @map("has_parking")
+  parkingSpots  Int?          @map("parking_spots")
+  codigo        String?       @unique
+  cnpj          String?       @unique
+  nomeFantasia  String?       @map("nome_fantasia")
+  nicho         String?
+  phone         String?
+  events        Event[]       @relation("Event_venueId")
+  venueAdmins   VenueAdmin[]  @relation("VenueAdmin_venueId")
+
+  @@map("venues")
+}
+
+model CarrosselSlide {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  organization   Organization @relation("CarrosselSlide_organizationId", fields: [organizationId], references: [id], onDelete: Cascade)
+  imageUrl       String       @map("image_url")
+  storagePath    String       @map("storage_path")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("carrossel_slides")
+}
+
+model SystemBanner {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  imageUrl   String   @map("image_url")
+  active     Boolean  @default(true)
+  orderIndex Int      @default(0) @map("order_index")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("system_banners")
+}
+
+model PlatformContent {
+  key       String   @id
+  content   String   @default("")
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("platform_content")
+}
+
+// ==================================================================
+// Comercio / Ticketing
+// ==================================================================
+
+model Order {
+  id                        String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // FK -> users.id(id), Supabase Auth (nao modelado ate a Fase 6)
+  userId                    String?                    @map("user_id") @db.Uuid
+  eventId                   String                     @map("event_id") @db.Uuid
+  event                     Event                      @relation("Order_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  status                    String                     @default("pending")
+  total                     Decimal                    @default(0) @db.Decimal(10, 2)
+  mpPreferenceId            String?                    @map("mp_preference_id")
+  mpPaymentId               String?                    @map("mp_payment_id")
+  createdAt                 DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                   @default(now()) @map("updated_at") @db.Timestamptz(6)
+  pixQrCode                 String?                    @map("pix_qr_code")
+  pixQrCodeBase64           String?                    @map("pix_qr_code_base64")
+  pixExpiresAt              DateTime?                  @map("pix_expires_at") @db.Timestamptz(6)
+  paymentMethod             String?                    @map("payment_method")
+  caixaId                   String?                    @map("caixa_id") @db.Uuid
+  caixa                     Caixa?                     @relation("Order_caixaId", fields: [caixaId], references: [id])
+  gateway                   String                     @default("mercadopago")
+  pagbankChargeId           String?                    @map("pagbank_charge_id")
+  pagbankPixQrCode          String?                    @map("pagbank_pix_qr_code")
+  pagbankPixExpiresAt       DateTime?                  @map("pagbank_pix_expires_at") @db.Timestamptz(6)
+  pagbankPixQrCodeImageUrl  String?                    @map("pagbank_pix_qr_code_image_url")
+  orderItems                OrderItem[]                @relation("OrderItem_orderId")
+  saldoBilheteriaMovimentos SaldoBilheteriaMovimento[] @relation("SaldoBilheteriaMovimento_orderId")
+  tickets                   Ticket[]                   @relation("Ticket_orderId")
+
+  @@index([caixaId])
+  @@index([eventId])
+  @@index([mpPaymentId])
+  @@index([status])
+  @@index([userId])
+  @@index([userId, status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId       String         @map("order_id") @db.Uuid
+  order         Order          @relation("OrderItem_orderId", fields: [orderId], references: [id], onDelete: Cascade)
+  ticketId      String?        @map("ticket_id") @db.Uuid
+  ticket        EventTicket?   @relation("OrderItem_ticketId", fields: [ticketId], references: [id], onDelete: SetNull)
+  quantity      Int
+  unitPrice     Decimal        @map("unit_price") @db.Decimal(10, 2)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  ticketHolders TicketHolder[] @relation("TicketHolder_orderItemId")
+  tickets       Ticket[]       @relation("Ticket_orderItemId")
+
+  @@index([orderId])
+  @@index([ticketId])
+  @@map("order_items")
+}
+
+model TicketHolder {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderItemId String    @map("order_item_id") @db.Uuid
+  orderItem   OrderItem @relation("TicketHolder_orderItemId", fields: [orderItemId], references: [id], onDelete: Cascade)
+  slotNumber  Int       @map("slot_number")
+  fullName    String?   @map("full_name")
+  cpf         String?
+  email       String?
+  birthDate   DateTime? @map("birth_date") @db.Date
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  phone       String?
+
+  @@unique([orderItemId, slotNumber])
+  @@map("ticket_holders")
+}
+
+model Ticket {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId           String             @map("order_id") @db.Uuid
+  order             Order              @relation("Ticket_orderId", fields: [orderId], references: [id], onDelete: Cascade)
+  orderItemId       String             @map("order_item_id") @db.Uuid
+  orderItem         OrderItem          @relation("Ticket_orderItemId", fields: [orderItemId], references: [id], onDelete: Cascade)
+  slotNumber        Int                @map("slot_number")
+  qrToken           String             @unique @default(dbgenerated("(gen_random_uuid())::text")) @map("qr_token")
+  status            String             @default("valid")
+  validatedAt       DateTime?          @map("validated_at") @db.Timestamptz(6)
+  validatedBy       String?            @map("validated_by") @db.Uuid
+  profile           Profile?           @relation("Ticket_validatedBy", fields: [validatedBy], references: [id])
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  ticketValidations TicketValidation[] @relation("TicketValidation_ticketId")
+
+  @@unique([orderItemId, slotNumber])
+  @@index([orderId])
+  @@map("tickets")
+}
+
+model TicketValidation {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId  String?  @map("ticket_id") @db.Uuid
+  ticket    Ticket?  @relation("TicketValidation_ticketId", fields: [ticketId], references: [id], onDelete: SetNull)
+  eventId   String   @map("event_id") @db.Uuid
+  event     Event    @relation("TicketValidation_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  scannedBy String   @map("scanned_by") @db.Uuid
+  profile   Profile  @relation("TicketValidation_scannedBy", fields: [scannedBy], references: [id])
+  scannedAt DateTime @default(now()) @map("scanned_at") @db.Timestamptz(6)
+  result    String
+  rawToken  String?  @map("raw_token")
+
+  @@index([eventId])
+  @@index([ticketId])
+  @@map("ticket_validations")
+}
+
+model EventPresenceConfig {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId       String   @unique @map("event_id") @db.Uuid
+  event         Event    @relation("EventPresenceConfig_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  enabled       Boolean  @default(false)
+  fieldNome     Boolean  @default(true) @map("field_nome")
+  fieldTelefone Boolean  @default(false) @map("field_telefone")
+  fieldEmail    Boolean  @default(false) @map("field_email")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("event_presence_config")
+}
+
+model PresenceEntry {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId   String   @map("event_id") @db.Uuid
+  event     Event    @relation("PresenceEntry_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  fullName  String?  @map("full_name")
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("presence_entries")
+}
+
+model FeeRule {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String
+  type           String
+  eventId        String?  @map("event_id") @db.Uuid
+  event          Event?   @relation("FeeRule_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  userId         String?  @map("user_id") @db.Uuid
+  user           Profile? @relation("FeeRule_userId", fields: [userId], references: [id], onDelete: Cascade)
+  discountPct    Decimal  @default(100) @map("discount_pct") @db.Decimal(5, 2)
+  quotaLimit     Int?     @map("quota_limit")
+  quotaPeriod    String?  @map("quota_period")
+  bypassMinimum  Boolean  @default(false) @map("bypass_minimum")
+  active         Boolean  @default(true)
+  notes          String?
+  createdBy      String?  @map("created_by") @db.Uuid
+  profile        Profile? @relation("FeeRule_createdBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  feeType        String?  @map("fee_type")
+  feeValue       Decimal? @map("fee_value") @db.Decimal(10, 2)
+  extraFee1Label String?  @map("extra_fee_1_label")
+  extraFee1Value Decimal? @map("extra_fee_1_value") @db.Decimal(10, 2)
+  extraFee1Type  String?  @map("extra_fee_1_type")
+  extraFee2Label String?  @map("extra_fee_2_label")
+  extraFee2Value Decimal? @map("extra_fee_2_value") @db.Decimal(10, 2)
+  extraFee2Type  String?  @map("extra_fee_2_type")
+
+  @@map("fee_rules")
+}
+
+model SaldoBilheteria {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId        String    @unique @map("event_id") @db.Uuid
+  event          Event     @relation("SaldoBilheteria_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  ativo          Boolean   @default(false)
+  bloqueioAtivo  Boolean   @default(false) @map("bloqueio_ativo")
+  retencaoPct    Decimal   @default(50) @map("retencao_pct") @db.Decimal(5, 2)
+  avisoPct       Decimal   @default(20) @map("aviso_pct") @db.Decimal(5, 2)
+  metaReserva    Decimal   @default(0) @map("meta_reserva") @db.Decimal(10, 2)
+  saldoAtual     Decimal   @default(0) @map("saldo_atual") @db.Decimal(10, 2)
+  avisoDisparado Boolean   @default(false) @map("aviso_disparado")
+  ativadoEm      DateTime? @map("ativado_em") @db.Timestamptz(6)
+  // FK -> users.id(id), Supabase Auth (nao modelado ate a Fase 6)
+  ativadoPor     String?   @map("ativado_por") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("saldo_bilheteria")
+}
+
+model SaldoBilheteriaMovimento {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId         String   @map("event_id") @db.Uuid
+  event           Event    @relation("SaldoBilheteriaMovimento_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  tipo            String
+  valor           Decimal  @db.Decimal(10, 2)
+  saldoResultante Decimal  @map("saldo_resultante") @db.Decimal(10, 2)
+  orderId         String?  @map("order_id") @db.Uuid
+  order           Order?   @relation("SaldoBilheteriaMovimento_orderId", fields: [orderId], references: [id], onDelete: SetNull)
+  // FK -> users.id(id), Supabase Auth (nao modelado ate a Fase 6)
+  criadoPor       String?  @map("criado_por") @db.Uuid
+  criadoEm        DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  @@index([eventId, criadoEm])
+  @@map("saldo_bilheteria_movimentos")
+}
+
+// ==================================================================
+// Box Office / Operacao
+// ==================================================================
+
+model Caixa {
+  id                              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventoId                        String                 @map("evento_id") @db.Uuid
+  evento                          Event                  @relation("Caixa_eventoId", fields: [eventoId], references: [id], onDelete: Cascade)
+  // FK -> users.id(id), Supabase Auth (nao modelado ate a Fase 6)
+  operadorId                      String?                @map("operador_id") @db.Uuid
+  nome                            String
+  fundoInicial                    Decimal                @default(0) @map("fundo_inicial") @db.Decimal(10, 2)
+  ingressosAlocados               Int                    @default(0) @map("ingressos_alocados")
+  status                          String                 @default("aberto")
+  abertoEm                        DateTime               @default(now()) @map("aberto_em") @db.Timestamptz(6)
+  fechadoEm                       DateTime?              @map("fechado_em") @db.Timestamptz(6)
+  // FK -> users.id(id), Supabase Auth (nao modelado ate a Fase 6)
+  createdBy                       String                 @map("created_by") @db.Uuid
+  createdAt                       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  nomeOperador                    String?                @map("nome_operador")
+  estacionamentoId                String?                @map("estacionamento_id") @db.Uuid
+  estacionamento                  Estacionamento?        @relation("Caixa_estacionamentoId", fields: [estacionamentoId], references: [id], onDelete: SetNull)
+  caixaFechamentos                CaixaFechamento[]      @relation("CaixaFechamento_caixaId")
+  caixaTransferenciasCaixaDestino CaixaTransferencia[]   @relation("CaixaTransferencia_caixaDestinoId")
+  caixaTransferenciasCaixaOrigem  CaixaTransferencia[]   @relation("CaixaTransferencia_caixaOrigemId")
+  estacionamentoSessoes           EstacionamentoSessao[] @relation("EstacionamentoSessao_caixaId")
+  orders                          Order[]                @relation("Order_caixaId")
+
+  @@index([estacionamentoId])
+  @@index([eventoId])
+  @@index([operadorId])
+  @@map("caixas")
+}
+
+model CaixaTransferencia {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventoId       String   @map("evento_id") @db.Uuid
+  evento         Event    @relation("CaixaTransferencia_eventoId", fields: [eventoId], references: [id], onDelete: Cascade)
+  caixaOrigemId  String   @map("caixa_origem_id") @db.Uuid
+  caixaOrigem    Caixa    @relation("CaixaTransferencia_caixaOrigemId", fields: [caixaOrigemId], references: [id])
+  caixaDestinoId String   @map("caixa_destino_id") @db.Uuid
+  caixaDestino   Caixa    @relation("CaixaTransferencia_caixaDestinoId", fields: [caixaDestinoId], references: [id])
+  quantidade     Int
+  // FK -> users.id(id), Supabase Auth (nao modelado ate a Fase 6)
+  autorizadoPor  String?  @map("autorizado_por") @db.Uuid
+  observacao     String?
+  criadoEm       DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  @@index([eventoId])
+  @@map("caixa_transferencias")
+}
+
+model CaixaFechamento {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caixaId             String    @unique @map("caixa_id") @db.Uuid
+  caixa               Caixa     @relation("CaixaFechamento_caixaId", fields: [caixaId], references: [id])
+  dinheiroContado     Decimal   @default(0) @map("dinheiro_contado") @db.Decimal(10, 2)
+  ingressosDevolvidos Int       @default(0) @map("ingressos_devolvidos")
+  diferencaDinheiro   Decimal?  @map("diferenca_dinheiro") @db.Decimal(10, 2)
+  diferencaIngressos  Int?      @map("diferenca_ingressos")
+  observacoes         String?
+  // FK -> users.id(id), Supabase Auth (nao modelado ate a Fase 6)
+  fechadoPor          String?   @map("fechado_por") @db.Uuid
+  criadoEm            DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+  // FK -> users.id(id), Supabase Auth (nao modelado ate a Fase 6)
+  validadoPor         String?   @map("validado_por") @db.Uuid
+  validadoEm          DateTime? @map("validado_em") @db.Timestamptz(6)
+
+  @@map("caixa_fechamento")
+}
+
+model Estacionamento {
+  id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId               String                 @map("event_id") @db.Uuid
+  event                 Event                  @relation("Estacionamento_eventId", fields: [eventId], references: [id], onDelete: Cascade)
+  nome                  String
+  cobraModo             String                 @default("gratis") @map("cobra_modo")
+  precoFixo             Decimal?               @map("preco_fixo") @db.Decimal(10, 2)
+  precoPrimeiraHora     Decimal?               @map("preco_primeira_hora") @db.Decimal(10, 2)
+  precoHoraAdicional    Decimal?               @map("preco_hora_adicional") @db.Decimal(10, 2)
+  tetoDiario            Decimal?               @map("teto_diario") @db.Decimal(10, 2)
+  toleranciaMinutos     Int                    @default(10) @map("tolerancia_minutos")
+  controlaSaida         Boolean                @default(true) @map("controla_saida")
+  vagasTotais           Int?                   @map("vagas_totais")
+  ativo                 Boolean                @default(true)
+  createdBy             String?                @map("created_by") @db.Uuid
+  profile               Profile?               @relation("Estacionamento_createdBy", fields: [createdBy], references: [id])
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime               @default(now()) @map("updated_at") @db.Timestamptz(6)
+  caixas                Caixa[]                @relation("Caixa_estacionamentoId")
+  estacionamentoPortoes EstacionamentoPortao[] @relation("EstacionamentoPortao_estacionamentoId")
+  estacionamentoSessoes EstacionamentoSessao[] @relation("EstacionamentoSessao_estacionamentoId")
+
+  @@index([eventId])
+  @@map("estacionamentos")
+}
+
+model EstacionamentoSessao {
+  id               String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  estacionamentoId String                @map("estacionamento_id") @db.Uuid
+  estacionamento   Estacionamento        @relation("EstacionamentoSessao_estacionamentoId", fields: [estacionamentoId], references: [id], onDelete: Cascade)
+  placa            String
+  nomeCondutor     String?               @map("nome_condutor")
+  telefoneCondutor String?               @map("telefone_condutor")
+  entradaEm        DateTime              @default(now()) @map("entrada_em") @db.Timestamptz(6)
+  saidaEm          DateTime?             @map("saida_em") @db.Timestamptz(6)
+  valorCobrado     Decimal?              @map("valor_cobrado") @db.Decimal(10, 2)
+  formaPagamento   String?               @map("forma_pagamento")
+  caixaId          String?               @map("caixa_id") @db.Uuid
+  caixa            Caixa?                @relation("EstacionamentoSessao_caixaId", fields: [caixaId], references: [id])
+  status           String                @default("aberto")
+  registradoPor    String?               @map("registrado_por") @db.Uuid
+  profile          Profile?              @relation("EstacionamentoSessao_registradoPor", fields: [registradoPor], references: [id])
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  portaoEntradaId  String?               @map("portao_entrada_id") @db.Uuid
+  portaoEntrada    EstacionamentoPortao? @relation("EstacionamentoSessao_portaoEntradaId", fields: [portaoEntradaId], references: [id])
+  portaoSaidaId    String?               @map("portao_saida_id") @db.Uuid
+  portaoSaida      EstacionamentoPortao? @relation("EstacionamentoSessao_portaoSaidaId", fields: [portaoSaidaId], references: [id])
+  modelo           String?
+  cor              String?
+  cpfCondutor      String?               @map("cpf_condutor")
+
+  @@index([caixaId])
+  @@index([estacionamentoId])
+  @@index([placa])
+  @@index([status])
+  @@map("estacionamento_sessoes")
+}
+
+model EstacionamentoPortao {
+  id                                 String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  estacionamentoId                   String                 @map("estacionamento_id") @db.Uuid
+  estacionamento                     Estacionamento         @relation("EstacionamentoPortao_estacionamentoId", fields: [estacionamentoId], references: [id], onDelete: Cascade)
+  nome                               String
+  tipo                               String                 @default("ambos")
+  ativo                              Boolean                @default(true)
+  createdAt                          DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  estacionamentoSessoesPortaoEntrada EstacionamentoSessao[] @relation("EstacionamentoSessao_portaoEntradaId")
+  estacionamentoSessoesPortaoSaida   EstacionamentoSessao[] @relation("EstacionamentoSessao_portaoSaidaId")
+  eventStaffs                        EventStaff[]           @relation("EventStaff_portaoId")
+
+  @@index([estacionamentoId])
+  @@map("estacionamento_portoes")
+}
+
+model StaffFunctionTemplate {
+  id                               String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                             String
+  active                           Boolean                           @default(true)
+  sortOrder                        Int                               @default(0) @map("sort_order")
+  createdAt                        DateTime                          @default(now()) @map("created_at") @db.Timestamptz(6)
+  staffFunctionTemplatePermissions StaffFunctionTemplatePermission[] @relation("StaffFunctionTemplatePermission_templateId")
+
+  @@map("staff_function_templates")
+}
+
+model StaffFunctionTemplatePermission {
+  id         String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateId String                @map("template_id") @db.Uuid
+  template   StaffFunctionTemplate @relation("StaffFunctionTemplatePermission_templateId", fields: [templateId], references: [id], onDelete: Cascade)
+  permission EventPermission
+
+  @@unique([templateId, permission])
+  @@map("staff_function_template_permissions")
+}
+
+// ==================================================================
+// Pagamentos / Credenciais
+// ==================================================================
+
+model PromotorMpAccount {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @unique @map("user_id") @db.Uuid
+  user           Profile   @relation("PromotorMpAccount_userId", fields: [userId], references: [id], onDelete: Cascade)
+  mpUserId       BigInt    @map("mp_user_id")
+  mpAccessToken  String    @map("mp_access_token")
+  mpRefreshToken String?   @map("mp_refresh_token")
+  mpPublicKey    String?   @map("mp_public_key")
+  feePct         Decimal   @default(10.00) @map("fee_pct") @db.Decimal(5, 2)
+  expiresAt      DateTime? @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("promotor_mp_accounts")
+}
+
+model PromotorPagbankAccount {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId              String    @unique @map("user_id") @db.Uuid
+  user                Profile   @relation("PromotorPagbankAccount_userId", fields: [userId], references: [id], onDelete: Cascade)
+  pagbankAccountId    String    @map("pagbank_account_id")
+  pagbankAccessToken  String    @map("pagbank_access_token")
+  pagbankRefreshToken String?   @map("pagbank_refresh_token")
+  feePct              Decimal   @default(10.00) @map("fee_pct") @db.Decimal(5, 2)
+  expiresAt           DateTime? @map("expires_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("promotor_pagbank_accounts")
+}
+
+model ApiIntegracao {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  areaSlug           String              @unique @map("area_slug")
+  nome               String
+  baseUrl            String?             @map("base_url")
+  apiKey             String?             @map("api_key")
+  webhookSecret      String?             @map("webhook_secret")
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+  apiIntegracaoRotas ApiIntegracaoRota[] @relation("ApiIntegracaoRota_integracaoId")
+
+  @@map("api_integracoes")
+}
+
+model ApiIntegracaoRota {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  integracaoId String        @map("integracao_id") @db.Uuid
+  integracao   ApiIntegracao @relation("ApiIntegracaoRota_integracaoId", fields: [integracaoId], references: [id], onDelete: Cascade)
+  rota         String
+  direcao      String
+  gatilho      String?
+  camposEnvia  String[]      @default(dbgenerated("'{}'::text[]")) @map("campos_envia")
+  camposRecebe String[]      @default(dbgenerated("'{}'::text[]")) @map("campos_recebe")
+  observacao   String?
+  orderIndex   Int           @default(0) @map("order_index")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([integracaoId, rota])
+  @@map("api_integracao_rotas")
+}
+
+// ==================================================================
+// Admin / Ops
+// ==================================================================
+
+model PlatformTeam {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String   @unique @map("user_id") @db.Uuid
+  user              Profile  @relation("PlatformTeam_userId", fields: [userId], references: [id], onDelete: Cascade)
+  role              String
+  permissions       String[] @default(dbgenerated("'{}'::text[]"))
+  addedBy           String?  @map("added_by") @db.Uuid
+  profile           Profile? @relation("PlatformTeam_addedBy", fields: [addedBy], references: [id])
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  acessoRestrito    Boolean  @default(false) @map("acesso_restrito")
+  senhaRestritaHash String?  @map("senha_restrita_hash")
+
+  @@map("platform_team")
+}
+
+model PlatformSetting {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key       String   @unique
+  value     String
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("platform_settings")
+}
+
+model ProcessedWebhook {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentId   String   @map("payment_id")
+  orderId     String?  @map("order_id")
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz(6)
+  mpStatus    String   @default("unknown") @map("mp_status")
+  gateway     String   @default("mercadopago")
+
+  @@unique([paymentId, mpStatus])
+  @@index([paymentId])
+  @@map("processed_webhooks")
+}
+
+model AuditLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  user         Profile? @relation("AuditLog_userId", fields: [userId], references: [id], onDelete: SetNull)
+  action       String
+  resourceType String?  @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  details      Json?
+  ip           String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([action])
+  @@index([createdAt])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+model RateLimitRequest {
+  id        BigInt   @id @default(dbgenerated("nextval('rate_limit_requests_id_seq'::regclass)"))
+  ip        String
+  key       String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([ip, key, createdAt])
+  @@map("rate_limit_requests")
+}
