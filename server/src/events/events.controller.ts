@@ -1,11 +1,15 @@
-import { Controller, Get, Query, Req, Res } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { getIp, rateLimitLocal, tooManyRequests } from '../common/rate-limit.util';
+import { EventosAdminService } from '../eventos/eventos-admin.service';
 import { EventsService } from './events.service';
 
 @Controller('eventos')
 export class EventsController {
-  constructor(private readonly events: EventsService) {}
+  constructor(
+    private readonly events: EventsService,
+    private readonly eventosAdmin: EventosAdminService,
+  ) {}
 
   @Get('buscar')
   async buscar(
@@ -40,5 +44,17 @@ export class EventsController {
 
     res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
     return this.events.destaque({ estado: estado ?? null, lat, lng });
+  }
+
+  // Leitura pública de dias/ingressos/atributos — mesma info que a página
+  // do evento (e o editor do organizador) já buscava sem guarda de auth.
+  @Get(':id/dias')
+  getDias(@Param('id') id: string) {
+    return this.eventosAdmin.getDias(id);
+  }
+
+  @Get(':id/atributos')
+  getAtributos(@Param('id') id: string) {
+    return this.eventosAdmin.getAtributosEvento(id);
   }
 }

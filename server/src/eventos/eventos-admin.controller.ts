@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtGuard } from '../auth/guards/supabase-jwt.guard';
 import type { AuthenticatedUser } from '../auth/strategies/supabase-jwt.strategy';
@@ -73,5 +73,25 @@ export class EventosAdminController {
   @Post('criar-filho')
   criarFilho(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
     return this.eventos.criarFilho(user.id, id, body);
+  }
+
+  @Post('dias')
+  saveDias(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
+    return this.eventos.saveDias(user.id, id, body);
+  }
+
+  @Put('atributos/:attributeId')
+  setAtributo(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('attributeId') attributeId: string,
+    @Body() body: { valueJson?: unknown },
+  ) {
+    return this.eventos.setAtributoValor(user.id, id, attributeId, body?.valueJson);
+  }
+
+  @Delete('atributos/:attributeId')
+  removeAtributo(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Param('attributeId') attributeId: string) {
+    return this.eventos.removeAtributoValor(user.id, id, attributeId);
   }
 }

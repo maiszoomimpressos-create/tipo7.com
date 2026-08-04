@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client';
 import { OrgAdminService } from '../org-admin/org-admin.service';
 import { EventPermissionsService } from '../event-permissions/event-permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -416,5 +417,224 @@ export class EventosAdminService {
     });
 
     return { ok: true, id: filho.id };
+  }
+
+  // ==== dias (event_days + event_day_attractions + event_tickets) ====
+  // Porte de web/src/app/criar-evento/[id]/ingressos/IngressosClient.tsx
+  // (grava tudo de uma vez) + as leituras de evento/[id]/page.tsx,
+  // criar-evento/[id]/{ingressos,publicar}/page.tsx.
+
+  private async getDiasDoEvento(eventoId: string) {
+    const [dias, ingressos] = await Promise.all([
+      this.prisma.eventDay.findMany({
+        where: { eventId: eventoId },
+        orderBy: { dayNumber: 'asc' },
+        include: { eventDayAttractions: { orderBy: { orderIndex: 'asc' } } },
+      }),
+      this.prisma.eventTicket.findMany({
+        where: { eventId: eventoId },
+        orderBy: { orderIndex: 'asc' },
+      }),
+    ]);
+
+    return {
+      dias: dias.map((d) => ({
+        id: d.id,
+        day_number: d.dayNumber,
+        date: d.date.toISOString().slice(0, 10),
+        start_time: d.startTime ? d.startTime.toISOString().slice(11, 16) : null,
+        end_time: d.endTime ? d.endTime.toISOString().slice(11, 16) : null,
+        banner_url: d.bannerUrl,
+        event_day_attractions: d.eventDayAttractions.map((a) => ({
+          id: a.id,
+          name: a.name,
+          description: a.description,
+          order_index: a.orderIndex,
+          scheduled_time: a.scheduledTime ? a.scheduledTime.toISOString().slice(11, 16) : null,
+          image_url: a.imageUrl,
+        })),
+      })),
+      ingressos: ingressos.map((t) => ({
+        id: t.id,
+        event_day_id: t.eventDayId,
+        name: t.name,
+        description: t.description,
+        price: Number(t.price),
+        quantity: t.quantity,
+        order_index: t.orderIndex,
+      })),
+    };
+  }
+
+  // Leitura pública (mesma info que já aparecia sem guarda nenhuma na
+  // página pública do evento) — só a escrita (saveDias) exige dono.
+  async getDias(eventoId: string) {
+    const [proprio, filhosEvents] = await Promise.all([
+      this.getDiasDoEvento(eventoId),
+      this.prisma.event.findMany({ where: { parentEventId: eventoId }, select: { id: true } }),
+    ]);
+
+    const filhos: Record<string, { dias: unknown[]; ingressos: unknown[] }> = {};
+    for (const f of filhosEvents) {
+      filhos[f.id] = await this.getDiasDoEvento(f.id);
+    }
+
+    return { ...proprio, filhos };
+  }
+
+  async saveDias(
+    userId: string,
+    eventoId: string,
+    body: {
+      ticketMode?: 'individual' | 'pacote' | 'ambos';
+      packageDiscountPct?: number;
+      dateStart?: string;
+      dateEnd?: string;
+      dias?: Array<{
+        id?: string;
+        dayNumber: number;
+        date: string;
+        startTime?: string | null;
+        endTime?: string | null;
+        bannerUrl?: string | null;
+        attractions?: Array<{ name: string; description?: string | null; orderIndex?: number; scheduledTime?: string | null; imageUrl?: string | null }>;
+      }>;
+      ingressos?: Array<{
+        id?: string;
+        eventDayId?: string | null;
+        name: string;
+        description?: string | null;
+        price: number;
+        quantity: number;
+        orderIndex?: number;
+      }>;
+    },
+  ) {
+    await this.assertOwner(userId, eventoId);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.event.update({
+        where: { id: eventoId },
+        data: {
+          ...(body.ticketMode ? { ticketMode: body.ticketMode } : {}),
+          ...(body.packageDiscountPct !== undefined ? { packageDiscountPct: body.packageDiscountPct } : {}),
+          ...(body.dateStart ? { dateStart: new Date(body.dateStart) } : {}),
+          ...(body.dateEnd ? { dateEnd: new Date(body.dateEnd) } : {}),
+        },
+      });
+
+      // dayNumber -> id real, pra front remapear ingressos que referenciavam
+      // um dia recém-criado (mesma lógica do idPlaceholderParaReal original).
+      const idPorDayNumber = new Map<number, string>();
+
+      if (body.dias) {
+        for (const dia of body.dias) {
+          const diaDb = await tx.eventDay.upsert({
+            where: { eventId_dayNumber: { eventId: eventoId, dayNumber: dia.dayNumber } },
+            create: {
+              eventId: eventoId,
+              dayNumber: dia.dayNumber,
+              date: new Date(dia.date),
+              startTime: dia.startTime ? new Date(`1970-01-01T${dia.startTime}:00Z`) : null,
+              endTime: dia.endTime ? new Date(`1970-01-01T${dia.endTime}:00Z`) : null,
+              bannerUrl: dia.bannerUrl ?? null,
+            },
+            update: {
+              date: new Date(dia.date),
+              startTime: dia.startTime ? new Date(`1970-01-01T${dia.startTime}:00Z`) : null,
+              endTime: dia.endTime ? new Date(`1970-01-01T${dia.endTime}:00Z`) : null,
+              ...(dia.bannerUrl !== undefined ? { bannerUrl: dia.bannerUrl } : {}),
+            },
+            select: { id: true },
+          });
+          idPorDayNumber.set(dia.dayNumber, diaDb.id);
+
+          await tx.eventDayAttraction.deleteMany({ where: { eventDayId: diaDb.id } });
+          const atracoes = (dia.attractions ?? []).filter((a) => a.name?.trim());
+          if (atracoes.length > 0) {
+            await tx.eventDayAttraction.createMany({
+              data: atracoes.map((a, i) => ({
+                eventDayId: diaDb.id,
+                name: a.name.trim(),
+                description: a.description ?? null,
+                orderIndex: a.orderIndex ?? i,
+                scheduledTime: a.scheduledTime ? new Date(`1970-01-01T${a.scheduledTime}:00Z`) : null,
+                imageUrl: a.imageUrl ?? null,
+              })),
+            });
+          }
+        }
+      }
+
+      const ingressosOut: Array<{ index: number; id: string; eventDayId: string | null }> = [];
+      if (body.ingressos) {
+        for (let i = 0; i < body.ingressos.length; i++) {
+          const t = body.ingressos[i];
+          if (!t.name?.trim()) continue;
+          // eventDayId pode ser um dayNumber (string) do dia recém-criado no
+          // mesmo save — resolve pro id real antes de gravar.
+          const eventDayIdReal =
+            t.eventDayId && idPorDayNumber.has(Number(t.eventDayId))
+              ? (idPorDayNumber.get(Number(t.eventDayId)) as string)
+              : (t.eventDayId ?? null);
+
+          const data = {
+            eventId: eventoId,
+            eventDayId: eventDayIdReal,
+            name: t.name.trim(),
+            description: t.description ?? null,
+            price: t.price,
+            quantity: t.quantity,
+            orderIndex: t.orderIndex ?? i,
+          };
+
+          const saved = t.id
+            ? await tx.eventTicket.update({ where: { id: t.id }, data, select: { id: true } })
+            : await tx.eventTicket.create({ data, select: { id: true } });
+
+          ingressosOut.push({ index: i, id: saved.id, eventDayId: eventDayIdReal });
+        }
+      }
+
+      return { ok: true, dias: Array.from(idPorDayNumber, ([dayNumber, id]) => ({ dayNumber, id })), ingressos: ingressosOut };
+    });
+  }
+
+  // ==== atributos customizados (event_attributes / event_attribute_values) ====
+
+  async getAtributosEvento(eventoId: string) {
+    const [available, values] = await Promise.all([
+      this.prisma.eventAttribute.findMany({
+        where: { active: true },
+        orderBy: { orderIndex: 'asc' },
+        select: { id: true, name: true, icon: true, orderIndex: true },
+      }),
+      this.prisma.eventAttributeValue.findMany({
+        where: { eventId: eventoId },
+        select: { attributeId: true, valueJson: true },
+      }),
+    ]);
+
+    return {
+      available: available.map((a) => ({ id: a.id, name: a.name, icon: a.icon, order_index: a.orderIndex })),
+      values: values.map((v) => ({ attribute_id: v.attributeId, value_json: v.valueJson })),
+    };
+  }
+
+  async setAtributoValor(userId: string, eventoId: string, attributeId: string, valueJson: unknown) {
+    await this.assertOwner(userId, eventoId);
+    const jsonValue = valueJson === null ? Prisma.JsonNull : (valueJson as Prisma.InputJsonValue | undefined);
+    await this.prisma.eventAttributeValue.upsert({
+      where: { eventId_attributeId: { eventId: eventoId, attributeId } },
+      create: { eventId: eventoId, attributeId, valueJson: jsonValue },
+      update: jsonValue !== undefined ? { valueJson: jsonValue } : {},
+    });
+    return { ok: true };
+  }
+
+  async removeAtributoValor(userId: string, eventoId: string, attributeId: string) {
+    await this.assertOwner(userId, eventoId);
+    await this.prisma.eventAttributeValue.deleteMany({ where: { eventId: eventoId, attributeId } });
+    return { ok: true };
   }
 }

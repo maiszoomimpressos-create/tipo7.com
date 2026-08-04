@@ -338,6 +338,63 @@ export class OrganizationsService {
     };
   }
 
+  // GET /organizations/colaboradores — pedidos de equipe mandados pra
+  // eventos de TODAS as organizações que o usuário administra ativamente.
+  // Porte de web/src/app/configuracoes/colaboradores/page.tsx: antes usava
+  // get_emails_by_ids via RPC direto na Supabase; profiles.email (Fase 6)
+  // já resolve isso via relation normal, sem precisar da função SQL aqui.
+  async colaboradores(userId: string) {
+    const minhasOrgs = await this.prisma.organizationAdmin.findMany({
+      where: { userId, status: 'ativo' },
+      select: { organizationId: true },
+    });
+    const orgIds = minhasOrgs.map((r) => r.organizationId);
+    if (orgIds.length === 0) return { linhas: [] };
+
+    const staffRows = await this.prisma.eventStaff.findMany({
+      where: {
+        status: { in: ['pending', 'active'] },
+        event: { organizationId: { in: orgIds } },
+      },
+      select: {
+        id: true,
+        status: true,
+        event: { select: { id: true, title: true, dateStart: true, dateEnd: true } },
+        user: { select: { id: true, fullName: true, userCode: true, email: true } },
+        eventPosition: { select: { name: true } },
+      },
+    });
+
+    const hoje = new Date().toISOString().slice(0, 10);
+
+    const linhas = staffRows.flatMap((r) => {
+      const inicio = r.event.dateStart ? r.event.dateStart.toISOString().slice(0, 10) : null;
+      const fim = r.event.dateEnd ? r.event.dateEnd.toISOString().slice(0, 10) : inicio;
+
+      let aba: 'pendentes' | 'ativos' | 'aceitos' | null = null;
+      if (r.status === 'pending') aba = 'pendentes';
+      else if (r.status === 'active') {
+        if (inicio && fim && inicio <= hoje && hoje <= fim) aba = 'ativos';
+        else if (inicio && inicio > hoje) aba = 'aceitos';
+      }
+      if (!aba) return [];
+
+      return [
+        {
+          id: r.id,
+          nome: r.user.fullName,
+          email: r.user.email,
+          codigo: r.user.userCode,
+          funcao: r.eventPosition?.name ?? null,
+          evento: r.event.title ?? 'Evento',
+          aba,
+        },
+      ];
+    });
+
+    return { linhas };
+  }
+
   // GET /organizations/socios-ativos — todo mundo que já aceitou administrar
   // alguma das organizações do usuário.
   async sociosAtivos(userId: string) {

@@ -3,6 +3,7 @@ import { AreaRestritaModule } from '../area-restrita/area-restrita.module';
 import { AuthCoreModule } from '../auth-core/auth-core.module';
 import { PlatformAdminModule } from '../platform-admin/platform-admin.module';
 import { AdminAreaRestritaController } from './admin-area-restrita.controller';
+import { AdminAtributosController } from './admin-atributos.controller';
 import { AdminBannersController } from './admin-banners.controller';
 import { AdminContentController } from './admin-content.controller';
 import { AdminFeeRulesController } from './admin-fee-rules.controller';
@@ -27,6 +28,7 @@ import { AdminService } from './admin.service';
     AdminGatewayLogoController,
     AdminAreaRestritaController,
     AdminPaymentCredentialsController,
+    AdminAtributosController,
   ],
   providers: [AdminService],
 })

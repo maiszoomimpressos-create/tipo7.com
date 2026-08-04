@@ -8,5 +8,6 @@ import { EventosAdminService } from './eventos-admin.service';
   imports: [OrgAdminModule, EventPermissionsModule],
   controllers: [EventosAdminController],
   providers: [EventosAdminService],
+  exports: [EventosAdminService],
 })
 export class EventosModule {}

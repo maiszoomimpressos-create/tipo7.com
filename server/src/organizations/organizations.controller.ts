@@ -29,6 +29,11 @@ export class OrganizationsController {
     return this.organizations.sociosAtivos(user.id);
   }
 
+  @Get('colaboradores')
+  colaboradores(@CurrentUser() user: AuthenticatedUser) {
+    return this.organizations.colaboradores(user.id);
+  }
+
   @Put(':id')
   atualizar(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
     return this.organizations.atualizar(user.id, id, body);
