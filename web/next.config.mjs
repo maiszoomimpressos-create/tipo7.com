@@ -47,6 +47,11 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/codigo',
   '/api/organizations',
   '/api/organizations/:path*',
+  '/api/eventos/:id/equipe',
+  '/api/eventos/:id/funcoes',
+  '/api/eventos/:id/funcoes/:funcaoId',
+  '/api/eventos/:id/modulos',
+  '/api/eventos/:id/publicar',
 ]
 
 const nextConfig = {

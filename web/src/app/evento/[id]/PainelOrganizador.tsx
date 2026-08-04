@@ -5,6 +5,7 @@ import { Ticket, Users, Settings, ExternalLink, BarChart2, Layers, Car, Loader2 
 import { PainelIngressos, type IngressoEditavel } from './PainelIngressos'
 import { PainelEquipe } from './PainelEquipe'
 import { PainelAtributos } from './PainelAtributos'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -33,7 +34,7 @@ export function PainelOrganizador({ eventoId, ingressos, capacity, dias, diaSele
   async function handleAtivarEstacionamento() {
     setAtivando(true); setErroAtivar(null)
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/modulos`, {
+      const res = await apiFetchAuth(`/api/eventos/${eventoId}/modulos`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ moduloEstacionamento: true }),

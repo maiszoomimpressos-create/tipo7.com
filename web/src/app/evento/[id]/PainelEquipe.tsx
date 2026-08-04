@@ -6,6 +6,7 @@ import {
   Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X, DoorOpen, Wallet, Calculator,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -204,7 +205,7 @@ export function PainelEquipe({ eventoId }: Props) {
   async function carregarMembros() {
     setLoadingMem(true)
     try {
-      const res  = await fetch(`/api/eventos/${eventoId}/equipe`)
+      const res  = await apiFetchAuth(`/api/eventos/${eventoId}/equipe`)
       const data = await res.json()
       setMembros(data.staff ?? [])
     } finally { setLoadingMem(false) }
@@ -236,7 +237,7 @@ export function PainelEquipe({ eventoId }: Props) {
     setLoadingFun(true)
     try {
       const [resFuncoes, resTemplates] = await Promise.all([
-        fetch(`/api/eventos/${eventoId}/funcoes`),
+        apiFetchAuth(`/api/eventos/${eventoId}/funcoes`),
         fetch('/api/staff-function-templates'),
       ])
       const [dFuncoes, dTemplates] = await Promise.all([resFuncoes.json(), resTemplates.json()])
@@ -276,13 +277,13 @@ export function PainelEquipe({ eventoId }: Props) {
     setSalvandoFuncao(true); setErrFuncao(null)
     try {
       if (editandoFuncao) {
-        await fetch(`/api/eventos/${eventoId}/funcoes/${editandoFuncao.id}`, {
+        await apiFetchAuth(`/api/eventos/${eventoId}/funcoes/${editandoFuncao.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ nome: nomeFuncao, permissoes: permsFuncao }),
         })
       } else {
-        await fetch(`/api/eventos/${eventoId}/funcoes`, {
+        await apiFetchAuth(`/api/eventos/${eventoId}/funcoes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ nome: nomeFuncao, permissoes: permsFuncao }),
@@ -297,7 +298,7 @@ export function PainelEquipe({ eventoId }: Props) {
   async function removerFuncao(funcaoId: string) {
     setRemovendoFuncao(funcaoId)
     try {
-      const res  = await fetch(`/api/eventos/${eventoId}/funcoes/${funcaoId}`, { method: 'DELETE' })
+      const res  = await apiFetchAuth(`/api/eventos/${eventoId}/funcoes/${funcaoId}`, { method: 'DELETE' })
       const data = await res.json()
       if (!res.ok) { alert(data.error); return }
       await carregarFuncoes()
@@ -306,7 +307,7 @@ export function PainelEquipe({ eventoId }: Props) {
 
   async function importarTemplate(t: Template) {
     try {
-      await fetch(`/api/eventos/${eventoId}/funcoes`, {
+      await apiFetchAuth(`/api/eventos/${eventoId}/funcoes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -335,7 +336,7 @@ export function PainelEquipe({ eventoId }: Props) {
     }
     setSalvando(true); setErrConvite(null); setSucesso(false)
     try {
-      const res  = await fetch(`/api/eventos/${eventoId}/equipe`, {
+      const res  = await apiFetchAuth(`/api/eventos/${eventoId}/equipe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -356,7 +357,7 @@ export function PainelEquipe({ eventoId }: Props) {
   async function handleRemover(staffId: string) {
     setRemovendo(staffId)
     try {
-      await fetch(`/api/eventos/${eventoId}/equipe?staffId=${staffId}`, { method: 'DELETE' })
+      await apiFetchAuth(`/api/eventos/${eventoId}/equipe?staffId=${staffId}`, { method: 'DELETE' })
       setMembros(prev => prev.filter(m => m.id !== staffId))
     } finally { setRemovendo(null) }
   }
@@ -371,7 +372,7 @@ export function PainelEquipe({ eventoId }: Props) {
     if (!editandoMembro || !funcaoEditando) return
     setSalvandoMembro(true)
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/equipe`, {
+      const res = await apiFetchAuth(`/api/eventos/${eventoId}/equipe`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ staffId: editandoMembro, funcaoId: funcaoEditando, portaoId: portaoEditando || null }),

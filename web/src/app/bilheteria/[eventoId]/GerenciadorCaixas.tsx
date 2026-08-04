@@ -9,6 +9,7 @@ import {
   Calculator, Pencil, PiggyBank,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -74,7 +75,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
   const [validando, setValidando]       = useState<string | null>(null)
 
   useEffect(() => {
-    fetch(`/api/eventos/${eventoId}/equipe`)
+    apiFetchAuth(`/api/eventos/${eventoId}/equipe`)
       .then(r => r.ok ? r.json() : { staff: [] })
       .then(d => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

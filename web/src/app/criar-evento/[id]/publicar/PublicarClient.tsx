@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import {
   ArrowLeft, CheckCircle2, XCircle, Loader2, Rocket,
   CalendarDays, MapPin, Ticket, Tag, Users, Package, Layers,
@@ -133,7 +134,7 @@ export function PublicarClient({ eventoId, statusAtual, gateway, gatewayConectad
   const publicarEvento = async () => {
     setPublishing(true); setErro(null)
     try {
-      const res  = await fetch(`/api/eventos/${eventoId}/publicar`, { method: 'POST' })
+      const res  = await apiFetchAuth(`/api/eventos/${eventoId}/publicar`, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? 'Erro ao publicar. Tente novamente.'); setPublishing(false); return }
       router.push(`/criar-evento/${eventoId}/publicado`)
