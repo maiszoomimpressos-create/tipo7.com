@@ -122,6 +122,12 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/uploads/avatar',
   '/api/uploads/event-image/:eventoId',
   '/api/uploads/organization-logo/:orgId',
+  '/api/eventos/:id/dias',
+  '/api/eventos/:id/atributos',
+  '/api/eventos/:id/atributos/:attributeId',
+  '/api/admin/atributos',
+  '/api/admin/atributos/:id',
+  '/api/usuarios/admin-lista',
 ]
 
 const nextConfig = {
