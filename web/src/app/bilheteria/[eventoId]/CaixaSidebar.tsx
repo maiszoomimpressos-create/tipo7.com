@@ -5,6 +5,7 @@ import {
   Banknote, Smartphone, CreditCard, Ticket,
   TrendingUp, Wallet, ArrowDownUp, RefreshCw, AlertTriangle,
 } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 interface Stats {
   nome:            string
@@ -47,7 +48,7 @@ export function CaixaSidebar({ caixaId }: { caixaId: string }) {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 
   const fetchStats = useCallback(async () => {
-    const res = await fetch(`/api/caixas/${caixaId}`)
+    const res = await apiFetchAuth(`/api/caixas/${caixaId}`)
     if (!res.ok) return
     const data = await res.json()
     setStats(data)

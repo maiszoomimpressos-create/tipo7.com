@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { CheckCircle2, XCircle, AlertCircle, Scan, ChevronDown, ChevronUp, Clock, User } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -112,7 +113,7 @@ export function ScannerClient({ eventoId, eventoTitle, operadorName }: Props) {
     processingRef.current = true
 
     try {
-      const res  = await fetch('/api/scanner/validate', {
+      const res  = await apiFetchAuth('/api/scanner/validate', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ qr_token: token, eventoId }),

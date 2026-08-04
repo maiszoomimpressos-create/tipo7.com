@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { CaixaSidebar }       from './CaixaSidebar'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
@@ -264,7 +265,7 @@ if exist "%CHROME%" (
     setConfirmando(true)
     setErr(null)
     try {
-      const res = await fetch('/api/bilheteria/pix/confirmar', {
+      const res = await apiFetchAuth('/api/bilheteria/pix/confirmar', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ orderId }),
@@ -274,7 +275,7 @@ if exist "%CHROME%" (
 
       // Salva dados do comprador silenciosamente (CPF já foi coletado antes do PIX)
       if (nome || cpf || telefone || nascimento) {
-        fetch('/api/bilheteria/holders', {
+        apiFetchAuth('/api/bilheteria/holders', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({
@@ -310,7 +311,7 @@ if exist "%CHROME%" (
     const { orderId } = pixData
     pollingRef.current = setInterval(async () => {
       try {
-        const res  = await fetch(`/api/bilheteria/pix/${orderId}`)
+        const res  = await apiFetchAuth(`/api/bilheteria/pix/${orderId}`)
         const data = await res.json()
         if (data.status === 'approved') {
           if (pollingRef.current) clearInterval(pollingRef.current)
@@ -364,7 +365,7 @@ if exist "%CHROME%" (
     // Fluxo PIX — gera QR via Mercado Pago
     if (metodo === 'pix') {
       try {
-        const res = await fetch('/api/bilheteria/pix', {
+        const res = await apiFetchAuth('/api/bilheteria/pix', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({
@@ -401,7 +402,7 @@ if exist "%CHROME%" (
 
     // Fluxo dinheiro / cartão — registra direto
     try {
-      const res = await fetch('/api/bilheteria/vender', {
+      const res = await apiFetchAuth('/api/bilheteria/vender', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -432,7 +433,7 @@ if exist "%CHROME%" (
 
   function cancelarOrdemAtual() {
     if (pixData?.orderId) {
-      fetch('/api/bilheteria/cancelar-pix', {
+      apiFetchAuth('/api/bilheteria/cancelar-pix', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ orderId: pixData.orderId }),
@@ -481,7 +482,7 @@ if exist "%CHROME%" (
     setErr(null)
     try {
       if (nome || cpf || telefone || nascimento) {
-        const res = await fetch('/api/bilheteria/holders', {
+        const res = await apiFetchAuth('/api/bilheteria/holders', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({
@@ -1482,7 +1483,7 @@ function ModalTransferencia({
   const [ok, setOk]                 = useState(false)
 
   useEffect(() => {
-    fetch(`/api/eventos/${eventoId}/caixas`)
+    apiFetchAuth(`/api/eventos/${eventoId}/caixas`)
       .then(r => r.json())
       .then(d => {
         const outros = (d.caixas ?? []).filter((c: { id: string; status: string }) => c.id !== caixaId && c.status === 'aberto')
@@ -1494,7 +1495,7 @@ function ModalTransferencia({
 
   async function transferir() {
     setSalvando(true); setErr(null)
-    const res = await fetch('/api/caixas/transferir', {
+    const res = await apiFetchAuth('/api/caixas/transferir', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ caixaOrigemId: caixaId, caixaDestinoId: destino, quantidade: qtd }),
     })
@@ -1588,7 +1589,7 @@ function ModalFechamento({ eventoId, caixaId, isOwner, onFechar }: { eventoId: s
     const dinheiroNum = parseFloat(dinheiro.replace(',', '.')) || 0
     const devolvidosN = parseInt(devolvidos) || 0
     setSalvando(true); setErr(null)
-    const res = await fetch('/api/caixas/fechar', {
+    const res = await apiFetchAuth('/api/caixas/fechar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ caixaId, dinheiro_contado: dinheiroNum, ingressos_devolvidos: devolvidosN, observacoes: obs || undefined }),
     })

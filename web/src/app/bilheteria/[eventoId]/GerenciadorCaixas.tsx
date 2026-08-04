@@ -99,7 +99,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
   }, [eventoId])
 
   const carregarCaixas = useCallback(async () => {
-    const res  = await fetch(`/api/eventos/${eventoId}/caixas`)
+    const res  = await apiFetchAuth(`/api/eventos/${eventoId}/caixas`)
     if (!res.ok) { setFase('semCaixas'); return }
     const data = await res.json()
     setCaixas(data.caixas ?? [])
@@ -115,7 +115,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
   async function validarCaixa(caixaId: string) {
     setValidando(caixaId)
     try {
-      const res = await fetch('/api/caixas/validar', {
+      const res = await apiFetchAuth('/api/caixas/validar', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ caixaId }),
       })
@@ -129,7 +129,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
 
   async function pausarVendas() {
     setPausando(true)
-    await fetch('/api/caixas/pausar', {
+    await apiFetchAuth('/api/caixas/pausar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ eventoId, pausar: true }),
     })
@@ -212,7 +212,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
         ? { nomeOperador: c.nomeOperadorLivre.trim() }
         : {}),
     }))
-    const res = await fetch('/api/caixas/abrir', {
+    const res = await apiFetchAuth('/api/caixas/abrir', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         eventoId, caixas: caixasPayload,
@@ -228,7 +228,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
 
   async function retomar() {
     setPausando(true)
-    await fetch('/api/caixas/pausar', {
+    await apiFetchAuth('/api/caixas/pausar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ eventoId, pausar: false }),
     })

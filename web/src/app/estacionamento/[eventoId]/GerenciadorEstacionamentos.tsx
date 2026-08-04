@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -116,8 +117,8 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
 
   const carregar = useCallback(async () => {
     const [resEst, resCaixas] = await Promise.all([
-      fetch(`/api/eventos/${eventoId}/estacionamentos`),
-      fetch(`/api/eventos/${eventoId}/caixas`),
+      apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos`),
+      apiFetchAuth(`/api/eventos/${eventoId}/caixas`),
     ])
     const dataEst    = await resEst.json()
     const dataCaixas = await resCaixas.json()
@@ -130,14 +131,14 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
 
   const handleExcluir = async (id: string) => {
     if (!confirm('Excluir este estacionamento?')) return
-    const res = await fetch(`/api/eventos/${eventoId}/estacionamentos/${id}`, { method: 'DELETE' })
+    const res = await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${id}`, { method: 'DELETE' })
     const data = await res.json()
     if (!res.ok) { setErro(data.error ?? 'Erro ao excluir'); return }
     await carregar()
   }
 
   const handleToggleAtivo = async (e: Estacionamento) => {
-    await fetch(`/api/eventos/${eventoId}/estacionamentos/${e.id}`, {
+    await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${e.id}`, {
       method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ ativo: !e.ativo }),
@@ -157,7 +158,7 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
     if (!novoPortaoNome.trim()) return
     setSalvandoPortao(true); setErro(null)
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes`, {
+      const res = await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ nome: novoPortaoNome.trim(), tipo: novoPortaoTipo }),
@@ -173,12 +174,12 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
 
   const handleExcluirPortao = async (estacionamentoId: string, portaoId: string) => {
     if (!confirm('Excluir este portão?')) return
-    await fetch(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes/${portaoId}`, { method: 'DELETE' })
+    await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes/${portaoId}`, { method: 'DELETE' })
     await carregar()
   }
 
   const handleTogglePortaoAtivo = async (estacionamentoId: string, portao: Portao) => {
-    await fetch(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes/${portao.id}`, {
+    await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes/${portao.id}`, {
       method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ ativo: !portao.ativo }),
@@ -189,7 +190,7 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
   const handleFecharCaixa = async (caixaId: string) => {
     const dinheiro = prompt('Quanto dinheiro foi contado na gaveta? (R$)')
     if (dinheiro === null) return
-    const res = await fetch('/api/caixas/fechar', {
+    const res = await apiFetchAuth('/api/caixas/fechar', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ caixaId, dinheiro_contado: Number(dinheiro) || 0, ingressos_devolvidos: 0 }),
@@ -200,7 +201,7 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
   }
 
   const handleValidarCaixa = async (caixaId: string) => {
-    const res = await fetch('/api/caixas/validar', {
+    const res = await apiFetchAuth('/api/caixas/validar', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ caixaId }),
@@ -458,7 +459,7 @@ function NovoEstacionamentoModal({ eventoId, onFechar, onCriado }: { eventoId: s
     if (!nome.trim()) return
     setSalvando(true); setErro(null)
     try {
-      const res = await fetch(`/api/eventos/${eventoId}/estacionamentos`, {
+      const res = await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -583,7 +584,7 @@ function AbrirCaixaModal({ eventoId, estacionamentos, onFechar, onAberto }: {
     if (!nome.trim()) return
     setSalvando(true); setErro(null)
     try {
-      const res = await fetch(`/api/estacionamento/${eventoId}/abrir-caixa`, {
+      const res = await apiFetchAuth(`/api/estacionamento/${eventoId}/abrir-caixa`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({

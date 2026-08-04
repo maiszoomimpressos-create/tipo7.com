@@ -213,7 +213,7 @@ export function PainelEquipe({ eventoId }: Props) {
 
   async function carregarPortoes() {
     try {
-      const res  = await fetch(`/api/eventos/${eventoId}/estacionamentos`)
+      const res  = await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos`)
       const data = await res.json() as {
         estacionamentos?: { id: string; nome: string; estacionamento_portoes?: { id: string; nome: string; tipo: Portao['tipo'] }[] }[]
       }
@@ -227,7 +227,7 @@ export function PainelEquipe({ eventoId }: Props) {
 
   async function carregarCaixas() {
     try {
-      const res  = await fetch(`/api/eventos/${eventoId}/caixas`)
+      const res  = await apiFetchAuth(`/api/eventos/${eventoId}/caixas`)
       const data = await res.json() as { caixas?: { id: string; operadorId: string | null; status: CaixaResumo['status'] }[] }
       setCaixas((data.caixas ?? []).map(c => ({ id: c.id, operadorId: c.operadorId, status: c.status })))
     } catch { /* silencioso */ }
@@ -260,7 +260,7 @@ export function PainelEquipe({ eventoId }: Props) {
   async function validarCaixaMembro(caixaId: string) {
     setValidandoCaixa(caixaId)
     try {
-      const res = await fetch('/api/caixas/validar', {
+      const res = await apiFetchAuth('/api/caixas/validar', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ caixaId }),
       })
@@ -986,7 +986,7 @@ function AbrirCaixaMembroModal({
     if (!nome.trim() || !identificadorOperador) return
     setSalvando(true); setErro(null)
     try {
-      const res = await fetch(`/api/estacionamento/${eventoId}/abrir-caixa`, {
+      const res = await apiFetchAuth(`/api/estacionamento/${eventoId}/abrir-caixa`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -1082,7 +1082,7 @@ function FecharCaixaMembroModal({
   async function fechar() {
     setSalvando(true); setErro(null)
     try {
-      const res = await fetch('/api/caixas/fechar', {
+      const res = await apiFetchAuth('/api/caixas/fechar', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ caixaId, dinheiro_contado: dinheiroContado, ingressos_devolvidos: 0 }),

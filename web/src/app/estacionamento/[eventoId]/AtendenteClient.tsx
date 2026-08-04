@@ -9,6 +9,7 @@ import {
 import { cn } from '@/lib/utils'
 import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
 import { ImpressoraBluetooth } from '@/components/ImpressoraBluetooth'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -106,7 +107,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [confirmandoSaida, setConfirmandoSaida] = useState(false)
 
   const carregarSessoes = useCallback(async () => {
-    const res  = await fetch(`/api/estacionamento/${eventoId}/sessoes?status=aberto`)
+    const res  = await apiFetchAuth(`/api/estacionamento/${eventoId}/sessoes?status=aberto`)
     const data = await res.json()
     setSessoes(data.sessoes ?? [])
     setCarregando(false)
@@ -167,7 +168,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     if (placaLimpa.length < 7) return
     setBuscandoPlaca(true)
     try {
-      const res = await fetch(`/api/estacionamento/placa-lookup?placa=${encodeURIComponent(placaLimpa)}`)
+      const res = await apiFetchAuth(`/api/estacionamento/placa-lookup?placa=${encodeURIComponent(placaLimpa)}`)
       const data = await res.json()
       if (data.found) {
         if (data.modelo) setModelo(data.modelo)
@@ -207,7 +208,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     setModalSemWhats(false)
     setRegistrando(true); setErro(null)
     try {
-      const res = await fetch('/api/estacionamento/entrada', {
+      const res = await apiFetchAuth('/api/estacionamento/entrada', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -275,7 +276,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
 
     setConfirmandoSaida(true); setErro(null)
     try {
-      const res = await fetch('/api/estacionamento/saida', {
+      const res = await apiFetchAuth('/api/estacionamento/saida', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -300,7 +301,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     if (!caixaId) return
     setSalvandoCaixa(true); setErroCaixa(null)
     try {
-      const res = await fetch('/api/caixas/fechar', {
+      const res = await apiFetchAuth('/api/caixas/fechar', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ caixaId, dinheiro_contado: Number(dinheiroContado) || 0, ingressos_devolvidos: 0 }),
