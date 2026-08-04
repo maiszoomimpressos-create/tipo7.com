@@ -14,6 +14,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   Building2, Loader2, X, ArrowRight, CheckCircle2,
@@ -137,7 +138,7 @@ export function TipoPessoaModal({ nomeUsuario, organizacoes, onFechar }: Props) 
 
     let finalOrgId = orgId
     if (!finalOrgId) {
-      const res  = await fetch('/api/organizations', {
+      const res  = await apiFetchAuth('/api/organizations', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ razaoSocial: nomeUsuario, nicho: nicho || undefined }),
       })

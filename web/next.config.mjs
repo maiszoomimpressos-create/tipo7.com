@@ -45,6 +45,8 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/places/autocomplete',
   '/api/places/details',
   '/api/codigo',
+  '/api/organizations',
+  '/api/organizations/:path*',
 ]
 
 const nextConfig = {

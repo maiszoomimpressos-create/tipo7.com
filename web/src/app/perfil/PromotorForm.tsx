@@ -9,6 +9,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import {
   Loader2, CheckCircle, AlertCircle, Building2, Plus,
   Users, Check, X, Camera, ChevronDown, Mail,
@@ -115,20 +116,20 @@ export function PromotorForm({ nomeUsuario, initialOrganizacoes }: Props) {
   const [socioSelecionado, setSocioSelecionado] = useState<SocioAtivo | null>(null)
 
   const recarregar = async () => {
-    const res = await fetch('/api/organizations')
+    const res = await apiFetchAuth('/api/organizations')
     const data = await res.json() as { organizacoes: OrganizacaoItem[] }
     setOrganizacoes(data.organizacoes ?? [])
     router.refresh()
   }
 
   const carregarPedidosEnviados = useCallback(async () => {
-    const res  = await fetch('/api/organizations/pedidos-pendentes')
+    const res  = await apiFetchAuth('/api/organizations/pedidos-pendentes')
     const data = await res.json() as { pedidos?: PedidoEnviado[] }
     setPedidosEnviados(data.pedidos ?? [])
   }, [])
 
   const carregarSociosAtivos = useCallback(async () => {
-    const res  = await fetch('/api/organizations/socios-ativos')
+    const res  = await apiFetchAuth('/api/organizations/socios-ativos')
     const data = await res.json() as { socios?: SocioAtivo[] }
     setSociosAtivos(data.socios ?? [])
   }, [])
@@ -139,7 +140,7 @@ export function PromotorForm({ nomeUsuario, initialOrganizacoes }: Props) {
   const responderConvite = async (orgId: string, aceitar: boolean) => {
     setRespondendoId(orgId)
     try {
-      await fetch(`/api/organizations/${orgId}/socios/responder`, {
+      await apiFetchAuth(`/api/organizations/${orgId}/socios/responder`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ aceitar }),
       })
@@ -513,7 +514,7 @@ function OrganizacaoCard({
       }
 
       if (isNova) {
-        const res  = await fetch('/api/organizations', {
+        const res  = await apiFetchAuth('/api/organizations', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
@@ -521,14 +522,14 @@ function OrganizacaoCard({
         if (!res.ok || !data.organizacao) { setError(data.error ?? 'Erro ao criar organização.'); return }
         await salvarLogo(data.organizacao.id)
         if (logoFile) {
-          await fetch(`/api/organizations/${data.organizacao.id}`, {
+          await apiFetchAuth(`/api/organizations/${data.organizacao.id}`, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...payload, logoUrl }),
           })
         }
       } else {
         await salvarLogo(org.id)
-        const res  = await fetch(`/api/organizations/${org.id}`, {
+        const res  = await apiFetchAuth(`/api/organizations/${org.id}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...payload, logoUrl }),
         })
@@ -731,7 +732,7 @@ function SociosPainel({ orgId }: { orgId: string }) {
 
   const carregar = useCallback(async () => {
     setCarregando(true)
-    const res  = await fetch(`/api/organizations/${orgId}/socios`)
+    const res  = await apiFetchAuth(`/api/organizations/${orgId}/socios`)
     const data = await res.json() as { socios?: Socio[] }
     setSocios(data.socios ?? [])
     setCarregando(false)
@@ -751,7 +752,7 @@ function SociosPainel({ orgId }: { orgId: string }) {
 
     setConvidando(true); setMsg(null)
     try {
-      const res  = await fetch(`/api/organizations/${orgId}/socios`, {
+      const res  = await apiFetchAuth(`/api/organizations/${orgId}/socios`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           identificador: identificador.trim(),
