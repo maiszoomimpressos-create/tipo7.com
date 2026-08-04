@@ -4,6 +4,7 @@ import { AuditService } from '../common/audit.service';
 import { FeeRulesService } from '../common/fee-rules.service';
 import { gerarQrToken } from '../common/qr-token.util';
 import { MpTokenService } from '../common/mp-token.service';
+import { PedidoAtomicoService } from '../common/pedido-atomico.service';
 import { SaldoBilheteriaService } from '../common/saldo-bilheteria.service';
 import { OrgAdminService } from '../org-admin/org-admin.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,6 +18,7 @@ export class BilheteriaService {
     private readonly saldoBilheteria: SaldoBilheteriaService,
     private readonly mpToken: MpTokenService,
     private readonly audit: AuditService,
+    private readonly pedidoAtomico: PedidoAtomicoService,
   ) {}
 
   private async temPermissaoVenderNoEvento(userId: string, eventoId: string): Promise<boolean> {
@@ -69,7 +71,7 @@ export class BilheteriaService {
     });
     if (!ticket) throw new NotFoundException('Ingresso não encontrado');
 
-    const resultado = await this.criarPedidoAtomico(userId, eventoId, [
+    const resultado = await this.pedidoAtomico.criar(userId, eventoId, [
       { ticket_id: ticketId, quantity: quantidade, unit_price: Number(ticket.price ?? 0) },
     ]);
     if (resultado.error === 'sem_estoque') {
@@ -200,7 +202,7 @@ export class BilheteriaService {
     const total = Number(ticket.price ?? 0) * quantidade;
     if (total <= 0) throw new BadRequestException('PIX não disponível para ingressos gratuitos.');
 
-    const resultado = await this.criarPedidoAtomico(userId, eventoId, [
+    const resultado = await this.pedidoAtomico.criar(userId, eventoId, [
       { ticket_id: ticketId, quantity: quantidade, unit_price: Number(ticket.price ?? 0) },
     ]);
     if (resultado.error === 'sem_estoque') throw new ConflictException(`Quantidade indisponível. Restam ${resultado.disponivel ?? 0}.`);
@@ -381,17 +383,5 @@ export class BilheteriaService {
       qrCodeBase64: order.pixQrCodeBase64,
       expiresAt: order.pixExpiresAt,
     };
-  }
-
-  // Wrapper pra RPC criar_pedido_atomico (compartilhada com checkout online, Fase 4).
-  private async criarPedidoAtomico(
-    userId: string,
-    eventId: string,
-    items: { ticket_id: string; quantity: number; unit_price: number }[],
-  ): Promise<{ order_id?: string; error?: string; disponivel?: number }> {
-    const rows = await this.prisma.$queryRaw<{ criar_pedido_atomico: Record<string, any> | null }[]>`
-      SELECT criar_pedido_atomico(${userId}::uuid, ${eventId}::uuid, ${JSON.stringify(items)}::jsonb)
-    `;
-    return rows[0]?.criar_pedido_atomico ?? {};
   }
 }

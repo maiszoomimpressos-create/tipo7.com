@@ -1,19 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Loader2, X, CreditCard, AlertCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
-
-interface PayerCost {
-  installments:       number
-  installment_rate:   number
-  installment_amount: number
-  total_amount:       number
-  recommended_message?: string
-}
 
 interface Props {
   eventoId: string
@@ -58,74 +50,69 @@ function detectBrand(num: string): string | null {
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
+// PagBank ainda não tem consulta pública de parcelas/juros como o Mercado
+// Pago — por isso, por enquanto, só oferece pagamento à vista (1x). Parcelado
+// fica pra quando pesquisarmos como calcular os juros certo.
 
 declare global {
   interface Window {
-    MercadoPago: new (publicKey: string, opts: object) => {
-      getInstallments: (params: object) => Promise<Array<{
-        payment_method_id: string
-        issuer?: { id: number }
-        payer_costs: PayerCost[]
-      }>>
-      createCardToken: (params: object) => Promise<{ id?: string; error?: string; cause?: Array<{ code: string; description: string }> }>
+    PagSeguro: {
+      encryptCard: (params: {
+        publicKey:    string
+        holder:       string
+        number:       string
+        expMonth:     string
+        expYear:      string
+        securityCode: string
+      }) => { encryptedCard?: string; hasErrors: boolean; errors?: Array<{ code: string; message: string }> }
     }
   }
 }
 
-export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
-  const [sdkLoaded,    setSdkLoaded]    = useState(false)
-  const [publicKey,    setPublicKey]    = useState<string | null>(null)
-  const [configErr,    setConfigErr]    = useState<string | null>(null)
-  const mpRef = useRef<InstanceType<typeof window.MercadoPago> | null>(null)
+export function CheckoutPagBankCardPanel({ eventoId, items, total, onClose }: Props) {
+  const [sdkLoaded, setSdkLoaded] = useState(false)
+  const [publicKey, setPublicKey] = useState<string | null>(null)
+  const [configErr, setConfigErr] = useState<string | null>(null)
 
   // Card fields
-  const [cardNumber, setCardNumber]   = useState('')
-  const [cardName,   setCardName]     = useState('')
-  const [expiry,     setExpiry]       = useState('')
-  const [cvv,        setCvv]          = useState('')
-  const [cpf,        setCpf]          = useState('')
-
-  // Installments
-  const [payerCosts,   setPayerCosts]   = useState<PayerCost[]>([])
-  const [paymentMid,   setPaymentMid]   = useState('')  // payment_method_id (e.g. 'visa')
-  const [issuerId,     setIssuerId]     = useState('')
-  const [installments, setInstallments] = useState(1)
-  const [loadingPc,    setLoadingPc]    = useState(false)
-  const lastBin = useRef('')
+  const [cardNumber, setCardNumber] = useState('')
+  const [cardName,   setCardName]   = useState('')
+  const [expiry,     setExpiry]     = useState('')
+  const [cvv,        setCvv]        = useState('')
+  const [cpf,        setCpf]        = useState('')
 
   // Submit
   const [submitting, setSubmitting] = useState(false)
   const [error,      setError]      = useState<string | null>(null)
+  const buyerEmailRef = useRef('')
 
   // ── 1. Carrega SDK + public key em paralelo ───────────────────────────────
 
   useEffect(() => {
     let mounted = true
 
-    // Carrega o SDK do Mercado Pago via script tag
     const loadSdk = new Promise<void>((resolve, reject) => {
-      if (document.getElementById('mp-sdk')) { resolve(); return }
+      if (document.getElementById('pagbank-sdk')) { resolve(); return }
       const s = document.createElement('script')
-      s.id  = 'mp-sdk'
-      s.src = 'https://sdk.mercadopago.com/js/v2'
+      s.id  = 'pagbank-sdk'
+      s.src = 'https://assets.pagseguro.com.br/checkout-sdk-js/rc/dist/browser/pagseguro.min.js'
       s.onload  = () => resolve()
-      s.onerror = () => reject(new Error('Falha ao carregar SDK do Mercado Pago'))
+      s.onerror = () => reject(new Error('Falha ao carregar SDK do PagBank'))
       document.head.appendChild(s)
     })
 
-    // Busca a public key do promotor
-    const loadConfig = apiFetchAuth(`/api/checkout/mp-config?eventoId=${eventoId}`)
+    const loadConfig = apiFetchAuth('/api/checkout/pagbank-config')
       .then(r => r.json() as Promise<{ publicKey?: string; error?: string }>)
 
-    // Preenche CPF salvo no perfil
     const supabase = createClient()
-    const loadCpf = supabase.auth.getUser().then(async ({ data: { user } }) => {
+    const loadProfile = supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
+      buyerEmailRef.current = user.email ?? ''
       const { data } = await supabase.from('profiles').select('cpf').eq('id', user.id).single()
       if (mounted && data?.cpf) setCpf(formatCpf(data.cpf))
     })
 
-    Promise.all([loadSdk, loadConfig, loadCpf])
+    Promise.all([loadSdk, loadConfig, loadProfile])
       .then(([, cfg]) => {
         if (!mounted) return
         if (!cfg.publicKey) { setConfigErr('Pagamento com cartão não disponível para este evento.'); return }
@@ -137,56 +124,15 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
       })
 
     return () => { mounted = false }
-  }, [eventoId])
+  }, [])
 
-  // ── 2. Inicializa instância do MP quando SDK + key prontos ────────────────
-
-  useEffect(() => {
-    if (sdkLoaded && publicKey && !mpRef.current && window.MercadoPago) {
-      mpRef.current = new window.MercadoPago(publicKey, { locale: 'pt-BR' })
-    }
-  }, [sdkLoaded, publicKey])
-
-  // ── 3. Busca parcelas quando BIN muda ─────────────────────────────────────
-
-  const fetchInstallments = useCallback(async (bin: string) => {
-    if (!mpRef.current || bin.length < 6 || bin === lastBin.current) return
-    lastBin.current = bin
-    setLoadingPc(true)
-    try {
-      const data = await mpRef.current.getInstallments({
-        amount:        String(total),
-        bin:           bin,
-        paymentTypeId: 'credit_card',
-      })
-      if (data?.[0]?.payer_costs?.length) {
-        setPayerCosts(data[0].payer_costs)
-        setPaymentMid(data[0].payment_method_id ?? '')
-        setIssuerId(String(data[0].issuer?.id ?? ''))
-        // Mantém a seleção atual se válida, senão volta para 1×
-        setInstallments(prev => data[0].payer_costs.some(c => c.installments === prev) ? prev : 1)
-      }
-    } catch {
-      // Ignora — parcelas ficam indisponíveis
-    } finally {
-      setLoadingPc(false)
-    }
-  }, [total])
-
-  useEffect(() => {
-    const bin = cardNumber.replace(/\s/g, '').slice(0, 6)
-    if (bin.length === 6) fetchInstallments(bin)
-    else if (bin.length < 6) { setPayerCosts([]); lastBin.current = '' }
-  }, [cardNumber, fetchInstallments])
-
-  // ── 4. Submit ─────────────────────────────────────────────────────────────
+  // ── 2. Submit ─────────────────────────────────────────────────────────────
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!mpRef.current || submitting) return
+    if (!publicKey || submitting) return
     setError(null)
 
-    // Validações básicas antes de tokenizar
     const cleanCard = cardNumber.replace(/\s/g, '')
     const cleanCpf  = cpf.replace(/\D/g, '')
     const [mm, yy]  = expiry.split('/')
@@ -199,35 +145,31 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
 
     setSubmitting(true)
     try {
-      // Tokeniza o cartão via SDK — o token é de uso único e gerado pelo MP
-      const tokenResult = await mpRef.current.createCardToken({
-        cardNumber:           cleanCard,
-        cardholderName:       cardName.trim().toUpperCase(),
-        cardExpirationMonth:  mm,
-        cardExpirationYear:   yy.length === 2 ? '20' + yy : yy,
-        securityCode:         cvv,
-        identificationType:   'CPF',
-        identificationNumber: cleanCpf,
+      const result = window.PagSeguro.encryptCard({
+        publicKey,
+        holder:       cardName.trim().toUpperCase(),
+        number:       cleanCard,
+        expMonth:     mm,
+        expYear:      yy.length === 2 ? '20' + yy : yy,
+        securityCode: cvv,
       })
 
-      if (!tokenResult?.id) {
-        const cause = tokenResult?.cause?.[0]?.description ?? 'Dados do cartão inválidos.'
-        setError(cause)
+      if (result.hasErrors || !result.encryptedCard) {
+        setError(result.errors?.[0]?.message ?? 'Dados do cartão inválidos.')
         return
       }
 
-      // Envia para o backend
-      const res = await apiFetchAuth('/api/checkout/card', {
+      const res = await apiFetchAuth('/api/checkout/pagbank-card', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           eventoId,
           items,
-          cardToken:       tokenResult.id,
-          installments,
-          issuerId,
-          paymentMethodId: paymentMid,
-          bin:             cleanCard.slice(0, 6),
+          encryptedCard: result.encryptedCard,
+          installments:  1,
+          buyerName:     cardName.trim(),
+          buyerEmail:    buyerEmailRef.current,
+          cpf:           cleanCpf,
         }),
       })
 
@@ -238,12 +180,12 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
         return
       }
 
-      if (data.status === 'approved') {
+      if (data.status === 'PAID' || data.status === 'AUTHORIZED') {
         window.location.href = '/checkout/sucesso'
-      } else if (data.status === 'rejected') {
+      } else if (data.status === 'DECLINED') {
         setError('Pagamento recusado pelo emissor do cartão. Verifique o limite disponível ou tente outro cartão.')
       } else {
-        // in_process / pending — aguardando aprovação (ex: análise antifraude)
+        // IN_ANALYSIS — aguardando aprovação (análise antifraude)
         window.location.href = '/checkout/pendente'
       }
     } catch {
@@ -258,9 +200,6 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
   const inputClass = `w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none
     focus:border-[#E8B84B]/40 placeholder:text-[#2e2e2e] transition-colors`
   const labelClass = `text-[#555] text-xs mb-1.5 block`
-
-  const chosenCost = payerCosts.find(c => c.installments === installments)
-  const totalDisplay = chosenCost?.total_amount ?? total
 
   const brand = detectBrand(cardNumber)
 
@@ -402,49 +341,13 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
           />
         </div>
 
-        {/* Parcelas */}
-        <div>
-          <label className={labelClass} style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            {loadingPc
-              ? <span className="flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Buscando parcelas...</span>
-              : 'Parcelas'}
-          </label>
-          {payerCosts.length > 0 ? (
-            <select
-              value={installments}
-              onChange={e => setInstallments(Number(e.target.value))}
-              className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 cursor-pointer appearance-none"
-              style={{ fontFamily: 'var(--font-dm-sans)' }}
-            >
-              {payerCosts.map(c => (
-                <option key={c.installments} value={c.installments}>
-                  {c.installment_rate === 0
-                    ? `${c.installments}x de ${brl(c.installment_amount)} (sem juros)`
-                    : `${c.installments}x de ${brl(c.installment_amount)} = ${brl(c.total_amount)}`
-                  }
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div className="w-full bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl px-4 py-3 text-[#2e2e2e] text-sm"
-                 style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              {loadingPc ? '—' : 'Digite o número do cartão para ver as parcelas'}
-            </div>
-          )}
-        </div>
-
-        {/* Total */}
+        {/* Total — só à vista por enquanto (sem consulta de juros parcelado) */}
         <div className="flex items-center justify-between py-2 border-t border-[#111]">
           <span className="text-[#555] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            Total a pagar
+            Total a pagar (à vista)
           </span>
           <span className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            {brl(totalDisplay)}
-            {chosenCost && chosenCost.total_amount > total && (
-              <span className="ml-1.5 text-xs text-[#444] font-normal">
-                (valor de face {brl(total)})
-              </span>
-            )}
+            {brl(total)}
           </span>
         </div>
 
@@ -460,7 +363,7 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
         {/* Botão */}
         <button
           type="submit"
-          disabled={submitting || !payerCosts.length}
+          disabled={submitting}
           className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           style={{
             background:  ACCENT,
@@ -470,12 +373,12 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
         >
           {submitting
             ? <><Loader2 size={14} className="animate-spin" /> Processando...</>
-            : `Confirmar pagamento · ${brl(totalDisplay)}`
+            : `Confirmar pagamento · ${brl(total)}`
           }
         </button>
 
         <p className="text-[#333] text-[10px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          Seus dados são tokenizados pelo Mercado Pago. Não armazenamos dados do cartão.
+          Seus dados são criptografados pelo PagBank. Não armazenamos dados do cartão.
         </p>
       </div>
     </form>

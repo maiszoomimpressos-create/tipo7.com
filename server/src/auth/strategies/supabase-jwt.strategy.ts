@@ -8,6 +8,7 @@ interface SupabaseJwtPayload {
   sub: string;
   email?: string;
   role?: string;
+  user_metadata?: { full_name?: string; [key: string]: unknown };
   [key: string]: unknown;
 }
 
@@ -15,6 +16,7 @@ export interface AuthenticatedUser {
   id: string;
   email?: string;
   role?: string;
+  fullName?: string;
 }
 
 // Interino (Fase 0-5): só valida o JWT emitido pelo Supabase Auth via JWKS.
@@ -42,6 +44,7 @@ export class SupabaseJwtStrategy extends PassportStrategy(Strategy, 'supabase-jw
       id: payload.sub,
       email: payload.email,
       role: payload.role,
+      fullName: payload.user_metadata?.full_name,
     };
   }
 }

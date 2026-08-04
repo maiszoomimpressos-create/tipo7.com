@@ -1,7 +1,10 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { MP_CRED_KEYS, PAGBANK_CRED_KEYS } from '../common/platform-credentials.service';
 import { RateLimitDbService } from '../common/rate-limit-db.service';
 import { PlatformAdminService, type AdminMember } from '../platform-admin/platform-admin.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+const CHAVES_CREDENCIAIS_VALIDAS = new Set<string>([...MP_CRED_KEYS, ...PAGBANK_CRED_KEYS]);
 
 @Injectable()
 export class AdminService {
@@ -464,5 +467,32 @@ export class AdminService {
     } catch {
       return { rates: this.DEFAULT_MP_RATES, source: 'default' };
     }
+  }
+
+  // ── payment-credentials (segredos da própria conta Tipo7 nos gateways) ─────
+
+  async salvarPaymentCredentials(userId: string, body: Record<string, unknown>) {
+    await this.requireAcessoRestrito(userId);
+
+    const rows: { key: string; value: string }[] = [];
+    for (const [key, val] of Object.entries(body)) {
+      if (val === undefined) continue;
+      if (!CHAVES_CREDENCIAIS_VALIDAS.has(key)) throw new BadRequestException(`Chave desconhecida: ${key}`);
+      if (typeof val !== 'string') throw new BadRequestException(`${key} deve ser um texto`);
+      rows.push({ key, value: val.trim() });
+    }
+
+    const now = new Date();
+    await Promise.all(
+      rows.map(({ key, value }) =>
+        this.prisma.platformSetting.upsert({
+          where: { key },
+          create: { key, value, updatedAt: now },
+          update: { value, updatedAt: now },
+        }),
+      ),
+    );
+
+    return { ok: true };
   }
 }

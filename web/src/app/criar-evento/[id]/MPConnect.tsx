@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { CheckCircle2, AlertCircle, Loader2, Link2, Unlink, ExternalLink } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
 type MPStatus =
   | { connected: false }
-  | { connected: true; mpUserId: number; feePct: number; expiresAt: string | null; updatedAt: string }
+  | { connected: true; mpUserId: string; feePct: number; expiresAt: string | null; updatedAt: string }
 
 export function MPConnect() {
   const [status,       setStatus]       = useState<MPStatus | null>(null)
@@ -17,7 +18,7 @@ export function MPConnect() {
   async function carregar() {
     setLoading(true)
     try {
-      const res  = await fetch('/api/mp/status')
+      const res  = await apiFetchAuth('/api/mp/status')
       const data = await res.json()
       setStatus(data)
     } finally {
@@ -38,7 +39,7 @@ export function MPConnect() {
   async function handleDesconectar() {
     setDesconecting(true)
     try {
-      await fetch('/api/mp/disconnect', { method: 'DELETE' })
+      await apiFetchAuth('/api/mp/disconnect', { method: 'DELETE' })
       setStatus({ connected: false })
     } finally {
       setDesconecting(false)

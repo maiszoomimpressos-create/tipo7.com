@@ -79,6 +79,21 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/estacionamento/:path*',
   '/api/scanner/validate',
   '/api/bilheteria/:path*',
+  '/api/checkout',
+  '/api/checkout/pix',
+  '/api/checkout/pix/status/:orderId',
+  '/api/checkout/card',
+  '/api/checkout/gateway',
+  '/api/checkout/mp-config',
+  '/api/checkout/pagbank-pix',
+  '/api/checkout/pagbank-pix/status/:orderId',
+  '/api/checkout/pagbank-card',
+  '/api/checkout/pagbank-config',
+  '/api/webhooks/mercadopago',
+  '/api/webhooks/pagbank',
+  '/api/mp/:path*',
+  '/api/pagbank/:path*',
+  '/api/admin/payment-credentials',
 ]
 
 const nextConfig = {

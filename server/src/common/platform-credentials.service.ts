@@ -19,8 +19,8 @@ export interface PagBankPlatformCredentials {
   clientSecret: string | null;
 }
 
-const MP_CRED_KEYS = ['mp_access_token', 'mp_public_key', 'mp_client_id', 'mp_client_secret', 'mp_webhook_secret'];
-const PAGBANK_CRED_KEYS = ['pagbank_token', 'pagbank_account_id', 'pagbank_client_id', 'pagbank_client_secret'];
+export const MP_CRED_KEYS = ['mp_access_token', 'mp_public_key', 'mp_client_id', 'mp_client_secret', 'mp_webhook_secret'];
+export const PAGBANK_CRED_KEYS = ['pagbank_token', 'pagbank_account_id', 'pagbank_client_id', 'pagbank_client_secret'];
 
 @Injectable()
 export class PlatformCredentialsService {

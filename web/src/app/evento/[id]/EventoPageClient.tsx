@@ -15,7 +15,9 @@ import { PainelOrganizador } from './PainelOrganizador'
 import { PainelEventosFilhos } from './PainelEventosFilhos'
 import type { IngressoEditavel } from './PainelIngressos'
 import { CheckoutCardPanel } from './CheckoutCardPanel'
+import { CheckoutPagBankCardPanel } from './CheckoutPagBankCardPanel'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -176,6 +178,10 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   const [loadingPix,    setLoadingPix]    = useState(false)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
   const [showCardForm,  setShowCardForm]  = useState(false)
+  // Gateway do evento ativo (principal ou Tenda selecionada) — decide se o
+  // PIX/Cartão vai pro Mercado Pago ou pro PagBank. Mercado Pago é o
+  // fallback seguro enquanto a busca não responde (é o padrão do banco).
+  const [gateway, setGateway] = useState<'mercadopago' | 'pagbank'>('mercadopago')
 
   // ── Seletor de show — abas dentro de abas: qual evento (principal ou um
   // dos filhos/Tendas) está sendo exibido em Programação + Ingressos. null
@@ -190,6 +196,20 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   const packageDiscountPctAtivo = filhoAtivo ? filhoAtivo.packageDiscountPct : evento.packageDiscountPct
   const feeModeAtivo            = filhoAtivo ? filhoAtivo.feeMode            : evento.feeMode
   const eventoIdAtivo           = filhoAtivo ? filhoAtivo.id                 : evento.id
+
+  // Busca o gateway do evento ativo pra decidir o fluxo de checkout (PIX e
+  // Cartão) — Mercado Pago ou PagBank
+  useEffect(() => {
+    let cancelado = false
+    apiFetchAuth(`/api/checkout/gateway?eventoId=${eventoIdAtivo}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!cancelado && data?.gateway === 'pagbank') setGateway('pagbank')
+        else if (!cancelado) setGateway('mercadopago')
+      })
+      .catch(() => { /* mantém o fallback mercadopago */ })
+    return () => { cancelado = true }
+  }, [eventoIdAtivo])
 
   // Inline edit state (owner only)
   const [editField,       setEditField]       = useState<string | null>(null)
@@ -354,14 +374,16 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
     if (!items.length) return
     setLoadingPix(true); setCheckoutError(null)
     try {
-      const res = await fetch('/api/checkout/pix', {
+      const endpoint = gateway === 'pagbank' ? '/api/checkout/pagbank-pix' : '/api/checkout/pix'
+      const res = await apiFetchAuth(endpoint, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ eventoId: eventoIdAtivo, items }),
       })
       const data = await res.json()
       if (!res.ok) { setCheckoutError(data.error ?? 'Erro ao gerar PIX'); return }
-      window.location.href = `/checkout/pix/${data.orderId}`
+      const suffix = gateway === 'pagbank' ? '?gateway=pagbank' : ''
+      window.location.href = `/checkout/pix/${data.orderId}${suffix}`
     } catch {
       setCheckoutError('Erro de conexão. Tente novamente.')
     } finally { setLoadingPix(false) }
@@ -1265,8 +1287,16 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                       </p>
                     )}
 
-                    {/* Formulário de cartão inline */}
-                    {showCardForm && (
+                    {/* Formulário de cartão inline — MP ou PagBank conforme o gateway do evento */}
+                    {showCardForm && gateway === 'pagbank' && (
+                      <CheckoutPagBankCardPanel
+                        eventoId={eventoIdAtivo}
+                        items={getItems()}
+                        total={total}
+                        onClose={() => setShowCardForm(false)}
+                      />
+                    )}
+                    {showCardForm && gateway === 'mercadopago' && (
                       <CheckoutCardPanel
                         eventoId={eventoIdAtivo}
                         items={getItems()}

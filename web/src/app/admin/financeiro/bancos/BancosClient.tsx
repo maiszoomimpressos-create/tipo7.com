@@ -38,7 +38,7 @@ interface Props {
 }
 
 async function saveCredKey(key: string, value: string) {
-  return fetch('/api/admin/payment-credentials', {
+  return apiFetchAuth('/api/admin/payment-credentials', {
     method:  'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ [key]: value }),

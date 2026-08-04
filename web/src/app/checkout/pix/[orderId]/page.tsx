@@ -1,18 +1,20 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 import { Copy, Check, Clock, Loader2, CheckCircle2, XCircle, Ticket } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 type OrderStatus = 'pending' | 'in_process' | 'approved' | 'rejected' | 'cancelled'
 
 interface PixData {
-  status:       OrderStatus
-  total:        number
-  qrCode:       string | null
-  qrCodeBase64: string | null
-  expiresAt:    string | null
+  status:         OrderStatus
+  total:          number
+  qrCode:         string | null
+  qrCodeBase64:   string | null  // Mercado Pago — imagem já em base64
+  qrCodeImageUrl: string | null  // PagBank — link pronto pra imagem, sem base64
+  expiresAt:      string | null
 }
 
 function formatPrice(n: number) {
@@ -41,8 +43,27 @@ function useCountdown(expiresAt: string | null) {
 }
 
 export default function PixPage() {
-  const { orderId } = useParams<{ orderId: string }>()
-  const router      = useRouter()
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#070707] flex items-center justify-center">
+        <Loader2 size={28} className="animate-spin" style={{ color: '#E8B84B' }} />
+      </div>
+    }>
+      <PixPageContent />
+    </Suspense>
+  )
+}
+
+function PixPageContent() {
+  const { orderId }   = useParams<{ orderId: string }>()
+  const router        = useRouter()
+  const searchParams  = useSearchParams()
+  // ?gateway=pagbank vem do redirecionamento — sem o parâmetro, assume MP
+  // (mantém compatível com links antigos/já compartilhados)
+  const gateway       = searchParams.get('gateway') === 'pagbank' ? 'pagbank' : 'mercadopago'
+  const statusUrl     = gateway === 'pagbank'
+    ? `/api/checkout/pagbank-pix/status/${orderId}`
+    : `/api/checkout/pix/status/${orderId}`
 
   const [data,    setData]    = useState<PixData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -54,7 +75,7 @@ export default function PixPage() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`/api/checkout/pix/status/${orderId}`)
+      const res = await apiFetchAuth(statusUrl)
       if (!res.ok) {
         const d = await res.json()
         setError(d.error ?? 'Erro ao carregar pedido')
@@ -79,7 +100,7 @@ export default function PixPage() {
     } finally {
       setLoading(false)
     }
-  }, [orderId, router])
+  }, [statusUrl, router])
 
   useEffect(() => {
     fetchStatus()
@@ -216,12 +237,12 @@ export default function PixPage() {
               </p>
             </div>
 
-            {/* QR code */}
-            {data.qrCodeBase64 ? (
+            {/* QR code — MP manda base64 pronto, PagBank manda um link pra imagem */}
+            {(data.qrCodeBase64 || data.qrCodeImageUrl) ? (
               <div className="bg-white rounded-2xl p-4 flex items-center justify-center mx-auto"
                    style={{ width: 240, height: 240 }}>
                 <Image
-                  src={`data:image/png;base64,${data.qrCodeBase64}`}
+                  src={data.qrCodeBase64 ? `data:image/png;base64,${data.qrCodeBase64}` : data.qrCodeImageUrl!}
                   alt="QR Code PIX"
                   width={208}
                   height={208}
