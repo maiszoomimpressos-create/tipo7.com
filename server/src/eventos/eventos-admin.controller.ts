@@ -1,0 +1,67 @@
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { SupabaseJwtGuard } from '../auth/guards/supabase-jwt.guard';
+import type { AuthenticatedUser } from '../auth/strategies/supabase-jwt.strategy';
+import { EventosAdminService } from './eventos-admin.service';
+
+@UseGuards(SupabaseJwtGuard)
+@Controller('eventos/:id')
+export class EventosAdminController {
+  constructor(private readonly eventos: EventosAdminService) {}
+
+  @Get('equipe')
+  listEquipe(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.eventos.listEquipe(user.id, id);
+  }
+
+  @Post('equipe')
+  adicionarMembro(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
+    return this.eventos.adicionarMembro(user.id, id, body);
+  }
+
+  @Patch('equipe')
+  atualizarMembro(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
+    return this.eventos.atualizarMembro(user.id, id, body);
+  }
+
+  @Delete('equipe')
+  removerMembro(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Query('staffId') staffId?: string) {
+    if (!staffId) throw new BadRequestException('staffId obrigatório');
+    return this.eventos.removerMembro(user.id, id, staffId);
+  }
+
+  @Get('funcoes')
+  listFuncoes(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.eventos.listFuncoes(user.id, id);
+  }
+
+  @Post('funcoes')
+  criarFuncao(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
+    return this.eventos.criarFuncao(user.id, id, body);
+  }
+
+  @Patch('funcoes/:funcaoId')
+  atualizarFuncao(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('funcaoId') funcaoId: string,
+    @Body() body: any,
+  ) {
+    return this.eventos.atualizarFuncao(user.id, id, funcaoId, body);
+  }
+
+  @Delete('funcoes/:funcaoId')
+  removerFuncao(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Param('funcaoId') funcaoId: string) {
+    return this.eventos.removerFuncao(user.id, id, funcaoId);
+  }
+
+  @Patch('modulos')
+  atualizarModulos(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
+    return this.eventos.atualizarModulos(user.id, id, body);
+  }
+
+  @Post('publicar')
+  publicar(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.eventos.publicar(user.id, id);
+  }
+}

@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { ChecksModule } from './checks/checks.module';
 import { CodigoModule } from './codigo/codigo.module';
 import { EventPermissionsModule } from './event-permissions/event-permissions.module';
+import { EventosModule } from './eventos/eventos.module';
 import { EventsModule } from './events/events.module';
 import { OrgAdminModule } from './org-admin/org-admin.module';
 import { OrganizationsModule } from './organizations/organizations.module';
@@ -32,6 +33,7 @@ import { StatsModule } from './stats/stats.module';
     StaffFunctionTemplatesModule,
     CodigoModule,
     OrganizationsModule,
+    EventosModule,
   ],
   controllers: [AppController],
   providers: [AppService],
