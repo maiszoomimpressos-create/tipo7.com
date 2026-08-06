@@ -1,5 +1,6 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect, notFound } from 'next/navigation'
 import { Header }     from '@/components/layout/Header'
 import { EventoForm } from './EventoForm'
@@ -18,11 +19,21 @@ export default async function EditarEventoPage({ params }: Props) {
   const user = await getAuthUser()
   if (!user) redirect('/auth?next=/criar-evento')
 
-  const { data: evento } = await supabase
-    .from('events')
-    .select('id, title, description, category, date_start, date_end, venue_name, venue_id, zip_code, street, street_number, neighborhood, city, state, complement, capacity, status, banner_url, fee_mode, payment_gateway, parent_event_id, modulo_tenda, modulo_estacionamento, permitir_venda_no_caixa_pai, organization_id, lat, lng, organizations(cnpj, owner_id)')
-    .eq('id', id)
-    .single()
+  const eventoRes = await apiFetchServer(`/api/eventos/${id}`)
+  if (eventoRes.status === 404) notFound()
+  const evento = await eventoRes.json() as {
+    id: string; title: string | null; description: string | null; category: string | null
+    date_start: string | null; date_end: string | null
+    venue_name: string | null; venue_id: string | null
+    zip_code: string | null; street: string | null; street_number: string | null
+    neighborhood: string | null; city: string | null; state: string | null; complement: string | null
+    capacity: number | null; status: string; banner_url: string | null
+    fee_mode: string | null; payment_gateway: string | null
+    parent_event_id: string | null; modulo_tenda: boolean; modulo_estacionamento: boolean
+    permitir_venda_no_caixa_pai: boolean | null; organization_id: string
+    lat: number | null; lng: number | null
+    organizations: { cnpj: string | null; owner_id: string | null } | null
+  }
 
   if (!evento) notFound()
   if (!(await isOrgAdmin(supabase, evento.organization_id, user.id))) notFound()
@@ -52,42 +63,16 @@ export default async function EditarEventoPage({ params }: Props) {
 
   // Locais que o usuário já usou em outros eventos — sugestão imediata ao
   // começar a preencher o local, sem precisar digitar nada
-  const { data: orgsPromotor } = await supabase
-    .from('organizations').select('id').eq('owner_id', user.id).eq('type', 'promotora')
-  const orgIdsPromotor = (orgsPromotor ?? []).map(o => o.id)
-
-  const { data: eventosComLocal } = orgIdsPromotor.length > 0
-    ? await supabase
-        .from('events')
-        .select('venue_id, venues ( id, name, city, state, zip_code, street, street_number, neighborhood, complement, lat, lng, capacity, has_parking, parking_spots )')
-        .in('organization_id', orgIdsPromotor)
-        .not('venue_id', 'is', null)
-        .neq('id', id)
-        .order('created_at', { ascending: false })
-        .limit(20)
-    : { data: [] }
-
-  const vistos = new Set<string>()
-  const locaisRecentes: {
-    id: string; name: string; city: string | null; state: string | null
-    zipCode: string | null; street: string | null; streetNumber: string | null
-    neighborhood: string | null; complement: string | null
-    lat: number | null; lng: number | null; capacity: number | null
-    hasParking: boolean | null; parkingSpots: number | null
-  }[] = []
-  for (const e of eventosComLocal ?? []) {
-    const v = Array.isArray(e.venues) ? e.venues[0] : e.venues
-    if (!v || vistos.has(v.id)) continue
-    vistos.add(v.id)
-    locaisRecentes.push({
-      id: v.id, name: v.name, city: v.city, state: v.state,
-      zipCode: v.zip_code, street: v.street, streetNumber: v.street_number,
-      neighborhood: v.neighborhood, complement: v.complement,
-      lat: v.lat, lng: v.lng, capacity: v.capacity,
-      hasParking: v.has_parking, parkingSpots: v.parking_spots,
-    })
-    if (locaisRecentes.length >= 6) break
-  }
+  const locaisRes = await apiFetchServer(`/api/eventos/locais-recentes?excluirId=${id}`)
+  const { locaisRecentes } = locaisRes.ok
+    ? await locaisRes.json() as { locaisRecentes: {
+        id: string; name: string; city: string | null; state: string | null
+        zipCode: string | null; street: string | null; streetNumber: string | null
+        neighborhood: string | null; complement: string | null
+        lat: number | null; lng: number | null; capacity: number | null
+        hasParking: boolean | null; parkingSpots: number | null
+      }[] }
+    : { locaisRecentes: [] }
 
   return (
     <div className="min-h-dvh bg-[#070707]">

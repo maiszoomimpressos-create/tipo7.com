@@ -30,6 +30,230 @@ export class EventosAdminService {
     return permissoes.filter((p) => !PERMISSOES_ESTACIONAMENTO.includes(p));
   }
 
+  // ==== core (criar / editar / excluir) ====
+  // Porte de web/src/app/criar-evento/TipoPessoaModal.tsx (criação),
+  // EventoForm.tsx/ImagensClient.tsx/EventoPageClient.tsx/PainelEventosFilhos.tsx
+  // (edição) e CriarEventoClient.tsx (exclusão) — o "criar evento" não tinha
+  // rota nenhuma até aqui (era supabase.from('events').insert direto).
+
+  async criarEvento(
+    userId: string,
+    body: { organizationId?: string; title?: string; moduloIngressos?: boolean; moduloEstacionamento?: boolean },
+  ) {
+    if (!body.organizationId) throw new BadRequestException('organizationId é obrigatório');
+    if (!(await this.orgAdmin.isOrgAdmin(body.organizationId, userId))) throw new ForbiddenException('Sem permissão');
+
+    const title = body.title?.trim();
+    if (!title) throw new BadRequestException('Nome do evento é obrigatório');
+
+    const moduloIngressos = body.moduloIngressos ?? true;
+    const moduloEstacionamento = body.moduloEstacionamento ?? false;
+    if (!moduloIngressos && !moduloEstacionamento) {
+      throw new BadRequestException('O evento precisa ter ao menos um módulo ativo');
+    }
+
+    const evento = await this.prisma.event.create({
+      data: {
+        organizationId: body.organizationId,
+        createdBy: userId,
+        status: 'rascunho',
+        title,
+        moduloIngressos,
+        moduloEstacionamento,
+      },
+      select: { id: true },
+    });
+
+    // Liga o selo informativo "Estacionamento" (event_attributes) quando o
+    // módulo é ativado — mostra na página pública, sem lógica de venda atrás
+    // (mesmo comportamento de vincularAtributoEstacionamento no client antigo).
+    if (moduloEstacionamento) {
+      const attr = await this.prisma.eventAttribute.findFirst({ where: { name: 'Estacionamento' }, select: { id: true } });
+      if (attr) {
+        await this.prisma.eventAttributeValue.upsert({
+          where: { eventId_attributeId: { eventId: evento.id, attributeId: attr.id } },
+          create: { eventId: evento.id, attributeId: attr.id },
+          update: {},
+        });
+      }
+    }
+
+    return { ok: true, id: evento.id };
+  }
+
+  // Leitura pública — mesma info que a página do evento e o formulário do
+  // organizador já buscavam sem guarda nenhuma. Resposta em snake_case pra
+  // minimizar o diff nos consumidores que liam direto do Supabase antes.
+  async getEventoCore(eventoId: string) {
+    const evento = await this.prisma.event.findUnique({
+      where: { id: eventoId },
+      select: {
+        id: true, title: true, description: true, category: true,
+        dateStart: true, dateEnd: true, venueName: true, venueId: true,
+        zipCode: true, street: true, streetNumber: true, neighborhood: true,
+        city: true, state: true, complement: true, capacity: true, status: true,
+        bannerUrl: true, galleryUrls: true, feeMode: true, paymentGateway: true,
+        parentEventId: true, moduloIngressos: true, moduloEstacionamento: true,
+        moduloTenda: true, permitirVendaNoCaixaPai: true, lat: true, lng: true,
+        organizationId: true,
+        organization: { select: { cnpj: true, ownerId: true } },
+      },
+    });
+    if (!evento) throw new NotFoundException('Evento não encontrado');
+
+    return {
+      id: evento.id,
+      title: evento.title,
+      description: evento.description,
+      category: evento.category,
+      date_start: evento.dateStart ? evento.dateStart.toISOString() : null,
+      date_end: evento.dateEnd ? evento.dateEnd.toISOString() : null,
+      venue_name: evento.venueName,
+      venue_id: evento.venueId,
+      zip_code: evento.zipCode,
+      street: evento.street,
+      street_number: evento.streetNumber,
+      neighborhood: evento.neighborhood,
+      city: evento.city,
+      state: evento.state,
+      complement: evento.complement,
+      capacity: evento.capacity,
+      status: evento.status,
+      banner_url: evento.bannerUrl,
+      gallery_urls: evento.galleryUrls,
+      fee_mode: evento.feeMode,
+      payment_gateway: evento.paymentGateway,
+      parent_event_id: evento.parentEventId,
+      modulo_ingressos: evento.moduloIngressos,
+      modulo_estacionamento: evento.moduloEstacionamento,
+      modulo_tenda: evento.moduloTenda,
+      permitir_venda_no_caixa_pai: evento.permitirVendaNoCaixaPai,
+      lat: evento.lat,
+      lng: evento.lng,
+      organization_id: evento.organizationId,
+      organizations: evento.organization
+        ? { cnpj: evento.organization.cnpj, owner_id: evento.organization.ownerId }
+        : null,
+    };
+  }
+
+  // Locais já usados pelo promotor em outros eventos — sugestão imediata de
+  // local ao criar/editar evento, sem precisar digitar nada.
+  async getLocaisRecentes(userId: string, excluirId?: string) {
+    const orgs = await this.prisma.organization.findMany({
+      where: { ownerId: userId, type: 'promotora' },
+      select: { id: true },
+    });
+    const orgIds = orgs.map((o) => o.id);
+    if (orgIds.length === 0) return { locaisRecentes: [] };
+
+    const eventos = await this.prisma.event.findMany({
+      where: {
+        organizationId: { in: orgIds },
+        venueId: { not: null },
+        ...(excluirId ? { id: { not: excluirId } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        venue: {
+          select: {
+            id: true, name: true, city: true, state: true, zipCode: true,
+            street: true, streetNumber: true, neighborhood: true, complement: true,
+            lat: true, lng: true, capacity: true, hasParking: true, parkingSpots: true,
+          },
+        },
+      },
+    });
+
+    const vistos = new Set<string>();
+    const locaisRecentes: Array<{
+      id: string; name: string; city: string | null; state: string | null;
+      zipCode: string | null; street: string | null; streetNumber: string | null;
+      neighborhood: string | null; complement: string | null;
+      lat: number | null; lng: number | null; capacity: number | null;
+      hasParking: boolean | null; parkingSpots: number | null;
+    }> = [];
+
+    for (const e of eventos) {
+      const v = e.venue;
+      if (!v || vistos.has(v.id)) continue;
+      vistos.add(v.id);
+      locaisRecentes.push({
+        id: v.id, name: v.name, city: v.city, state: v.state,
+        zipCode: v.zipCode, street: v.street, streetNumber: v.streetNumber,
+        neighborhood: v.neighborhood, complement: v.complement,
+        lat: v.lat != null ? Number(v.lat) : null,
+        lng: v.lng != null ? Number(v.lng) : null,
+        capacity: v.capacity, hasParking: v.hasParking, parkingSpots: v.parkingSpots,
+      });
+      if (locaisRecentes.length >= 6) break;
+    }
+
+    return { locaisRecentes };
+  }
+
+  async atualizarCore(
+    userId: string,
+    eventoId: string,
+    body: {
+      title?: string; description?: string | null; category?: string | null;
+      dateStart?: string | null; dateEnd?: string | null;
+      venueName?: string | null; venueId?: string | null;
+      zipCode?: string | null; street?: string | null; streetNumber?: string | null;
+      neighborhood?: string | null; city?: string | null; state?: string | null; complement?: string | null;
+      capacity?: number | null; feeMode?: string; paymentGateway?: string;
+      bannerUrl?: string | null; galleryUrls?: string[];
+      lat?: number | null; lng?: number | null;
+      permitirVendaNoCaixaPai?: boolean; status?: string;
+    },
+  ) {
+    await this.assertOwner(userId, eventoId);
+
+    // Essa rota nunca publica — publicar exige o checklist completo de
+    // POST /eventos/:id/publicar. Só serve pro botão "Despublicar".
+    if (body.status !== undefined && body.status !== 'rascunho') {
+      throw new BadRequestException('Só é permitido reverter para rascunho por esta rota');
+    }
+
+    await this.prisma.event.update({
+      where: { id: eventoId },
+      data: {
+        ...(body.title !== undefined ? { title: body.title } : {}),
+        ...(body.description !== undefined ? { description: body.description } : {}),
+        ...(body.category !== undefined ? { category: body.category } : {}),
+        ...(body.dateStart !== undefined ? { dateStart: body.dateStart ? new Date(body.dateStart) : null } : {}),
+        ...(body.dateEnd !== undefined ? { dateEnd: body.dateEnd ? new Date(body.dateEnd) : null } : {}),
+        ...(body.venueName !== undefined ? { venueName: body.venueName } : {}),
+        ...(body.venueId !== undefined ? { venueId: body.venueId } : {}),
+        ...(body.zipCode !== undefined ? { zipCode: body.zipCode } : {}),
+        ...(body.street !== undefined ? { street: body.street } : {}),
+        ...(body.streetNumber !== undefined ? { streetNumber: body.streetNumber } : {}),
+        ...(body.neighborhood !== undefined ? { neighborhood: body.neighborhood } : {}),
+        ...(body.city !== undefined ? { city: body.city } : {}),
+        ...(body.state !== undefined ? { state: body.state } : {}),
+        ...(body.complement !== undefined ? { complement: body.complement } : {}),
+        ...(body.capacity !== undefined ? { capacity: body.capacity } : {}),
+        ...(body.feeMode !== undefined ? { feeMode: body.feeMode } : {}),
+        ...(body.paymentGateway !== undefined ? { paymentGateway: body.paymentGateway } : {}),
+        ...(body.bannerUrl !== undefined ? { bannerUrl: body.bannerUrl } : {}),
+        ...(body.galleryUrls !== undefined ? { galleryUrls: body.galleryUrls } : {}),
+        ...(body.lat !== undefined ? { lat: body.lat } : {}),
+        ...(body.lng !== undefined ? { lng: body.lng } : {}),
+        ...(body.permitirVendaNoCaixaPai !== undefined ? { permitirVendaNoCaixaPai: body.permitirVendaNoCaixaPai } : {}),
+        ...(body.status !== undefined ? { status: 'rascunho' as const } : {}),
+      },
+    });
+
+    return { ok: true };
+  }
+
+  async excluirEvento(userId: string, eventoId: string) {
+    await this.assertOwner(userId, eventoId);
+    await this.prisma.event.delete({ where: { id: eventoId } });
+    return { ok: true };
+  }
+
   // ==== equipe ====
 
   async listEquipe(userId: string, eventoId: string) {

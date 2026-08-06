@@ -492,28 +492,31 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
         if (geo) { latToSave = geo.lat; lngToSave = geo.lng }
       }
 
-      await supabase.from('events').update({
-        title:         titulo.trim()         || 'Novo evento',
-        description:   descricao             || null,
-        category:      categoria             || null,
-        date_start:    dataInicio            || null,
-        date_end:      dataFim               || null,
-        venue_name:    nomeLocal.trim()      || null,
-        venue_id:      venueIdToSave,
-        zip_code:      cep.replace(/\D/g,'') || null,
-        street:        rua                   || null,
-        street_number: numero                || null,
-        neighborhood:  bairro               || null,
-        city:          cidade                || null,
-        state:         estado                || null,
-        complement:    complemento           || null,
-        capacity:      capacidade ? parseInt(capacidade, 10) : null,
-        fee_mode:      feeMode,
-        payment_gateway: gateway,
-        lat: latToSave,
-        lng: lngToSave,
-        ...(isChild ? { permitir_venda_no_caixa_pai: permitirVendaNoCaixaPai } : {}),
-      }).eq('id', eventoId)
+      await apiFetchAuth(`/api/eventos/${eventoId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title:         titulo.trim()         || 'Novo evento',
+          description:   descricao             || null,
+          category:      categoria             || null,
+          dateStart:     dataInicio            || null,
+          dateEnd:       dataFim               || null,
+          venueName:     nomeLocal.trim()      || null,
+          venueId:       venueIdToSave,
+          zipCode:       cep.replace(/\D/g,'') || null,
+          street:        rua                   || null,
+          streetNumber:  numero                || null,
+          neighborhood:  bairro                || null,
+          city:          cidade                || null,
+          state:         estado                || null,
+          complement:    complemento           || null,
+          capacity:      capacidade ? parseInt(capacidade, 10) : null,
+          feeMode:       feeMode,
+          paymentGateway: gateway,
+          lat: latToSave,
+          lng: lngToSave,
+          ...(isChild ? { permitirVendaNoCaixaPai } : {}),
+        }),
+      })
 
       // Assume o lugar como responsável — só cuida dos dados do venue
       // (endereço/capacidade/estacionamento), nunca de dinheiro/caixa

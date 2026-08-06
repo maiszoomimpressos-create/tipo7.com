@@ -16,7 +16,6 @@ import { PainelEventosFilhos } from './PainelEventosFilhos'
 import type { IngressoEditavel } from './PainelIngressos'
 import { CheckoutCardPanel } from './CheckoutCardPanel'
 import { CheckoutPagBankCardPanel } from './CheckoutPagBankCardPanel'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -298,8 +297,10 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
   async function saveField(field: string, dbData: Record<string, unknown>, onSuccess: () => void) {
     setFieldSaving(true)
     try {
-      const supabase = createClient()
-      await supabase.from('events').update(dbData).eq('id', evento.id)
+      await apiFetchAuth(`/api/eventos/${evento.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbData),
+      })
       onSuccess()
       setEditField(null)
     } catch { /* silently fail — field stays in edit mode */ }
@@ -315,8 +316,10 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
       const res = await apiFetchAuth(`/api/uploads/event-image/${evento.id}`, { method: 'POST', body: formData })
       if (!res.ok) throw new Error('upload failed')
       const { url } = await res.json()
-      const supabase = createClient()
-      await supabase.from('events').update({ banner_url: url }).eq('id', evento.id)
+      await apiFetchAuth(`/api/eventos/${evento.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bannerUrl: url }),
+      })
       setCurrentBanner(`${url}?t=${Date.now()}`)
     } finally { setBannerUploading(false) }
   }

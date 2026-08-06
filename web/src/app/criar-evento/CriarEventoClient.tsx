@@ -6,7 +6,7 @@ import {
   CalendarPlus, Plus, Trash2,
   ExternalLink, ImageIcon, Ticket, Settings, AlertTriangle, X, Car,
 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { TipoPessoaModal, type ProfileData } from './TipoPessoaModal'
 
 interface EventoItem {
@@ -114,7 +114,6 @@ export function CriarEventoClient({ promotorId, nomeUsuario, organizacoes, profi
   const [lista,          setLista]          = useState<EventoItem[]>(inicial)
   const [excluindo,      setExcluindo]      = useState<string | null>(null)
   const [confirmarId,    setConfirmarId]    = useState<string | null>(null)
-  const supabase = createClient()
 
   const abrirTrabalho = (id: string) => router.push(`/trabalho/${id}`)
 
@@ -127,7 +126,7 @@ export function CriarEventoClient({ promotorId, nomeUsuario, organizacoes, profi
   const excluirEvento = async () => {
     if (!confirmarId) return
     setExcluindo(confirmarId)
-    await supabase.from('events').delete().eq('id', confirmarId)
+    await apiFetchAuth(`/api/eventos/${confirmarId}`, { method: 'DELETE' })
     setLista(prev => prev.filter(r => r.id !== confirmarId))
     setConfirmarId(null)
     setExcluindo(null)

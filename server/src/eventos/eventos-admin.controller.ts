@@ -9,6 +9,16 @@ import { EventosAdminService } from './eventos-admin.service';
 export class EventosAdminController {
   constructor(private readonly eventos: EventosAdminService) {}
 
+  @Patch()
+  atualizarCore(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
+    return this.eventos.atualizarCore(user.id, id, body);
+  }
+
+  @Delete()
+  excluirEvento(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.eventos.excluirEvento(user.id, id);
+  }
+
   @Get('equipe')
   listEquipe(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.eventos.listEquipe(user.id, id);

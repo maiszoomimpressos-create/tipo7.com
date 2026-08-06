@@ -13,7 +13,6 @@
 //   Etapa 2: nome do evento
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -102,7 +101,6 @@ function SeletorModulos({
 
 export function TipoPessoaModal({ nomeUsuario, organizacoes, onFechar }: Props) {
   const { user } = useAuth()
-  const supabase  = createClient()
   const router    = useRouter()
 
   // Sem organização nenhuma → pergunta o nicho (primeira vez). Uma só →
@@ -146,7 +144,10 @@ export function TipoPessoaModal({ nomeUsuario, organizacoes, onFechar }: Props) 
       if (!res.ok || !data.organizacao) throw new Error(data.error ?? 'Falha ao criar organização')
       finalOrgId = data.organizacao.id
     } else if (nicho) {
-      await supabase.from('organizations').update({ nicho }).eq('id', finalOrgId)
+      await apiFetchAuth(`/api/organizations/${finalOrgId}/nicho`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nicho }),
+      })
     }
 
     setOrgId(finalOrgId)
@@ -162,17 +163,6 @@ export function TipoPessoaModal({ nomeUsuario, organizacoes, onFechar }: Props) 
     setStage('nome-evento')
   }
 
-  // Liga o selo informativo "Estacionamento" (event_attributes) quando o módulo é ativado —
-  // mostra na página pública do evento, mas não tem nenhuma lógica de venda por trás.
-  const vincularAtributoEstacionamento = async (eventoId: string) => {
-    const { data: attr } = await supabase
-      .from('event_attributes').select('id').eq('name', 'Estacionamento').maybeSingle()
-    if (attr) {
-      await supabase.from('event_attribute_values')
-        .upsert({ event_id: eventoId, attribute_id: attr.id }, { onConflict: 'event_id,attribute_id' })
-    }
-  }
-
   // ── Etapa final: grava organização (se preciso) + evento ──
   const handleSalvarNomeEvento = async () => {
     if (!user || !nomeEvento.trim() || nenhumModuloSelecionado) return
@@ -180,21 +170,19 @@ export function TipoPessoaModal({ nomeUsuario, organizacoes, onFechar }: Props) 
     try {
       const finalOrgId = await salvarOrganizacao()
 
-      const { data: evento, error: errEvento } = await supabase
-        .from('events')
-        .insert({
-          organization_id:       finalOrgId,
-          created_by:            user.id,
-          status:                'rascunho',
-          title:                 nomeEvento.trim(),
-          modulo_ingressos:      moduloIngressos,
-          modulo_estacionamento: moduloEstacionamento,
-        })
-        .select('id').single()
-      if (errEvento) throw errEvento
-      if (moduloEstacionamento) await vincularAtributoEstacionamento(evento.id)
+      const res  = await apiFetchAuth('/api/eventos', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationId:       finalOrgId,
+          title:                nomeEvento.trim(),
+          moduloIngressos,
+          moduloEstacionamento,
+        }),
+      })
+      const data = await res.json() as { id?: string; error?: string }
+      if (!res.ok || !data.id) throw new Error(data.error ?? 'Falha ao criar evento')
 
-      router.push(`/criar-evento/${evento.id}`)
+      router.push(`/criar-evento/${data.id}`)
     } catch {
       setErro('Erro ao salvar. Tente novamente.')
       setSavingFinal(false)

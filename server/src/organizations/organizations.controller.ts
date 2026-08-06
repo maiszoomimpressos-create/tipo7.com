@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtGuard } from '../auth/guards/supabase-jwt.guard';
 import type { AuthenticatedUser } from '../auth/strategies/supabase-jwt.strategy';
@@ -37,6 +37,18 @@ export class OrganizationsController {
   @Put(':id')
   atualizar(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
     return this.organizations.atualizar(user.id, id, body);
+  }
+
+  // Só o nicho — ao contrário do PUT acima, nunca mexe em
+  // name/cnpj/nomeFantasia/etc. Usado pelo modal de criação de evento, que
+  // não deve sobrescrever dados da organização já existente.
+  @Patch(':id/nicho')
+  atualizarNicho(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: { nicho?: 'eventos' | 'estacionamento' | 'ambos' },
+  ) {
+    return this.organizations.atualizarNicho(user.id, id, body?.nicho);
   }
 
   @Get(':id/socios')

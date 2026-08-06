@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Tent, Plus, Loader2, ArrowUpRight, X, Upload, ImageIcon, Trash2 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
@@ -97,7 +96,6 @@ export function PainelEventosFilhos({ eventoId, isChild }: Props) {
 // venda no caixa compartilhado do pai já vêm ligados por padrão — quem
 // quiser desligar ajusta depois na tela de edição do evento.
 function CriarTendaModal({ eventoId, onFechar }: { eventoId: string; onFechar: () => void }) {
-  const supabase = createClient()
   const [titulo, setTitulo] = useState('')
   const [bannerFile, setBannerFile] = useState<File | null>(null)
   const [bannerPreview, setBannerPreview] = useState<string | null>(null)
@@ -137,7 +135,10 @@ function CriarTendaModal({ eventoId, onFechar }: { eventoId: string; onFechar: (
           const upRes = await apiFetchAuth(`/api/uploads/event-image/${data.id}`, { method: 'POST', body: formData })
           if (upRes.ok) {
             const { url } = await upRes.json()
-            await supabase.from('events').update({ banner_url: url }).eq('id', data.id)
+            await apiFetchAuth(`/api/eventos/${data.id}`, {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ bannerUrl: url }),
+            })
           }
         } catch { /* segue sem banner, promotor sobe depois */ }
       }

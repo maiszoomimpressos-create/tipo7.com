@@ -165,6 +165,15 @@ export class OrganizationsService {
     return { organizacao: org };
   }
 
+  // PATCH /organizations/:id/nicho
+  async atualizarNicho(userId: string, id: string, nicho?: 'eventos' | 'estacionamento' | 'ambos') {
+    if (!(await this.orgAdmin.isOrgAdmin(id, userId))) throw new ForbiddenException('Sem permissão');
+    if (!nicho) throw new BadRequestException('nicho é obrigatório');
+
+    await this.prisma.organization.update({ where: { id }, data: { nicho } });
+    return { ok: true };
+  }
+
   // GET /organizations/:id/socios
   async listSocios(userId: string, id: string) {
     if (!(await this.orgAdmin.isOrgAdmin(id, userId))) throw new ForbiddenException('Sem permissão');

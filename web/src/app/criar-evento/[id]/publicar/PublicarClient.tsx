@@ -212,7 +212,10 @@ export function PublicarClient({ eventoId, statusAtual, gateway, gatewayConectad
     if (!confirm('Tem certeza? O evento ficará invisível para compradores.')) return
     setPublishing(true)
     try {
-      await supabase.from('events').update({ status: 'rascunho' }).eq('id', eventoId)
+      await apiFetchAuth(`/api/eventos/${eventoId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'rascunho' }),
+      })
       router.refresh()
     } finally { setPublishing(false) }
   }

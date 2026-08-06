@@ -2,7 +2,6 @@
 
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import {
   ArrowLeft, ArrowRight, Upload, X, ImageIcon,
@@ -128,7 +127,6 @@ function DropZone({
 
 export function ImagensClient({ eventoId, infoCompleta, ingressosCompleta, bannerUrlInicial, galleryUrlsIniciais }: Props) {
   const router   = useRouter()
-  const supabase = createClient()
 
   // Se faltou uma etapa anterior (ex: chegou aqui direto pelo atalho de foto
   // na tela de Informações), o "continuar" leva de volta pra ela em vez de
@@ -183,11 +181,11 @@ export function ImagensClient({ eventoId, infoCompleta, ingressosCompleta, banne
   const handleSalvar = async (destino?: string) => {
     setSaving(true); setErro(null)
     try {
-      const { error } = await supabase.from('events').update({
-        banner_url:   bannerUrl,
-        gallery_urls: galleryUrls,
-      }).eq('id', eventoId)
-      if (error) throw error
+      const res = await apiFetchAuth(`/api/eventos/${eventoId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bannerUrl, galleryUrls }),
+      })
+      if (!res.ok) throw new Error('Falha ao salvar imagens')
 
       if (destino) {
         router.push(destino)
