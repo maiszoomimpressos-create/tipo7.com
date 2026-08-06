@@ -211,6 +211,18 @@ export class AdminService {
     return { ok: true };
   }
 
+  // Leitura genérica de todas as chaves de platform_settings — inclusive as
+  // de credencial MP/PagBank, por isso a mesma barra de salvarPaymentCredentials
+  // (requireAcessoRestrito), mais alta que a de patchSettings (só gerenciar_financeiro).
+  // Usada pelas 5 telas de admin/financeiro/* (Fase 7.2, G3).
+  async getSettings(userId: string) {
+    await this.requireAcessoRestrito(userId);
+    const rows = await this.prisma.platformSetting.findMany();
+    const settings: Record<string, string> = {};
+    for (const row of rows) settings[row.key] = row.value;
+    return { settings };
+  }
+
   // ── fee-rules ──────────────────────────────────────────────────────────────
 
   async listFeeRules(userId: string) {

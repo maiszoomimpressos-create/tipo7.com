@@ -26,6 +26,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { PagbankModule } from './pagbank/pagbank.module';
 import { PlacesModule } from './places/places.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
+import { PlatformSettingsModule } from './platform-settings/platform-settings.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProfileModule } from './profile/profile.module';
 import { QrModule } from './qr/qr.module';
@@ -80,6 +81,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     CarrosselModule,
     UploadsModule,
     ProfileModule,
+    PlatformSettingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

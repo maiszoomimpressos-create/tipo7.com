@@ -1,7 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
-import { areaRestritaDesbloqueada } from '@/lib/areaRestrita'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect } from 'next/navigation'
 import { EquipeClient } from './EquipeClient'
 import { AreaRestritaWatcher } from '@/app/admin/area-restrita/AreaRestritaWatcher'
@@ -12,7 +12,9 @@ export default async function EquipePage() {
 
   const me = await getAdminMember(user.id)
   if (!me || !temAcessoRestrito(me)) redirect('/admin')
-  if (!(await areaRestritaDesbloqueada(user.id))) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/equipe')}`)
+  const statusRes = await apiFetchServer('/api/admin/area-restrita/status')
+  const { desbloqueada } = statusRes.ok ? await statusRes.json() as { desbloqueada: boolean } : { desbloqueada: false }
+  if (!desbloqueada) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/equipe')}`)
 
   const admin = createServiceClient()
 

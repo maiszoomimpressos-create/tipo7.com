@@ -1,22 +1,11 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { PromoterLayout } from '@/components/layout/PromoterLayout'
 import { Info, CheckCircle2 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
-
-const FEE_KEYS = [
-  'default_fee_pct',
-  'fee_desc_plataforma',
-  'fee_pct_pix',
-  'fee_pct_debito',
-  'fee_pct_credito_1x',
-  'fee_pct_credito_6x',
-  'fee_pct_credito_12x',
-  'fee_nota_extra',
-]
 
 function pct(v: string) {
   return parseFloat(v.replace(',', '.'))
@@ -36,15 +25,8 @@ export default async function TarifasPage() {
   const user = await getAuthUser()
   if (!user) redirect('/auth?next=/minha-area/tarifas')
 
-  const admin = createServiceClient()
-
-  const { data: settingsRows } = await admin
-    .from('platform_settings')
-    .select('key, value')
-    .in('key', FEE_KEYS)
-
-  const s: Record<string, string> = {}
-  for (const row of settingsRows ?? []) s[row.key] = row.value
+  const settingsRes = await apiFetchServer('/api/platform-settings/public')
+  const s: Record<string, string> = settingsRes.ok ? await settingsRes.json() : {}
 
   const platformPct   = pct(s['default_fee_pct']      ?? '10')
   const descPlat      = s['fee_desc_plataforma']       ?? ''

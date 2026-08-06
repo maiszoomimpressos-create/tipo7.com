@@ -1,7 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
-import { areaRestritaDesbloqueada } from '@/lib/areaRestrita'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect } from 'next/navigation'
 import { FinanceiroClient } from './FinanceiroClient'
 import { RulesClient } from './RulesClient'
@@ -13,26 +13,30 @@ export default async function IngressosOnlinePage() {
 
   const member = await getAdminMember(user.id)
   if (!member || !temAcessoRestrito(member)) redirect('/admin')
-  if (!(await areaRestritaDesbloqueada(user.id))) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/financeiro/ingressos-online')}`)
+
+  const statusRes = await apiFetchServer('/api/admin/area-restrita/status')
+  const { desbloqueada } = statusRes.ok ? await statusRes.json() as { desbloqueada: boolean } : { desbloqueada: false }
+  if (!desbloqueada) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/financeiro/ingressos-online')}`)
 
   const admin = createServiceClient()
 
   const [
-    { data: settings },
+    settingsRes,
     { data: mpAccounts },
     { data: eventos },
     { data: orgsPromotoras },
     { data: rules },
   ] = await Promise.all([
-    admin.from('platform_settings').select('key, value'),
+    apiFetchServer('/api/admin/settings'),
     admin.from('promotor_mp_accounts').select('user_id, fee_pct'),
     admin.from('events').select('id, title').eq('status', 'publicado').order('created_at', { ascending: false }),
     admin.from('organizations').select('owner_id, profiles!owner_id(full_name)').eq('type', 'promotora'),
     admin.from('fee_rules').select('*').order('created_at', { ascending: false }),
   ])
 
-  const settingsMap: Record<string, string> = {}
-  for (const s of settings ?? []) settingsMap[s.key] = s.value
+  const { settings: settingsMap } = settingsRes.ok
+    ? await settingsRes.json() as { settings: Record<string, string> }
+    : { settings: {} as Record<string, string> }
 
   const feePcts = (mpAccounts ?? []).map(a => Number(a.fee_pct))
   const mediaFee = feePcts.length > 0

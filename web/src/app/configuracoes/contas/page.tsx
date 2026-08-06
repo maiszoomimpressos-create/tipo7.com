@@ -1,20 +1,10 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect }       from 'next/navigation'
 import { Header }         from '@/components/layout/Header'
 import { PromoterLayout } from '@/components/layout/PromoterLayout'
 import { ContasClient }   from './ContasClient'
-
-const FEE_KEYS = [
-  'default_fee_pct',
-  'fee_desc_plataforma',
-  'fee_pct_pix',
-  'fee_pct_debito',
-  'fee_pct_credito_1x',
-  'fee_pct_credito_6x',
-  'fee_pct_credito_12x',
-  'fee_nota_extra',
-]
 
 export default async function ContasPage() {
   const supabase = await createClient()
@@ -28,9 +18,7 @@ export default async function ContasPage() {
 
   if (!orgs || orgs.length === 0) redirect('/criar-evento')
 
-  const admin = createServiceClient()
-
-  const [{ data: contaMP }, { data: contaPagBank }, { data: settingsRows }] = await Promise.all([
+  const [{ data: contaMP }, { data: contaPagBank }, settingsRes] = await Promise.all([
     supabase
       .from('promotor_mp_accounts')
       .select('mp_user_id, mp_access_token, mp_public_key, updated_at')
@@ -41,14 +29,10 @@ export default async function ContasPage() {
       .select('pagbank_account_id, updated_at')
       .eq('user_id', user.id)
       .maybeSingle(),
-    admin
-      .from('platform_settings')
-      .select('key, value')
-      .in('key', FEE_KEYS),
+    apiFetchServer('/api/platform-settings/public'),
   ])
 
-  const s: Record<string, string> = {}
-  for (const row of settingsRows ?? []) s[row.key] = row.value
+  const s: Record<string, string> = settingsRes.ok ? await settingsRes.json() : {}
 
   const tarifas = {
     platformFeePct: s['default_fee_pct']       ?? '10',

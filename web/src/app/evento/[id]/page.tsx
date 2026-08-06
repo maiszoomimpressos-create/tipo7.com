@@ -1,5 +1,6 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser }      from '@/lib/auth/server'
+import { apiFetchServer }   from '@/lib/apiFetchServer'
 import { notFound }         from 'next/navigation'
 import { Header }           from '@/components/layout/Header'
 import { EventoPageClient } from './EventoPageClient'
@@ -111,12 +112,11 @@ export default async function EventoPage({ params }: Props) {
         .maybeSingle()
       if (mpAcc?.fee_pct) { feePct = Number(mpAcc.fee_pct); }
       else {
-        const { data: setting } = await adminFee
-          .from('platform_settings')
-          .select('value')
-          .eq('key', 'default_fee_pct')
-          .single()
-        if (setting?.value) feePct = Number(setting.value)
+        const settingsRes = await apiFetchServer('/api/platform-settings/public')
+        if (settingsRes.ok) {
+          const settings = await settingsRes.json() as Record<string, string>
+          if (settings['default_fee_pct']) feePct = Number(settings['default_fee_pct'])
+        }
       }
     }
   }

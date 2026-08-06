@@ -76,6 +76,8 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/admin/area-restrita/desbloquear',
   '/api/admin/area-restrita/bloquear',
   '/api/admin/area-restrita/recuperar',
+  '/api/admin/area-restrita/status',
+  '/api/platform-settings/public',
   '/api/eventos/:id/caixas',
   '/api/eventos/:id/estacionamentos',
   '/api/eventos/:id/estacionamentos/:path*',

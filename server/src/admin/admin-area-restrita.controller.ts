@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Get, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AreaRestritaService } from '../area-restrita/area-restrita.service';
 import { AuthCoreService } from '../auth-core/auth-core.service';
@@ -17,6 +17,17 @@ export class AdminAreaRestritaController {
     private readonly areaRestrita: AreaRestritaService,
     private readonly authCore: AuthCoreService,
   ) {}
+
+  // Porte de web/src/lib/areaRestrita.ts (Fase 7.2, G3) — a leitura antiga
+  // no Next.js verificava o cookie com QR_SECRET, mas quem emite o cookie
+  // hoje é este controller, com AREA_RESTRITA_SECRET (segredo diferente) —
+  // a verificação nunca batia e travava qualquer admin na tela de senha
+  // mesmo digitando certo. Esta rota vira a única fonte de verdade.
+  @Get('status')
+  async status(@CurrentUser() user: AuthenticatedUser, @Req() req: Request) {
+    await this.admin.requireAcessoRestrito(user.id);
+    return { desbloqueada: this.areaRestrita.estaDesbloqueada(req, user.id) };
+  }
 
   @Post('senha')
   async senha(

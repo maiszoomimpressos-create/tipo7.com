@@ -1,8 +1,7 @@
 import { redirect }              from 'next/navigation'
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
-import { areaRestritaDesbloqueada } from '@/lib/areaRestrita'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { TarifaModuloClient }    from '@/components/admin/TarifaModuloClient'
 import { AreaRestritaWatcher }   from '@/app/admin/area-restrita/AreaRestritaWatcher'
 
@@ -12,13 +11,15 @@ export default async function TendaFinanceiroPage() {
 
   const member = await getAdminMember(user.id)
   if (!member || !temAcessoRestrito(member)) redirect('/admin')
-  if (!(await areaRestritaDesbloqueada(user.id))) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/financeiro/tenda')}`)
 
-  const admin = createServiceClient()
-  const { data: settings } = await admin.from('platform_settings').select('key, value')
+  const statusRes = await apiFetchServer('/api/admin/area-restrita/status')
+  const { desbloqueada } = statusRes.ok ? await statusRes.json() as { desbloqueada: boolean } : { desbloqueada: false }
+  if (!desbloqueada) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/financeiro/tenda')}`)
 
-  const settingsMap: Record<string, string> = {}
-  for (const s of settings ?? []) settingsMap[s.key] = s.value
+  const settingsRes = await apiFetchServer('/api/admin/settings')
+  const { settings: settingsMap } = settingsRes.ok
+    ? await settingsRes.json() as { settings: Record<string, string> }
+    : { settings: {} as Record<string, string> }
 
   return (
     <div className="p-8 max-w-2xl">

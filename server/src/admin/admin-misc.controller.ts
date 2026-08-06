@@ -24,6 +24,11 @@ export class AdminMiscController {
     return this.admin.patchSettings(user.id, body);
   }
 
+  @Get('settings')
+  getSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.admin.getSettings(user.id);
+  }
+
   @Get('mp-rates')
   getMpRates(@CurrentUser() user: AuthenticatedUser) {
     return this.admin.getMpRates(user.id);

@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { TrendingUp, Users, Ticket, DollarSign } from 'lucide-react'
 import RoadmapClient, { type RoadmapItem } from './RoadmapClient'
 
@@ -67,22 +68,23 @@ export default async function AdminHomePage() {
     { count: totalPromotores },
     { count: mpConectados },
     { data: orders },
-    { data: roadmapSetting },
+    roadmapRes,
   ] = await Promise.all([
     admin.from('events').select('*', { count: 'exact', head: true }),
     admin.from('events').select('*', { count: 'exact', head: true }).eq('status', 'publicado'),
     admin.from('promotor_profiles').select('*', { count: 'exact', head: true }),
     admin.from('promotor_mp_accounts').select('*', { count: 'exact', head: true }),
     admin.from('orders').select('total').eq('status', 'approved'),
-    admin.from('platform_settings').select('value').eq('key', 'roadmap_items').maybeSingle(),
+    apiFetchServer('/api/admin/roadmap'),
   ])
 
   const totalRevenue      = (orders ?? []).reduce((s, o) => s + Number(o.total), 0)
   const plataformaRevenue = totalRevenue * 0.1
 
   let roadmapItems: RoadmapItem[] = DEFAULT_ITEMS
-  if (roadmapSetting?.value) {
-    try { roadmapItems = JSON.parse(roadmapSetting.value) } catch { /* usa default */ }
+  if (roadmapRes.ok) {
+    const { items } = await roadmapRes.json() as { items: RoadmapItem[] | null }
+    if (items) roadmapItems = items
   }
 
   const cards = [

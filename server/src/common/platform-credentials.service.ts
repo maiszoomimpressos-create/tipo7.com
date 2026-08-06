@@ -20,7 +20,12 @@ export interface PagBankPlatformCredentials {
 }
 
 export const MP_CRED_KEYS = ['mp_access_token', 'mp_public_key', 'mp_client_id', 'mp_client_secret', 'mp_webhook_secret'];
-export const PAGBANK_CRED_KEYS = ['pagbank_token', 'pagbank_account_id', 'pagbank_client_id', 'pagbank_client_secret'];
+// pagbank_token_sandbox: chave órfã achada direto no banco de produção
+// (Fase 7.2, G3) — nenhum código lê/escreve ela hoje, mas é um token, então
+// entra na lista de exclusão por segurança (GET /platform-settings/public
+// exclui tudo daqui). Se algum dia reativar o modo sandbox do PagBank de
+// verdade, essa chave já está coberta.
+export const PAGBANK_CRED_KEYS = ['pagbank_token', 'pagbank_token_sandbox', 'pagbank_account_id', 'pagbank_client_id', 'pagbank_client_secret'];
 
 @Injectable()
 export class PlatformCredentialsService {

@@ -1,21 +1,9 @@
-import { createServiceClient } from '@/lib/supabase/server'
-import { redirect }            from 'next/navigation'
 import { getAuthUser }         from '@/lib/auth/server'
+import { redirect }            from 'next/navigation'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
-import { areaRestritaDesbloqueada } from '@/lib/areaRestrita'
-import { MP_CRED_KEYS, PAGBANK_CRED_KEYS } from '@/lib/platformCredentials'
+import { apiFetchServer }      from '@/lib/apiFetchServer'
 import { BancosClient }        from './BancosClient'
 import { AreaRestritaWatcher } from '@/app/admin/area-restrita/AreaRestritaWatcher'
-
-const FEE_KEYS = [
-  'fee_desc_plataforma',
-  'fee_pct_pix',
-  'fee_pct_debito',
-  'fee_pct_credito_1x',
-  'fee_pct_credito_6x',
-  'fee_pct_credito_12x',
-  'fee_nota_extra',
-]
 
 export default async function BancosPage() {
   const user = await getAuthUser()
@@ -23,29 +11,15 @@ export default async function BancosPage() {
 
   const member = await getAdminMember(user.id)
   if (!member || !temAcessoRestrito(member)) redirect('/admin')
-  if (!(await areaRestritaDesbloqueada(user.id))) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/financeiro/bancos')}`)
 
-  const admin = createServiceClient()
+  const statusRes = await apiFetchServer('/api/admin/area-restrita/status')
+  const { desbloqueada } = statusRes.ok ? await statusRes.json() as { desbloqueada: boolean } : { desbloqueada: false }
+  if (!desbloqueada) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/financeiro/bancos')}`)
 
-  const [{ data: settings }, { data: platformFee }, { data: mpCred }, { data: pagbankCred }, { data: logos }] = await Promise.all([
-    admin.from('platform_settings').select('key, value').in('key', FEE_KEYS),
-    admin.from('platform_settings').select('value').eq('key', 'default_fee_pct').single(),
-    admin.from('platform_settings').select('key, value').in('key', MP_CRED_KEYS),
-    admin.from('platform_settings').select('key, value').in('key', PAGBANK_CRED_KEYS),
-    admin.from('platform_settings').select('key, value').in('key', ['gateway_logo_mercadopago', 'gateway_logo_pagbank']),
-  ])
-
-  const s: Record<string, string> = {}
-  for (const row of settings ?? []) s[row.key] = row.value
-
-  const c: Record<string, string> = {}
-  for (const row of mpCred ?? []) c[row.key] = row.value
-
-  const p: Record<string, string> = {}
-  for (const row of pagbankCred ?? []) p[row.key] = row.value
-
-  const l: Record<string, string> = {}
-  for (const row of logos ?? []) l[row.key] = row.value
+  const settingsRes = await apiFetchServer('/api/admin/settings')
+  const { settings: s } = settingsRes.ok
+    ? await settingsRes.json() as { settings: Record<string, string> }
+    : { settings: {} as Record<string, string> }
 
   return (
     <div className="p-8 max-w-2xl">
@@ -60,7 +34,7 @@ export default async function BancosPage() {
       </div>
 
       <BancosClient
-        platformFeePct={platformFee?.value ?? '10'}
+        platformFeePct={s['default_fee_pct'] ?? '10'}
         descPlataforma={s['fee_desc_plataforma'] ?? ''}
         pctPix={s['fee_pct_pix']               ?? '0,99'}
         pctDebito={s['fee_pct_debito']          ?? '1,49'}
@@ -69,20 +43,20 @@ export default async function BancosPage() {
         pctCredito12x={s['fee_pct_credito_12x'] ?? '6,98'}
         notaExtra={s['fee_nota_extra']           ?? ''}
         mpCredenciais={{
-          accessToken:   c['mp_access_token']   ?? '',
-          publicKey:     c['mp_public_key']      ?? '',
-          clientId:      c['mp_client_id']       ?? '',
-          clientSecret:  c['mp_client_secret']   ?? '',
-          webhookSecret: c['mp_webhook_secret']  ?? '',
+          accessToken:   s['mp_access_token']   ?? '',
+          publicKey:     s['mp_public_key']      ?? '',
+          clientId:      s['mp_client_id']       ?? '',
+          clientSecret:  s['mp_client_secret']   ?? '',
+          webhookSecret: s['mp_webhook_secret']  ?? '',
         }}
         pagbankCredenciais={{
-          token:        p['pagbank_token']         ?? '',
-          accountId:    p['pagbank_account_id']    ?? '',
-          clientId:     p['pagbank_client_id']     ?? '',
-          clientSecret: p['pagbank_client_secret'] ?? '',
+          token:        s['pagbank_token']         ?? '',
+          accountId:    s['pagbank_account_id']    ?? '',
+          clientId:     s['pagbank_client_id']     ?? '',
+          clientSecret: s['pagbank_client_secret'] ?? '',
         }}
-        logoMercadoPago={l['gateway_logo_mercadopago'] ?? null}
-        logoPagbank={l['gateway_logo_pagbank']          ?? null}
+        logoMercadoPago={s['gateway_logo_mercadopago'] ?? null}
+        logoPagbank={s['gateway_logo_pagbank']          ?? null}
       />
     </div>
   )
