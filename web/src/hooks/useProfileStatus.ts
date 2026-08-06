@@ -4,7 +4,7 @@
 // Retorna quais campos ainda faltam preencher
 // Adicione novos campos obrigatórios aqui conforme a plataforma crescer
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { useAuth } from '@/contexts/AuthContext'
 
 export interface CampoFaltando {
@@ -26,7 +26,6 @@ export const PROFILE_UPDATED_EVENT = 'tipo7:profile-updated'
 
 export function useProfileStatus(): ProfileStatus {
   const { user } = useAuth()
-  const supabase  = createClient()
 
   const [camposFaltando, setCamposFaltando] = useState<CampoFaltando[]>([])
   const [carregando,     setCarregando]     = useState(true)
@@ -35,12 +34,13 @@ export function useProfileStatus(): ProfileStatus {
     if (!user) { setCarregando(false); return }
 
     const buscarStatus = () => {
-      supabase
-        .from('profiles')
-        .select('full_name, phone, cpf, birth_date, zip_code, street, street_number, neighborhood, address_type')
-        .eq('id', user.id)
-        .single()
-        .then(({ data }) => {
+      apiFetchAuth('/api/profile')
+        .then(res => res.ok ? res.json() : null)
+        .then((data: {
+          full_name: string | null; phone: string | null; cpf: string | null; birth_date: string | null
+          zip_code: string | null; street: string | null; street_number: string | null
+          neighborhood: string | null; address_type: string | null
+        } | null) => {
           const faltando: CampoFaltando[] = []
 
           // Campos verificados agora — adicione mais abaixo conforme necessário

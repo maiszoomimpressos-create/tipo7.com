@@ -3,7 +3,6 @@
 // Formulário completo do perfil — dados pessoais, endereço e foto de perfil
 // Atualiza a tabela profiles e faz upload de avatar no Supabase Storage
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { useLocation } from '@/contexts/LocationContext'
 import { PROFILE_UPDATED_EVENT } from '@/hooks/useProfileStatus'
@@ -106,7 +105,6 @@ interface Props {
 // ─── Componente principal ──────────────────────────────────────────────────────
 
 export function ProfileForm({ userId, secaoAtiva, initial }: Props) {
-  const supabase = createClient()
   const { city: cidadeDetectada } = useLocation()
 
   // ── Estado: dados pessoais ──
@@ -421,29 +419,29 @@ export function ProfileForm({ userId, secaoAtiva, initial }: Props) {
       const novaAvatarUrl = await uploadAvatar()
 
       // 2. Salva todos os dados no banco de uma vez
-      const { error: dbError } = await supabase
-        .from('profiles')
-        .update({
+      const res = await apiFetchAuth('/api/profile', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           // Dados pessoais
-          full_name:    name.trim(),
+          fullName:     name.trim(),
           phone:        phone.replace(/\D/g,'')   || null,
           cpf:          cpf.replace(/\D/g,'')     || null,
           rg:           rg.trim()                 || null,
-          birth_date:   displayToISO(birthDate)    || null,
-          avatar_url:   novaAvatarUrl             || null,
+          birthDate:    displayToISO(birthDate)    || null,
+          avatarUrl:    novaAvatarUrl             || null,
           // Endereço
-          zip_code:     zipCode.replace(/\D/g,'') || null,
+          zipCode:      zipCode.replace(/\D/g,'') || null,
           street:       street.trim()             || null,
-          street_number: streetNumber.trim()      || null,
+          streetNumber: streetNumber.trim()      || null,
           neighborhood: neighborhood.trim()       || null,
           city:         city.trim()               || null,
           state:        uf.toUpperCase()          || null,
-          address_type: addressType               || null,
+          addressType:  addressType               || null,
           complement:   complement.trim()         || null,
-        })
-        .eq('id', userId)
+        }),
+      })
 
-      if (dbError) { setError('Erro ao salvar. Tente novamente.'); return }
+      if (!res.ok) { setError('Erro ao salvar. Tente novamente.'); return }
 
       // Atualiza a URL do avatar no estado para refletir a foto salva
       if (novaAvatarUrl) setAvatarUrl(novaAvatarUrl)

@@ -46,8 +46,10 @@ export default async function EditarEventoPage({ params }: Props) {
   const tipoPessoa: 'pf' | 'pj' = orgData?.cnpj ? 'pj' : 'pf'
   const orgOwnerId = orgData?.owner_id ?? null
 
-  const { data: profile } = await supabase
-    .from('profiles').select('full_name, cpf, phone, city, state').eq('id', user.id).single()
+  const profileRes = await apiFetchServer('/api/profile')
+  const profile = profileRes.ok ? await profileRes.json() as {
+    full_name: string | null; cpf: string | null; phone: string | null; city: string | null; state: string | null
+  } : null
 
   // Contas de pagamento conectadas pelo dono da organização — decide quais
   // gateways o promotor pode escolher pro evento (PagBank fica travado até

@@ -3,20 +3,20 @@
 // cada cidade). Movido pra dentro de "Configurar" no sidebar do promotor
 // (antes só existia escondido dentro de /perfil) — é aqui que quem
 // trabalha no dia a dia (/minha-area, /criar-evento) espera encontrar.
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect }       from 'next/navigation'
 import { Header }         from '@/components/layout/Header'
 import { PromoterLayout } from '@/components/layout/PromoterLayout'
 import { PromotorForm, type OrganizacaoItem } from '@/app/perfil/PromotorForm'
 
 export default async function OrganizacoesPage() {
-  const supabase = await createClient()
   const user = await getAuthUser()
   if (!user) redirect('/auth?next=/configuracoes/organizacoes')
 
-  const { data: profile } = await supabase
-    .from('profiles').select('full_name').eq('id', user.id).single()
+  const profileRes = await apiFetchServer('/api/profile')
+  const profile = profileRes.ok ? await profileRes.json() as { full_name: string | null } : null
 
   const admin = createServiceClient()
   const { data: orgAdminRows } = await admin

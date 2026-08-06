@@ -40,6 +40,7 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/eventos',
   '/api/eventos/locais-recentes',
   '/api/eventos/:id',
+  '/api/profile',
   '/api/stats',
   '/api/check-cpf',
   '/api/check-cnpj',

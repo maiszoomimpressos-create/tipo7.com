@@ -2,6 +2,7 @@
 // Rota protegida: o proxy redireciona para /auth se não estiver logado
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect }      from 'next/navigation'
 import { Header }        from '@/components/layout/Header'
 import { CodigoOrg }     from './CodigoOrg'
@@ -15,16 +16,16 @@ export default async function PerfilPage() {
   const user = await getAuthUser()
   if (!user) redirect('/auth')
 
-  // Busca o perfil completo da tabela profiles — inclui endereço e avatar
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select(`
-      full_name, phone, cpf, rg, birth_date, avatar_url,
-      zip_code, street, street_number, neighborhood,
-      city, state, address_type, complement, created_at, user_code
-    `)
-    .eq('id', user.id)
-    .single()
+  // Busca o perfil completo — inclui endereço e avatar
+  const profileRes = await apiFetchServer('/api/profile')
+  const profile = profileRes.ok ? await profileRes.json() as {
+    full_name: string | null; phone: string | null; cpf: string | null; rg: string | null
+    birth_date: string | null; avatar_url: string | null
+    zip_code: string | null; street: string | null; street_number: string | null
+    neighborhood: string | null; city: string | null; state: string | null
+    address_type: string | null; complement: string | null
+    created_at: string | null; user_code: string | null
+  } : null
 
   // Formata datas no padrão brasileiro para exibição
   const formatarData = (iso: string | null | undefined) => {

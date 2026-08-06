@@ -3,6 +3,7 @@
 // CNPJ é opcional e fica em /perfil (aba "Dados de promotor"), não aqui.
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser }  from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect }     from 'next/navigation'
 import { Header }       from '@/components/layout/Header'
 import { PromoterLayout } from '@/components/layout/PromoterLayout'
@@ -29,11 +30,13 @@ export default async function CriarEventoPage() {
   const user = await getAuthUser()
   if (!user) redirect('/auth?next=/criar-evento')
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name, phone, cpf, birth_date, zip_code, street, street_number, neighborhood, city, state, address_type, complement')
-    .eq('id', user.id)
-    .single()
+  const profileRes = await apiFetchServer('/api/profile')
+  const profile = profileRes.ok ? await profileRes.json() as {
+    full_name: string | null; phone: string | null; cpf: string | null; birth_date: string | null
+    zip_code: string | null; street: string | null; street_number: string | null
+    neighborhood: string | null; city: string | null; state: string | null
+    address_type: string | null; complement: string | null
+  } : null
 
   const faltando       = CAMPOS_OBRIGATORIOS.filter(({ campo }) => !profile?.[campo as keyof typeof profile])
   const perfilCompleto = faltando.length === 0

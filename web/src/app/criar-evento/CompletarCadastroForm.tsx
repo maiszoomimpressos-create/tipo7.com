@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { getSession, initSession } from '@/lib/auth/session'
 import { Loader2, CheckCircle, AlertCircle, CalendarPlus, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -90,7 +90,6 @@ const inpErr = 'w-full bg-[#111] border border-red-500/40 rounded-xl px-4 py-3 t
 
 export function CompletarCadastroForm({ profile, faltando, todos }: Props) {
   const router  = useRouter()
-  const supabase = createClient()
 
   // Estado dos campos — inicializa com o que já existe no perfil
   const [fullName,     setFullName]     = useState(profile.full_name     ?? '')
@@ -150,27 +149,30 @@ export function CompletarCadastroForm({ profile, faltando, todos }: Props) {
     try {
       const update: Partial<Record<string, string>> = {}
 
-      if (precisa('full_name')     && fullName.trim())                 update.full_name     = fullName.trim()
-      if (precisa('phone')         && phone)                           update.phone         = phone.replace(/\D/g,'')
-      if (precisa('cpf')           && cpf)                             update.cpf           = cpf.replace(/\D/g,'')
+      if (precisa('full_name')     && fullName.trim())                 update.fullName     = fullName.trim()
+      if (precisa('phone')         && phone)                           update.phone        = phone.replace(/\D/g,'')
+      if (precisa('cpf')           && cpf)                             update.cpf          = cpf.replace(/\D/g,'')
       if (precisa('birth_date')    && birthDate) {
         const iso = displayToISO(birthDate)
-        if (iso) update.birth_date = iso
+        if (iso) update.birthDate = iso
       }
-      if (precisa('zip_code')      && zipCode)                         update.zip_code      = zipCode.replace(/\D/g,'')
-      if (precisa('street')        && street.trim())                   update.street        = street.trim()
-      if (precisa('street_number') && streetNumber.trim())             update.street_number = streetNumber.trim()
-      if (precisa('neighborhood')  && neighborhood.trim())             update.neighborhood  = neighborhood.trim()
-      if (precisa('city')          && city.trim())                     update.city          = city.trim()
-      if (precisa('state')         && state.trim())                    update.state         = state.trim().toUpperCase().slice(0,2)
-      if (precisa('address_type')  && addressType)                     update.address_type  = addressType
+      if (precisa('zip_code')      && zipCode)                         update.zipCode      = zipCode.replace(/\D/g,'')
+      if (precisa('street')        && street.trim())                   update.street       = street.trim()
+      if (precisa('street_number') && streetNumber.trim())             update.streetNumber = streetNumber.trim()
+      if (precisa('neighborhood')  && neighborhood.trim())             update.neighborhood = neighborhood.trim()
+      if (precisa('city')          && city.trim())                     update.city         = city.trim()
+      if (precisa('state')         && state.trim())                    update.state        = state.trim().toUpperCase().slice(0,2)
+      if (precisa('address_type')  && addressType)                     update.addressType  = addressType
 
       await initSession()
       const session = getSession()
       if (!session) throw new Error('Não autenticado')
 
-      const { error } = await supabase.from('profiles').update(update).eq('id', session.user.id)
-      if (error) throw error
+      const res = await apiFetchAuth('/api/profile', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(update),
+      })
+      if (!res.ok) throw new Error('Falha ao salvar perfil')
 
       // Recarrega a Server Component — se tudo estiver ok, abre o fluxo de evento
       router.refresh()

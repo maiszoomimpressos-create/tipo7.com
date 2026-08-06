@@ -4,7 +4,6 @@
 // Busca os dados atuais do banco e exibe apenas os campos que ainda faltam
 // Aparece uma vez por sessão enquanto houver campos de endereço vazios
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProfileStatus, PROFILE_UPDATED_EVENT } from '@/hooks/useProfileStatus'
@@ -28,7 +27,6 @@ const formatCEP = (v: string) => {
 export function ProfileCompletionModal() {
   const { user }                                   = useAuth()
   const { incompleto, camposFaltando, carregando } = useProfileStatus()
-  const supabase                                   = createClient()
   // Cidade detectada por geolocalização — ainda não existe cidade no perfil
   // nesse ponto (é justamente o que está sendo preenchido), então usamos isso
   // como viés de busca em vez do endereço do próprio perfil.
@@ -84,12 +82,13 @@ export function ProfileCompletionModal() {
     if (!visivel || !user) return
 
     setBuscando(true)
-    supabase
-      .from('profiles')
-      .select('zip_code, street, street_number, neighborhood, city, state, address_type, complement')
-      .eq('id', user.id)
-      .single()
-      .then(({ data }) => {
+    apiFetchAuth('/api/profile')
+      .then(res => res.ok ? res.json() : null)
+      .then((data: {
+        zip_code: string | null; street: string | null; street_number: string | null
+        neighborhood: string | null; city: string | null; state: string | null
+        address_type: string | null; complement: string | null
+      } | null) => {
         if (!data) return
 
         // Pré-preenche com o que já existe
@@ -238,16 +237,19 @@ export function ProfileCompletionModal() {
     setSaving(true)
     try {
       const dados: Record<string, string | null> = {}
-      if (zipCode)      dados.zip_code      = zipCode.replace(/\D/g,'')
-      if (street)       dados.street        = street
-      if (number)       dados.street_number = number
-      if (neighborhood) dados.neighborhood  = neighborhood
-      if (city)         dados.city          = city
-      if (uf)           dados.state         = uf
-      if (addrType)     dados.address_type  = addrType
-      if (complement)   dados.complement    = complement
+      if (zipCode)      dados.zipCode      = zipCode.replace(/\D/g,'')
+      if (street)       dados.street       = street
+      if (number)       dados.streetNumber = number
+      if (neighborhood) dados.neighborhood = neighborhood
+      if (city)         dados.city         = city
+      if (uf)           dados.state        = uf
+      if (addrType)     dados.addressType  = addrType
+      if (complement)   dados.complement   = complement
 
-      await supabase.from('profiles').update(dados).eq('id', user.id)
+      await apiFetchAuth('/api/profile', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dados),
+      })
       window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT))
       setSaved(true)
       setTimeout(fechar, 1500)

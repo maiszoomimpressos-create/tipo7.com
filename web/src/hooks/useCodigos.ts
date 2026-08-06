@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { useAuth } from '@/contexts/AuthContext'
 
 export interface CodigoItem {
@@ -20,11 +21,8 @@ export function useCodigos(): CodigoItem[] {
     async function carregar() {
       const lista: CodigoItem[] = []
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('user_code')
-        .eq('id', user!.id)
-        .single()
+      const profileRes = await apiFetchAuth('/api/profile')
+      const profile = profileRes.ok ? await profileRes.json() as { user_code: string | null } : null
 
       if (profile?.user_code) {
         lista.push({ codigo: profile.user_code, tipo: 'usuario' })
