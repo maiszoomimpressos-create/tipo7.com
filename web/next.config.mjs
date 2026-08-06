@@ -37,6 +37,9 @@ const API_URL = process.env.API_URL ?? 'http://localhost:3001'
 const ROTAS_MIGRADAS_NESTJS = [
   '/api/eventos/buscar',
   '/api/eventos/destaque',
+  '/api/eventos',
+  '/api/eventos/locais-recentes',
+  '/api/eventos/:id',
   '/api/stats',
   '/api/check-cpf',
   '/api/check-cnpj',
