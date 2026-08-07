@@ -1,12 +1,17 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect } from 'next/navigation'
 import { ShieldX  } from 'lucide-react'
 import { ScannerClient } from './ScannerClient'
-import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ eventoId: string }>
+}
+
+interface MeuAcesso {
+  evento: { id: string; title: string | null } | null
+  isOwner: boolean
+  staff: { permissions: string[] } | null
 }
 
 export default async function ScannerPage({ params }: Props) {
@@ -16,61 +21,32 @@ export default async function ScannerPage({ params }: Props) {
   const user = await getAuthUser()
   if (!user) redirect(`/auth?next=/scanner/${eventoId}`)
 
-  const admin = createServiceClient()
+  const [acessoRes, profileRes] = await Promise.all([
+    apiFetchServer(`/api/eventos/${eventoId}/meu-acesso`),
+    apiFetchServer('/api/profile'),
+  ])
 
-  // Busca evento
-  const { data: evento } = await admin
-    .from('events')
-    .select('id, title, organization_id')
-    .eq('id', eventoId)
-    .single()
+  const acesso: MeuAcesso = acessoRes.ok
+    ? await acessoRes.json()
+    : { evento: null, isOwner: false, staff: null }
 
-  if (!evento) {
+  if (!acesso.evento) {
     return <SemPermissao mensagem="Evento não encontrado." />
   }
 
-  // Verifica se é organizador
-  const isOwner = await isOrgAdmin(admin, evento.organization_id, user.id)
+  const isStaff = (acesso.staff?.permissions ?? []).includes('validar_ingresso')
 
-  // Verifica se é staff com permissão validar_ingresso
-  let isStaff = false
-  let staffName = ''
-  if (!isOwner) {
-    const { data: staff } = await admin
-      .from('event_staff')
-      .select('id, profiles:user_id(full_name), event_positions(event_position_permissions(permission))')
-      .eq('event_id', eventoId)
-      .eq('user_id', user.id)
-      .eq('status', 'active')
-      .single()
-
-    if (staff) {
-      const pos = staff.event_positions as unknown as {
-        event_position_permissions: { permission: string }[]
-      } | null
-      isStaff = (pos?.event_position_permissions ?? []).some(p => p.permission === 'validar_ingresso')
-      const profileData = staff.profiles as unknown as { full_name: string | null } | null
-      staffName = profileData?.full_name ?? ''
-    }
-  }
-
-  if (!isOwner && !isStaff) {
+  if (!acesso.isOwner && !isStaff) {
     return <SemPermissao mensagem="Você não tem permissão para escanear ingressos neste evento." />
   }
 
-  // Busca nome do usuário para exibir no scanner
-  const { data: profile } = await admin
-    .from('profiles')
-    .select('full_name')
-    .eq('id', user.id)
-    .single()
-
-  const displayName = profile?.full_name ?? staffName ?? 'Operador'
+  const profile = profileRes.ok ? await profileRes.json() as { full_name: string | null } : null
+  const displayName = profile?.full_name ?? 'Operador'
 
   return (
     <ScannerClient
       eventoId={eventoId}
-      eventoTitle={evento.title ?? 'Evento'}
+      eventoTitle={acesso.evento.title ?? 'Evento'}
       operadorName={displayName}
     />
   )

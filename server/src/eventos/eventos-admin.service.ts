@@ -30,6 +30,49 @@ export class EventosAdminService {
     return permissoes.filter((p) => !PERMISSOES_ESTACIONAMENTO.includes(p));
   }
 
+  // ==== meu-acesso (Fase 7.2, G7) ====
+  // Resolve a relação do usuário logado com o evento — dono (isOrgAdmin) ou
+  // staff ativo (com cargo/permissões/portão designado). Serviço compartilhado
+  // pras 5+ telas operacionais (trabalho, bilheteria, bilheteria/caixa,
+  // estacionamento, scanner) que antes repetiam essa mesma checagem cada
+  // uma com sua própria query direta ao Supabase. Cada tela decide sozinha
+  // o que fazer com o resultado (redirect, filtrar por portão, etc.) — este
+  // método só responde "quem é o usuário em relação a este evento".
+
+  async getMeuAcesso(eventoId: string, userId: string) {
+    const evento = await this.prisma.event.findUnique({
+      where: { id: eventoId },
+      select: {
+        id: true, title: true, dateStart: true, venueName: true,
+        city: true, state: true, bannerUrl: true, organizationId: true,
+      },
+    });
+    if (!evento) return { evento: null, isOwner: false, staff: null };
+
+    const isOwner = await this.orgAdmin.isOrgAdmin(evento.organizationId, userId);
+
+    const staffRow = await this.prisma.eventStaff.findFirst({
+      where: { eventId: eventoId, userId, status: 'active' },
+      select: {
+        id: true, portaoId: true,
+        eventPosition: {
+          select: { name: true, eventPositionPermissions: { select: { permission: true } } },
+        },
+      },
+    });
+
+    const staff = staffRow
+      ? {
+          id: staffRow.id,
+          portaoId: staffRow.portaoId,
+          positionName: staffRow.eventPosition?.name ?? null,
+          permissions: (staffRow.eventPosition?.eventPositionPermissions ?? []).map((p) => p.permission),
+        }
+      : null;
+
+    return { evento, isOwner, staff };
+  }
+
   // ==== core (criar / editar / excluir) ====
   // Porte de web/src/app/criar-evento/TipoPessoaModal.tsx (criação),
   // EventoForm.tsx/ImagensClient.tsx/EventoPageClient.tsx/PainelEventosFilhos.tsx

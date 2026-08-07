@@ -9,6 +9,11 @@ import { EventosAdminService } from './eventos-admin.service';
 export class EventosAdminController {
   constructor(private readonly eventos: EventosAdminService) {}
 
+  @Get('meu-acesso')
+  meuAcesso(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.eventos.getMeuAcesso(id, user.id);
+  }
+
   @Patch()
   atualizarCore(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
     return this.eventos.atualizarCore(user.id, id, body);
