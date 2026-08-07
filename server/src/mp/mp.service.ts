@@ -4,8 +4,14 @@ import { MpTokenService } from '../common/mp-token.service';
 import { PlatformCredentialsService } from '../common/platform-credentials.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-const REDIRECT_URI = 'https://tipo7.com/api/mp/callback';
-const BASE = 'https://tipo7.com';
+// Antes hardcoded sem "www" (https://tipo7.com) — ficou desatualizado da
+// migração de hospedagem (Vercel -> VPS/EasyPanel), que passou a
+// canonicalizar tudo pra www.tipo7.com (tipo7.com bare vira 301/308).
+// Corrigido pra usar a mesma env var que PagBank/Google OAuth já usavam
+// (achado real, 07/08/2026, ao cadastrar uma segunda conta MP do zero —
+// ver PlatformCredentialsService/MP_CRED_KEYS).
+const BASE = process.env.NEXT_PUBLIC_APP_URL ?? 'https://tipo7.com';
+const REDIRECT_URI = `${BASE}/api/mp/callback`;
 
 // Aceita apenas caminhos internos (evita open redirect via //evil.com ou /\evil.com)
 function isInternalPath(path: string): boolean {
