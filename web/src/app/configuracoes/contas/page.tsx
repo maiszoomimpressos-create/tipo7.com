@@ -1,4 +1,3 @@
-import { createClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
 import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect }       from 'next/navigation'
@@ -7,16 +6,18 @@ import { PromoterLayout } from '@/components/layout/PromoterLayout'
 import { ContasClient }   from './ContasClient'
 
 export default async function ContasPage() {
-  const supabase = await createClient()
   const user = await getAuthUser()
   if (!user) redirect('/auth?next=/configuracoes/contas')
 
-  const { data: orgs } = await supabase
-    .from('organizations')
-    .select('id')
-    .eq('owner_id', user.id)
+  // GET /organizations já devolve as organizações que o usuário administra
+  // (dono ou sócio ativo) — mesma checagem "tem organização?" que a query
+  // direta fazia (Fase 7.2, resíduo do G14).
+  const orgsRes = await apiFetchServer('/api/organizations')
+  const { organizacoes } = orgsRes.ok
+    ? await orgsRes.json() as { organizacoes: Array<{ status: string }> }
+    : { organizacoes: [] as Array<{ status: string }> }
 
-  if (!orgs || orgs.length === 0) redirect('/criar-evento')
+  if (!organizacoes.some(o => o.status === 'ativo')) redirect('/criar-evento')
 
   // Nunca buscar mp_access_token/mp_public_key aqui — GET /mp/status e
   // GET /pagbank/status já nunca devolvem o token bruto, de propósito

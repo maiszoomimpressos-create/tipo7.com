@@ -1,59 +1,19 @@
 // Página "Meus Ingressos" — lista todos os pedidos do comprador com status e detalhes
-import { createClient }  from '@/lib/supabase/server'
 import { getAuthUser }   from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect }      from 'next/navigation'
 import { Header }        from '@/components/layout/Header'
 import { Ticket }        from 'lucide-react'
-import { MeusIngressosClient } from './MeusIngressosClient'
+import { MeusIngressosClient, type Order } from './MeusIngressosClient'
 
 export default async function MeusIngressosPage() {
-  const supabase = await createClient()
-
   const user = await getAuthUser()
   if (!user) redirect('/auth?next=/meus-ingressos')
 
-  // Busca pedidos com evento, itens e portadores já cadastrados
-  const { data: orders } = await supabase
-    .from('orders')
-    .select(`
-      id,
-      status,
-      total,
-      created_at,
-      mp_payment_id,
-      events (
-        id,
-        title,
-        date_start,
-        banner_url,
-        venue_name,
-        city,
-        state
-      ),
-      order_items (
-        id,
-        quantity,
-        unit_price,
-        event_tickets (
-          id,
-          name
-        ),
-        ticket_holders (
-          slot_number,
-          full_name,
-          cpf,
-          email,
-          birth_date
-        ),
-        tickets (
-          slot_number,
-          qr_token,
-          status
-        )
-      )
-    `)
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
+  // GET /orders/minhas já devolve no mesmo shape snake_case que essa página
+  // montava manualmente via join direto (Fase 7.2, G10).
+  const res = await apiFetchServer('/api/orders/minhas')
+  const { orders } = res.ok ? await res.json() as { orders: Order[] } : { orders: [] as Order[] }
 
   return (
     <div className="min-h-dvh bg-[#070707]">
@@ -76,7 +36,7 @@ export default async function MeusIngressosPage() {
           </div>
         </div>
 
-        <MeusIngressosClient orders={(orders ?? []) as unknown as import('./MeusIngressosClient').Order[]} />
+        <MeusIngressosClient orders={orders} />
 
       </main>
     </div>

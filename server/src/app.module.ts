@@ -22,6 +22,7 @@ import { HoldersModule } from './holders/holders.module';
 import { IngressosModule } from './ingressos/ingressos.module';
 import { MpModule } from './mp/mp.module';
 import { OrgAdminModule } from './org-admin/org-admin.module';
+import { OrdersModule } from './orders/orders.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { PagbankModule } from './pagbank/pagbank.module';
 import { PlacesModule } from './places/places.module';
@@ -60,6 +61,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     StaffFunctionTemplatesModule,
     CodigoModule,
     OrganizationsModule,
+    OrdersModule,
     EventosModule,
     VenuesModule,
     AdminModule,
