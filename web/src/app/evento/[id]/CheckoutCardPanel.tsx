@@ -232,10 +232,11 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
         }),
       })
 
-      const data = await res.json() as { orderId?: string; status?: string; error?: string }
+      const data = await res.json() as { orderId?: string; status?: string; error?: string; message?: string }
 
       if (!res.ok) {
-        setError(data.error ?? 'Pagamento recusado. Verifique os dados e tente novamente.')
+        // mensagem custom do NestJS vem em `message`, não `error` (que é só a frase genérica do status HTTP)
+        setError(data.message ?? data.error ?? 'Pagamento recusado. Verifique os dados e tente novamente.')
         return
       }
 

@@ -382,7 +382,12 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
         body:    JSON.stringify({ eventoId: eventoIdAtivo, items }),
       })
       const data = await res.json()
-      if (!res.ok) { setCheckoutError(data.error ?? 'Erro ao gerar PIX'); return }
+      // Achado real (07/08/2026): NestJS devolve a mensagem custom em
+      // `message` — `error` é sempre só a frase genérica do status HTTP
+      // ("Service Unavailable" etc.), nunca o motivo real. Lendo só
+      // `data.error` (padrão herdado das antigas rotas Next.js) escondia
+      // qualquer erro específico atrás desse texto inútil.
+      if (!res.ok) { setCheckoutError(data.message ?? data.error ?? 'Erro ao gerar PIX'); return }
       const suffix = gateway === 'pagbank' ? '?gateway=pagbank' : ''
       window.location.href = `/checkout/pix/${data.orderId}${suffix}`
     } catch {
