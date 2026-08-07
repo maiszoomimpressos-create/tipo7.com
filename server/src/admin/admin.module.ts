@@ -7,6 +7,7 @@ import { AdminAtributosController } from './admin-atributos.controller';
 import { AdminBannersController } from './admin-banners.controller';
 import { AdminContentController } from './admin-content.controller';
 import { AdminFeeRulesController } from './admin-fee-rules.controller';
+import { AdminFuncoesController } from './admin-funcoes.controller';
 import { AdminGatewayLogoController } from './admin-gateway-logo.controller';
 import { AdminIntegracoesController } from './admin-integracoes.controller';
 import { AdminMiscController } from './admin-misc.controller';
@@ -29,6 +30,7 @@ import { AdminService } from './admin.service';
     AdminAreaRestritaController,
     AdminPaymentCredentialsController,
     AdminAtributosController,
+    AdminFuncoesController,
   ],
   providers: [AdminService],
 })

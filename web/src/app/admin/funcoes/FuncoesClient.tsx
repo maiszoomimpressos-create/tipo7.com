@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import {
   Shield, Plus, Trash2, Loader2, Check, ChevronUp, ChevronDown,
   Pencil, X, ToggleLeft, ToggleRight,
@@ -9,7 +9,6 @@ import {
 import { useRouter } from 'next/navigation'
 
 const ACCENT = '#E8B84B'
-const supabase = createClient()
 
 const PERMISSOES = [
   { value: 'validar_ingresso',     label: 'Validar ingresso'     },
@@ -51,25 +50,15 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
     setSalvando(true); setErr(null)
     try {
       if (editando) {
-        await supabase.from('staff_function_templates').update({ name: nome.trim() }).eq('id', editando.id)
-        await supabase.from('staff_function_template_permissions').delete().eq('template_id', editando.id)
-        if (perms.length > 0) {
-          await supabase.from('staff_function_template_permissions').insert(
-            perms.map(p => ({ template_id: editando.id, permission: p }))
-          )
-        }
+        await apiFetchAuth(`/api/admin/funcoes/${editando.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nome: nome.trim(), permissoes: perms }),
+        })
       } else {
-        const maxOrder = funcoes.reduce((m, f) => Math.max(m, f.sort_order), 0)
-        const { data: nova } = await supabase
-          .from('staff_function_templates')
-          .insert({ name: nome.trim(), sort_order: maxOrder + 1 })
-          .select('id')
-          .single()
-        if (nova && perms.length > 0) {
-          await supabase.from('staff_function_template_permissions').insert(
-            perms.map(p => ({ template_id: nova.id, permission: p }))
-          )
-        }
+        await apiFetchAuth('/api/admin/funcoes', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nome: nome.trim(), permissoes: perms }),
+        })
       }
       router.refresh()
       setNome(''); setPerms([]); setCriando(false); setEditando(null)
@@ -80,13 +69,16 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
   async function remover(id: string) {
     setRemovendo(id)
     try {
-      await supabase.from('staff_function_templates').delete().eq('id', id)
+      await apiFetchAuth(`/api/admin/funcoes/${id}`, { method: 'DELETE' })
       setFuncoes(f => f.filter(x => x.id !== id))
     } finally { setRemovendo(null) }
   }
 
   async function toggleAtivo(f: Template) {
-    await supabase.from('staff_function_templates').update({ active: !f.active }).eq('id', f.id)
+    await apiFetchAuth(`/api/admin/funcoes/${f.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: !f.active }),
+    })
     setFuncoes(prev => prev.map(x => x.id === f.id ? { ...x, active: !x.active } : x))
   }
 
@@ -94,8 +86,14 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
     const idx   = funcoes.findIndex(x => x.id === f.id)
     const outro = dir === 'up' ? funcoes[idx - 1] : funcoes[idx + 1]
     if (!outro) return
-    await supabase.from('staff_function_templates').update({ sort_order: outro.sort_order }).eq('id', f.id)
-    await supabase.from('staff_function_templates').update({ sort_order: f.sort_order }).eq('id', outro.id)
+    await apiFetchAuth(`/api/admin/funcoes/${f.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sortOrder: outro.sort_order }),
+    })
+    await apiFetchAuth(`/api/admin/funcoes/${outro.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sortOrder: f.sort_order }),
+    })
     const nova = [...funcoes]
     nova[idx] = { ...f, sort_order: outro.sort_order }
     nova[dir === 'up' ? idx - 1 : idx + 1] = { ...outro, sort_order: f.sort_order }

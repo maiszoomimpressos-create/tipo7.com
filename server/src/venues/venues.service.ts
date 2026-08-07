@@ -15,6 +15,15 @@ interface TornarResponsavelBody {
 export class VenuesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // GET /venues/minhas — porte de hooks/useCodigos.ts (Fase 7.2, G6).
+  async listarMinhas(userId: string) {
+    const admins = await this.prisma.venueAdmin.findMany({
+      where: { userId, status: 'ativo' },
+      select: { venue: { select: { codigo: true } } },
+    });
+    return { venues: admins.map((a) => ({ codigo: a.venue.codigo })) };
+  }
+
   // POST /venues/:id/tornar-responsavel — marca o usuário logado como
   // administrador/curador do lugar. Gera o código T7-BR-E-xxx na primeira
   // vez que alguém assume o lugar.

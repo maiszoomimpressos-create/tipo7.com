@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -10,9 +9,14 @@ export interface CodigoItem {
   tipo:   'usuario' | 'promotora' | 'estabelecimento'
 }
 
+interface OrgRow {
+  codigo: string | null
+  type:   string
+  status: string
+}
+
 export function useCodigos(): CodigoItem[] {
   const { user } = useAuth()
-  const supabase = createClient()
   const [codigos, setCodigos] = useState<CodigoItem[]>([])
 
   useEffect(() => {
@@ -32,29 +36,21 @@ export function useCodigos(): CodigoItem[] {
       // as ATIVAS (convite pendente não aparece aqui, some só depois que a
       // pessoa aceita — organization_admins.status='ativo' é a mesma trava
       // que o is_org_admin() do banco já exige pra dar acesso de verdade).
-      const { data: orgAdminRows } = await supabase
-        .from('organization_admins')
-        .select('organizations (codigo, type)')
-        .eq('user_id', user!.id)
-        .eq('status', 'ativo')
+      const orgsRes = await apiFetchAuth('/api/organizations')
+      const orgsData = orgsRes.ok ? await orgsRes.json() as { organizacoes: OrgRow[] } : null
 
-      for (const row of orgAdminRows ?? []) {
-        const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations
-        if (org?.codigo && org.type === 'promotora') {
+      for (const org of orgsData?.organizacoes ?? []) {
+        if (org?.codigo && org.type === 'promotora' && org.status === 'ativo') {
           lista.push({ codigo: org.codigo, tipo: 'promotora' })
         }
       }
 
       // Lugares administrados (venue_admins) — "estabelecimento" não é mais organização
-      const { data: venueAdmins } = await supabase
-        .from('venue_admins')
-        .select('venues ( codigo )')
-        .eq('user_id', user!.id)
-        .eq('status', 'ativo')
+      const venuesRes = await apiFetchAuth('/api/venues/minhas')
+      const venuesData = venuesRes.ok ? await venuesRes.json() as { venues: { codigo: string | null }[] } : null
 
-      for (const va of venueAdmins ?? []) {
-        const venue = Array.isArray(va.venues) ? va.venues[0] : va.venues
-        if (venue?.codigo) lista.push({ codigo: venue.codigo, tipo: 'estabelecimento' })
+      for (const v of venuesData?.venues ?? []) {
+        if (v.codigo) lista.push({ codigo: v.codigo, tipo: 'estabelecimento' })
       }
 
       setCodigos(lista)

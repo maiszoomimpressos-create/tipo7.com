@@ -481,6 +481,159 @@ export class AdminService {
     }
   }
 
+  // ── listagens (Fase 7.2, G4) ────────────────────────────────────────────
+
+  async listarEquipe(userId: string) {
+    await this.requireAcessoRestrito(userId); // Equipe é uma das 7 telas restritas
+
+    const membros = await this.prisma.platformTeam.findMany({
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true, userId: true, role: true, permissions: true, createdAt: true,
+        user: { select: { fullName: true } },
+      },
+    });
+
+    return {
+      rows: membros.map((m) => ({
+        id: m.id,
+        userId: m.userId,
+        nome: m.user?.fullName ?? 'Sem nome',
+        role: m.role,
+        permissions: m.permissions,
+        createdAt: m.createdAt,
+        isMe: m.userId === userId,
+      })),
+    };
+  }
+
+  async listarEstabelecimentos(userId: string) {
+    await this.requireMember(userId);
+
+    const venues = await this.prisma.venue.findMany({
+      where: { venueAdmins: { some: { status: 'ativo' } } },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, name: true, nomeFantasia: true, cnpj: true, codigo: true, phone: true,
+        city: true, state: true, capacity: true, createdAt: true,
+        venueAdmins: {
+          where: { status: 'ativo' },
+          take: 1,
+          select: { user: { select: { fullName: true } } },
+        },
+      },
+    });
+
+    return {
+      rows: venues.map((v) => ({
+        id: v.id,
+        nome: v.nomeFantasia ?? v.name,
+        razaoSocial: v.name,
+        cnpj: v.cnpj,
+        codigo: v.codigo,
+        phone: v.phone,
+        cidade: v.city,
+        estado: v.state,
+        capacidade: v.capacity,
+        dono: v.venueAdmins[0]?.user?.fullName ?? '—',
+        cadastroEm: v.createdAt,
+      })),
+    };
+  }
+
+  async listarPromotores(userId: string) {
+    await this.requirePerm(userId, 'gerenciar_promotores');
+
+    const orgs = await this.prisma.organization.findMany({
+      where: { type: 'promotora' },
+      orderBy: { createdAt: 'asc' },
+      select: { ownerId: true, name: true, codigo: true, owner: { select: { fullName: true } } },
+    });
+
+    const ownerIds = orgs.map((o) => o.ownerId).filter((id): id is string => !!id);
+
+    // Prisma devolve [] normalmente pra `in: []` — não precisa de ternário
+    // condicional (que confundia a inferência de tipo do Promise.all).
+    const [perfis, mpAccounts, orders] = await Promise.all([
+      this.prisma.promotorProfile.findMany({ where: { userId: { in: ownerIds } }, select: { userId: true, tipoPessoa: true } }),
+      this.prisma.promotorMpAccount.findMany({ where: { userId: { in: ownerIds } }, select: { userId: true, mpUserId: true, feePct: true } }),
+      this.prisma.order.findMany({ where: { status: 'approved' }, select: { userId: true, total: true } }),
+    ]);
+
+    const perfilMap = new Map<string, string>(perfis.map((p): [string, string] => [p.userId, p.tipoPessoa]));
+    const mpMap = new Map<string, (typeof mpAccounts)[number]>(mpAccounts.map((m): [string, (typeof mpAccounts)[number]] => [m.userId, m]));
+    const vendasPorUser = new Map<string, number>();
+    for (const o of orders) {
+      if (!o.userId) continue;
+      vendasPorUser.set(o.userId, (vendasPorUser.get(o.userId) ?? 0) + Number(o.total));
+    }
+
+    const seen = new Set<string>();
+    const rows = orgs.flatMap((org) => {
+      const uid = org.ownerId;
+      if (!uid || seen.has(uid)) return [];
+      seen.add(uid);
+      const mp = mpMap.get(uid) ?? null;
+
+      return [{
+        userId: uid,
+        nome: org.owner?.fullName ?? 'Sem nome',
+        codigo: org.codigo,
+        tipoPessoa: perfilMap.get(uid) ?? null,
+        mpConected: !!mp,
+        feePct: mp ? Number(mp.feePct) : 10,
+        totalVendas: vendasPorUser.get(uid) ?? 0,
+      }];
+    });
+
+    return { rows };
+  }
+
+  async listarEventosAdmin(userId: string) {
+    await this.requireMember(userId);
+
+    const eventos = await this.prisma.event.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, title: true, status: true, dateStart: true, city: true, state: true,
+        organization: { select: { owner: { select: { fullName: true } } } },
+      },
+    });
+
+    const eventIds = eventos.map((e) => e.id);
+    const [orders, regras] = await Promise.all([
+      this.prisma.order.findMany({ where: { eventId: { in: eventIds }, status: 'approved' }, select: { eventId: true, total: true } }),
+      this.prisma.feeRule.findMany({
+        where: { eventId: { in: eventIds }, type: 'event', active: true },
+        select: { eventId: true, discountPct: true, bypassMinimum: true },
+      }),
+    ]);
+
+    const vendasPorEvento = new Map<string, number>();
+    for (const o of orders) vendasPorEvento.set(o.eventId, (vendasPorEvento.get(o.eventId) ?? 0) + Number(o.total));
+
+    const regraPorEvento = new Map<string, (typeof regras)[number]>(
+      regras.filter((r): r is (typeof regras)[number] & { eventId: string } => !!r.eventId).map((r) => [r.eventId, r]),
+    );
+
+    return {
+      rows: eventos.map((ev) => {
+        const regra = regraPorEvento.get(ev.id) ?? null;
+        return {
+          id: ev.id,
+          title: ev.title,
+          status: ev.status,
+          date_start: ev.dateStart,
+          city: ev.city,
+          state: ev.state,
+          promotor_nome: ev.organization?.owner?.fullName ?? null,
+          volume: vendasPorEvento.get(ev.id) ?? 0,
+          taxa_especial: regra ? { discount_pct: Number(regra.discountPct), bypass_minimum: regra.bypassMinimum } : null,
+        };
+      }),
+    };
+  }
+
   // ── payment-credentials (segredos da própria conta Tipo7 nos gateways) ─────
 
   async salvarPaymentCredentials(userId: string, body: Record<string, unknown>) {

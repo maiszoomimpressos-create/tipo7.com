@@ -59,7 +59,7 @@ export class OrganizationsService {
         organizationId: true,
         organization: {
           select: {
-            id: true, name: true, cnpj: true, nomeFantasia: true, codigo: true, logoUrl: true,
+            id: true, name: true, type: true, cnpj: true, nomeFantasia: true, codigo: true, logoUrl: true,
             city: true, state: true, street: true, streetNumber: true, neighborhood: true,
             zipCode: true, complement: true, phone: true, nicho: true, capacity: true,
           },

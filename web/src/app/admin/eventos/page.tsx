@@ -1,4 +1,11 @@
-import { createServiceClient } from '@/lib/supabase/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
+
+interface RowApi {
+  id: string; title: string | null; status: string | null
+  date_start: string | null; city: string | null; state: string | null
+  promotor_nome: string | null; volume: number
+  taxa_especial: { discount_pct: number; bypass_minimum: boolean } | null
+}
 
 const STATUS_LABEL: Record<string, string> = {
   draft:     'Rascunho',
@@ -14,31 +21,8 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 export default async function EventosPage() {
-  const admin = createServiceClient()
-
-  const [
-    { data: eventos },
-    { data: vendas },
-    { data: regras },
-  ] = await Promise.all([
-    admin
-      .from('events')
-      .select(`id, title, status, date_start, city, state, organizations ( profiles ( full_name ) )`)
-      .order('created_at', { ascending: false }),
-    admin.from('orders').select('event_id, total').eq('status', 'approved'),
-    admin.from('fee_rules').select('event_id, discount_pct, bypass_minimum').eq('type', 'event').eq('active', true),
-  ])
-
-  const vendasPorEvento: Record<string, number> = {}
-  for (const v of vendas ?? []) {
-    vendasPorEvento[v.event_id] = (vendasPorEvento[v.event_id] ?? 0) + Number(v.total)
-  }
-
-  // Mapa de event_id → regra especial
-  const taxaEspecial: Record<string, { discount_pct: number; bypass_minimum: boolean }> = {}
-  for (const r of regras ?? []) {
-    if (r.event_id) taxaEspecial[r.event_id] = { discount_pct: Number(r.discount_pct), bypass_minimum: r.bypass_minimum }
-  }
+  const res = await apiFetchServer('/api/admin/eventos')
+  const { rows: eventos } = res.ok ? await res.json() as { rows: RowApi[] } : { rows: [] as RowApi[] }
 
   return (
     <div className="p-8 max-w-6xl">
@@ -63,13 +47,9 @@ export default async function EventosPage() {
           </thead>
           <tbody>
             {(eventos ?? []).map((ev, i) => {
-              const orgRaw  = ev.organizations as unknown
-              const org     = (Array.isArray(orgRaw) ? orgRaw[0] : orgRaw) as { profiles: unknown } | null
-              const profRaw = org?.profiles as unknown
-              const profile = (Array.isArray(profRaw) ? profRaw[0] : profRaw) as { full_name: string | null } | null
               const status  = ev.status ?? 'draft'
-              const total   = vendasPorEvento[ev.id] ?? 0
-              const regra   = taxaEspecial[ev.id] ?? null
+              const total   = ev.volume
+              const regra   = ev.taxa_especial
 
               return (
                 <tr key={ev.id} style={{ borderBottom: i < (eventos?.length ?? 0) - 1 ? '1px solid #111' : 'none', background: '#070707' }}>
@@ -87,7 +67,7 @@ export default async function EventosPage() {
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-[#666] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {profile?.full_name ?? '—'}
+                      {ev.promotor_nome ?? '—'}
                     </span>
                   </td>
                   <td className="px-4 py-3">

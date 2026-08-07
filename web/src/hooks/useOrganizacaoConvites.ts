@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface OrganizacaoConvitesStatus {
@@ -13,7 +13,6 @@ interface OrganizacaoConvitesStatus {
 // sócio) ainda não respondidos — mesmo padrão do useTrabalhos.ts.
 export function useOrganizacaoConvites(): OrganizacaoConvitesStatus {
   const { user } = useAuth()
-  const supabase = createClient()
 
   const [pendentes,  setPendentes]  = useState(0)
   const [carregando, setCarregando] = useState(true)
@@ -21,13 +20,11 @@ export function useOrganizacaoConvites(): OrganizacaoConvitesStatus {
   useEffect(() => {
     if (!user) { setCarregando(false); return }
 
-    supabase
-      .from('organization_admins')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .eq('status', 'convidado')
-      .then(({ count }) => {
-        setPendentes(count ?? 0)
+    apiFetchAuth('/api/organizations')
+      .then(res => res.ok ? res.json() : null)
+      .then((data: { organizacoes: { status: string }[] } | null) => {
+        const count = (data?.organizacoes ?? []).filter(o => o.status === 'convidado').length
+        setPendentes(count)
         setCarregando(false)
       })
   }, [user])

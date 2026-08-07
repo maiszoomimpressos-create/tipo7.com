@@ -11,6 +11,24 @@ export class CarrosselService {
     private readonly supabaseCompat: SupabaseCompatService,
   ) {}
 
+  // Porte de minha-area/marketing/carrossel/page.tsx (Fase 7.2, G4) — não
+  // lança erro se não houver organização, a página decide o que fazer.
+  async listarMinhas(userId: string) {
+    const org = await this.prisma.organization.findFirst({ where: { ownerId: userId }, select: { id: true } });
+    if (!org) return { organizationId: null, slides: [] };
+
+    const slides = await this.prisma.carrosselSlide.findMany({
+      where: { organizationId: org.id },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, imageUrl: true, createdAt: true },
+    });
+
+    return {
+      organizationId: org.id,
+      slides: slides.map((s) => ({ id: s.id, image_url: s.imageUrl })),
+    };
+  }
+
   async upload(userId: string, orgId: string | undefined, file: Express.Multer.File | undefined) {
     if (!file || !orgId) throw new BadRequestException('Campos obrigatórios ausentes');
 

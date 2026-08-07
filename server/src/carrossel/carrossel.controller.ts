@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Param, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtGuard } from '../auth/guards/supabase-jwt.guard';
@@ -9,6 +9,12 @@ import { CarrosselService } from './carrossel.service';
 @Controller('carrossel')
 export class CarrosselController {
   constructor(private readonly carrossel: CarrosselService) {}
+
+  // Porte de minha-area/marketing/carrossel/page.tsx (Fase 7.2, G4).
+  @Get()
+  minhas(@CurrentUser() user: AuthenticatedUser) {
+    return this.carrossel.listarMinhas(user.id);
+  }
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))

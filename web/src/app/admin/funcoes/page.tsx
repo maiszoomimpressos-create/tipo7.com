@@ -1,6 +1,6 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser }                       from '@/lib/auth/server'
 import { getAdminMember }                   from '@/lib/adminAuth'
+import { apiFetchServer }                    from '@/lib/apiFetchServer'
 import { redirect }                          from 'next/navigation'
 import { FuncoesClient }                     from './FuncoesClient'
 
@@ -11,11 +11,8 @@ export default async function FuncoesAdminPage() {
   const me = await getAdminMember(user.id)
   if (!me || me.role !== 'super_admin') redirect('/admin')
 
-  const admin = createServiceClient()
-  const { data } = await admin
-    .from('staff_function_templates')
-    .select('id, name, active, sort_order, staff_function_template_permissions(permission)')
-    .order('sort_order')
+  const res = await apiFetchServer('/api/admin/funcoes')
+  const data = res.ok ? await res.json() : []
 
   return (
     <div className="p-8 max-w-2xl">
