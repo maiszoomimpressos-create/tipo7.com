@@ -20,13 +20,28 @@ export async function apiFetchServer(path: string, init: RequestInit = {}): Prom
   const headers = new Headers(init.headers)
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
+  const reqHeaders = await nextHeaders()
+
+  // Repassa o cookie inteiro também, não só o access_token como Bearer —
+  // achado real (07/08/2026): rotas que leem cookie próprio no NestJS (ex:
+  // area_restrita_unlock em GET /admin/area-restrita/status) nunca recebiam
+  // esse cookie por aqui, porque só extraíamos o access_token. Resultado:
+  // qualquer checagem de "já desbloqueou a área restrita?" feita a partir
+  // de um Server Component sempre dava falso, mesmo logo depois de
+  // desbloquear com a senha certa — looping de volta pro cadeado pra
+  // sempre. Repassar o Cookie inteiro é seguro aqui (chamada interna
+  // servidor-a-servidor, nunca exposta ao browser) e não muda nada pra
+  // quem só lê access_token via Authorization: Bearer (que continua tendo
+  // prioridade na SupabaseJwtStrategy).
+  const rawCookie = reqHeaders.get('cookie')
+  if (rawCookie) headers.set('cookie', rawCookie)
+
   // Propaga o IP real do visitante pro NestJS — sem isso, todo SSR chamado
   // daqui (ex: home pública) chegaria no rate-limiter do backend com o IP
   // interno do container `web`, não o do visitante, e todos os visitantes
   // acabariam dividindo o mesmo balde de rate-limit (achado real revisando
   // o porte de EventGrid.tsx pra GET /eventos/buscar, que tem limite de
   // 20 req/min por IP — sem isso a home cairia sozinha sob tráfego real).
-  const reqHeaders = await nextHeaders()
   const forwardedFor = reqHeaders.get('x-forwarded-for') ?? reqHeaders.get('x-real-ip')
   if (forwardedFor) headers.set('x-forwarded-for', forwardedFor)
 
