@@ -38,7 +38,23 @@ function cookieDomain(): string | undefined {
   }
 }
 
+// Achado real (07/08/2026, mesma sessão do fix de domain acima): quem já
+// tinha um refresh_token gravado ANTES desse fix ficou com DUAS versões do
+// cookie ao mesmo tempo — a antiga (sem domain, presa em www.tipo7.com) e a
+// nova (domain=.tipo7.com). Pro browser são cookies DIFERENTES (chave inclui
+// o domain), então limpar só a nova nunca apagava a velha. O navegador manda
+// as duas no header Cookie e o cookie-parser do Express só guarda uma
+// (a ordem não é garantida) — se pegar a antiga (já revogada pela rotação),
+// o refresh falha com 401 mesmo a sessão sendo válida. Toda emissão de
+// cookie agora limpa explicitamente a variante sem domain primeiro, pra
+// essa duplicata nunca sobreviver a um novo login/refresh.
+function clearLegacyHostOnlyCookies(res: Response) {
+  res.clearCookie(ACCESS_COOKIE, { path: '/' });
+  res.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
+}
+
 function setSessionCookies(res: Response, session: SessionResult) {
+  clearLegacyHostOnlyCookies(res);
   const base: CookieOptions = { secure: true, sameSite: 'lax', domain: cookieDomain() };
   // access_token: legível por JS de propósito (vida curta, 1h) — o frontend
   // lê direto do cookie pra hidratar a sessão sem round-trip extra, e o
@@ -56,6 +72,7 @@ function clearSessionCookies(res: Response) {
   const domain = cookieDomain();
   res.clearCookie(ACCESS_COOKIE, { path: '/', domain });
   res.clearCookie(REFRESH_COOKIE, { path: '/api/auth', domain });
+  clearLegacyHostOnlyCookies(res);
 }
 
 function toResponseBody(session: SessionResult) {
