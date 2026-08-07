@@ -1,4 +1,3 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { apiFetchServer } from '@/lib/apiFetchServer'
 import { TrendingUp, Users, Ticket, DollarSign } from 'lucide-react'
 import RoadmapClient, { type RoadmapItem } from './RoadmapClient'
@@ -60,25 +59,19 @@ const DEFAULT_ITEMS: RoadmapItem[] = [
 ]
 
 export default async function AdminHomePage() {
-  const admin = createServiceClient()
-
-  const [
-    { count: totalEventos },
-    { count: eventosAtivos },
-    { count: totalPromotores },
-    { count: mpConectados },
-    { data: orders },
-    roadmapRes,
-  ] = await Promise.all([
-    admin.from('events').select('*', { count: 'exact', head: true }),
-    admin.from('events').select('*', { count: 'exact', head: true }).eq('status', 'publicado'),
-    admin.from('promotor_profiles').select('*', { count: 'exact', head: true }),
-    admin.from('promotor_mp_accounts').select('*', { count: 'exact', head: true }),
-    admin.from('orders').select('total').eq('status', 'approved'),
+  const [statsRes, roadmapRes] = await Promise.all([
+    apiFetchServer('/api/admin/stats'),
     apiFetchServer('/api/admin/roadmap'),
   ])
 
-  const totalRevenue      = (orders ?? []).reduce((s, o) => s + Number(o.total), 0)
+  const stats = statsRes.ok
+    ? await statsRes.json() as {
+        totalEventos: number; eventosAtivos: number; totalPromotores: number
+        mpConectados: number; totalRevenue: number
+      }
+    : { totalEventos: 0, eventosAtivos: 0, totalPromotores: 0, mpConectados: 0, totalRevenue: 0 }
+
+  const { totalEventos, eventosAtivos, totalPromotores, mpConectados, totalRevenue } = stats
   const plataformaRevenue = totalRevenue * 0.1
 
   let roadmapItems: RoadmapItem[] = DEFAULT_ITEMS

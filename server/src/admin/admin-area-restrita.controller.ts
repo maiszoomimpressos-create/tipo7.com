@@ -26,7 +26,16 @@ export class AdminAreaRestritaController {
   @Get('status')
   async status(@CurrentUser() user: AuthenticatedUser, @Req() req: Request) {
     await this.admin.requireAcessoRestrito(user.id);
-    return { desbloqueada: this.areaRestrita.estaDesbloqueada(req, user.id) };
+    // temSenha (Fase 7.2, G15) — porte de admin/area-restrita/page.tsx, que
+    // lia platform_team.senha_restrita_hash só pra saber se já cadastrou.
+    const row = await this.prisma.platformTeam.findUnique({
+      where: { userId: user.id },
+      select: { senhaRestritaHash: true },
+    });
+    return {
+      desbloqueada: this.areaRestrita.estaDesbloqueada(req, user.id),
+      temSenha: !!row?.senhaRestritaHash,
+    };
   }
 
   @Post('senha')

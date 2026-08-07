@@ -1,4 +1,3 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
 import { apiFetchServer } from '@/lib/apiFetchServer'
@@ -17,16 +16,13 @@ export default async function ApiPage() {
   const { desbloqueada } = statusRes.ok ? await statusRes.json() as { desbloqueada: boolean } : { desbloqueada: false }
   if (!desbloqueada) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/api')}`)
 
-  const admin = createServiceClient()
-  const [{ data: integracoes }, { data: rotas }] = await Promise.all([
-    admin.from('api_integracoes').select('id, area_slug, nome, base_url, api_key, webhook_secret').order('area_slug'),
-    admin.from('api_integracao_rotas').select('id, integracao_id, rota, direcao, gatilho, campos_envia, campos_recebe, observacao, order_index').order('order_index'),
-  ])
-
-  const dados = (integracoes ?? []).map(i => ({
-    ...i,
-    rotas: (rotas ?? []).filter(r => r.integracao_id === i.id),
-  }))
+  // GET /admin/integracoes já devolve as rotas aninhadas dentro de cada
+  // integração (o backend já faz o agrupamento que essa página fazia
+  // manualmente) — Fase 7.2, G15.
+  const res = await apiFetchServer('/api/admin/integracoes')
+  const { integracoes: dados } = res.ok
+    ? await res.json() as { integracoes: unknown[] }
+    : { integracoes: [] as unknown[] }
 
   return (
     <div className="p-8 max-w-4xl">
@@ -41,7 +37,8 @@ export default async function ApiPage() {
         </p>
       </div>
 
-      <IntegracoesAccordion integracoes={dados} />
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      <IntegracoesAccordion integracoes={dados as any} />
 
     </div>
   )

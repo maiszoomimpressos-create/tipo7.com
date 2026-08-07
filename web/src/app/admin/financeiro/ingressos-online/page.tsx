@@ -1,4 +1,3 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
 import { apiFetchServer } from '@/lib/apiFetchServer'
@@ -18,58 +17,36 @@ export default async function IngressosOnlinePage() {
   const { desbloqueada } = statusRes.ok ? await statusRes.json() as { desbloqueada: boolean } : { desbloqueada: false }
   if (!desbloqueada) redirect(`/admin/area-restrita?next=${encodeURIComponent('/admin/financeiro/ingressos-online')}`)
 
-  const admin = createServiceClient()
-
-  const [
-    settingsRes,
-    { data: mpAccounts },
-    { data: eventos },
-    { data: orgsPromotoras },
-    { data: rules },
-  ] = await Promise.all([
+  // GET /admin/fee-rules já devolve enriquecido (event_title/promoter_name/
+  // quota_used calculado de verdade, melhor que o quota_used:0 fixo que essa
+  // página montava manualmente) — GET /admin/fee-rules/opcoes cobre os 3
+  // dropdowns/agregados que faltavam (Fase 7.2, G15).
+  const [settingsRes, opcoesRes, rulesRes] = await Promise.all([
     apiFetchServer('/api/admin/settings'),
-    admin.from('promotor_mp_accounts').select('user_id, fee_pct'),
-    admin.from('events').select('id, title').eq('status', 'publicado').order('created_at', { ascending: false }),
-    admin.from('organizations').select('owner_id, profiles!owner_id(full_name)').eq('type', 'promotora'),
-    admin.from('fee_rules').select('*').order('created_at', { ascending: false }),
+    apiFetchServer('/api/admin/fee-rules/opcoes'),
+    apiFetchServer('/api/admin/fee-rules'),
   ])
 
   const { settings: settingsMap } = settingsRes.ok
     ? await settingsRes.json() as { settings: Record<string, string> }
     : { settings: {} as Record<string, string> }
 
-  const feePcts = (mpAccounts ?? []).map(a => Number(a.fee_pct))
+  const { mp_accounts: mpAccounts, eventos, promotores: promotoresLista } = opcoesRes.ok
+    ? await opcoesRes.json() as {
+        mp_accounts: { user_id: string; fee_pct: number }[]
+        eventos: { id: string; title: string | null }[]
+        promotores: { id: string; nome: string }[]
+      }
+    : { mp_accounts: [] as { user_id: string; fee_pct: number }[], eventos: [] as { id: string; title: string | null }[], promotores: [] as { id: string; nome: string }[] }
+
+  const { rules: enrichedRules } = rulesRes.ok
+    ? await rulesRes.json() as { rules: unknown[] }
+    : { rules: [] as unknown[] }
+
+  const feePcts = mpAccounts.map(a => a.fee_pct)
   const mediaFee = feePcts.length > 0
     ? feePcts.reduce((s, f) => s + f, 0) / feePcts.length
     : Number(settingsMap['default_fee_pct'] ?? 10)
-
-  // Mapa owner_id → nome para enriquecer regras
-  const profileMap: Record<string, string> = {}
-  for (const org of orgsPromotoras ?? []) {
-    if (!org.owner_id) continue
-    const p = Array.isArray(org.profiles) ? org.profiles[0] : org.profiles
-    const nome = (p as { full_name: string | null } | null)?.full_name
-    if (nome) profileMap[org.owner_id] = nome
-  }
-
-  // Enriquece regras com nomes
-  const enrichedRules = (rules ?? []).map(rule => ({
-    ...rule,
-    event_title:   rule.event_id ? (eventos ?? []).find(e => e.id === rule.event_id)?.title ?? null : null,
-    promoter_name: rule.user_id  ? (profileMap[rule.user_id] ?? null) : null,
-    quota_used: 0,
-  }))
-
-  // Lista de promotores únicos para o dropdown (deduplica por owner_id)
-  const seen = new Set<string>()
-  const promotoresLista = (orgsPromotoras ?? []).flatMap(org => {
-    if (!org.owner_id || seen.has(org.owner_id)) return []
-    seen.add(org.owner_id)
-    const p = Array.isArray(org.profiles) ? org.profiles[0] : org.profiles
-    const nome = (p as { full_name: string | null } | null)?.full_name
-    if (!nome) return []
-    return [{ id: org.owner_id, nome }]
-  })
 
   return (
     <div className="p-8 max-w-2xl">
@@ -107,7 +84,7 @@ export default async function IngressosOnlinePage() {
 
       <RulesClient
         initialRules={enrichedRules as Parameters<typeof RulesClient>[0]['initialRules']}
-        eventos={eventos ?? []}
+        eventos={(eventos ?? []).map(e => ({ id: e.id, title: e.title ?? 'Sem título' }))}
         promotores={promotoresLista}
       />
     </div>

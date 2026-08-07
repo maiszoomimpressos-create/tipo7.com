@@ -128,6 +128,61 @@ export class AdminService {
     return { ok: true };
   }
 
+  // GET /admin/ingressos-online/opcoes (Fase 7.2, G15) — bootstrap da tela
+  // admin/financeiro/ingressos-online: contas MP (pra média de taxa) +
+  // eventos publicados + promotores únicos (pros dropdowns de regra nova).
+  // Mesma permissão de GET/POST /admin/fee-rules (a mesma tela).
+  async getIngressosOnlineOpcoes(userId: string) {
+    await this.requirePerm(userId, 'gerenciar_financeiro');
+
+    const [mpAccounts, eventos, orgsPromotoras] = await Promise.all([
+      this.prisma.promotorMpAccount.findMany({ select: { userId: true, feePct: true } }),
+      this.prisma.event.findMany({
+        where: { status: 'publicado' },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, title: true },
+      }),
+      this.prisma.organization.findMany({
+        where: { type: 'promotora' },
+        select: { ownerId: true, owner: { select: { fullName: true } } },
+      }),
+    ]);
+
+    const seen = new Set<string>();
+    const promotores: Array<{ id: string; nome: string }> = [];
+    for (const org of orgsPromotoras) {
+      if (!org.ownerId || seen.has(org.ownerId)) continue;
+      const nome = org.owner?.fullName;
+      if (!nome) continue;
+      seen.add(org.ownerId);
+      promotores.push({ id: org.ownerId, nome });
+    }
+
+    return {
+      mp_accounts: mpAccounts.map((a) => ({ user_id: a.userId, fee_pct: Number(a.feePct) })),
+      eventos: eventos.map((e) => ({ id: e.id, title: e.title })),
+      promotores,
+    };
+  }
+
+  // GET /admin/stats (Fase 7.2, G15) — cartões da home do admin. Não confundir
+  // com GET /stats (público, outra coisa — usuários/eventos ativos/realizados).
+  async getStats(userId: string) {
+    await this.requireMember(userId);
+
+    const [totalEventos, eventosAtivos, totalPromotores, mpConectados, orders] = await Promise.all([
+      this.prisma.event.count(),
+      this.prisma.event.count({ where: { status: 'publicado' } }),
+      this.prisma.promotorProfile.count(),
+      this.prisma.promotorMpAccount.count(),
+      this.prisma.order.findMany({ where: { status: 'approved' }, select: { total: true } }),
+    ]);
+
+    const totalRevenue = orders.reduce((s, o) => s + Number(o.total), 0);
+
+    return { totalEventos, eventosAtivos, totalPromotores, mpConectados, totalRevenue };
+  }
+
   // ── whoami (Fase 7.2, helper cross-cutting) ─────────────────────────────
   // Porte de web/src/lib/adminAuth.ts (getAdminMember) — usado por 13
   // Server Components que checavam platform_team direto via Supabase.

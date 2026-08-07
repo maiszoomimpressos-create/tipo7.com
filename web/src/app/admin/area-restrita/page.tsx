@@ -1,5 +1,5 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect } from 'next/navigation'
 import { getAdminMember, temAcessoRestrito } from '@/lib/adminAuth'
 import { AreaRestritaClient } from './AreaRestritaClient'
@@ -16,12 +16,12 @@ export default async function AreaRestritaPage({ searchParams }: Props) {
   const member = await getAdminMember(user.id)
   if (!member || !temAcessoRestrito(member)) redirect('/admin')
 
-  const admin = createServiceClient()
-  const { data: row } = await admin
-    .from('platform_team')
-    .select('senha_restrita_hash')
-    .eq('user_id', user.id)
-    .single()
+  // GET /admin/area-restrita/status agora também devolve temSenha (Fase
+  // 7.2, G15) — não precisa mais ler platform_team.senha_restrita_hash direto.
+  const statusRes = await apiFetchServer('/api/admin/area-restrita/status')
+  const { temSenha } = statusRes.ok
+    ? await statusRes.json() as { temSenha: boolean }
+    : { temSenha: false }
 
   // Só aceita caminho interno como destino pós-desbloqueio (evita open redirect)
   const isInternal = !!next && next.startsWith('/') && !next.startsWith('//')
@@ -29,7 +29,7 @@ export default async function AreaRestritaPage({ searchParams }: Props) {
 
   return (
     <div className="min-h-dvh bg-[#070707] flex items-center justify-center px-4">
-      <AreaRestritaClient temSenha={!!row?.senha_restrita_hash} destino={destino} />
+      <AreaRestritaClient temSenha={temSenha} destino={destino} />
     </div>
   )
 }

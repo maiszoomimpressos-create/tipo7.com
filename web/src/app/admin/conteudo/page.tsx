@@ -1,5 +1,5 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { getAdminMember } from '@/lib/adminAuth'
 import { redirect } from 'next/navigation'
 import { ConteudoClient } from './ConteudoClient'
@@ -11,16 +11,16 @@ export default async function ConteudoPage() {
   const me = await getAdminMember(user.id)
   if (!me || me.role !== 'super_admin') redirect('/admin')
 
-  const admin = createServiceClient()
-  const { data } = await admin
-    .from('platform_content')
-    .select('key, content')
-    .in('key', ['termos', 'privacidade', 'lgpd'])
-
-  const rows = data ?? []
-  const termos      = rows.find(r => r.key === 'termos')?.content      ?? ''
-  const privacidade = rows.find(r => r.key === 'privacidade')?.content ?? ''
-  const lgpd        = rows.find(r => r.key === 'lgpd')?.content        ?? ''
+  // GET /admin/conteudo?key=X é pública e só aceita uma chave por vez — 3
+  // chamadas paralelas em vez de ampliar a rota (Fase 7.2, G15).
+  const [termosRes, privacidadeRes, lgpdRes] = await Promise.all([
+    apiFetchServer('/api/admin/conteudo?key=termos'),
+    apiFetchServer('/api/admin/conteudo?key=privacidade'),
+    apiFetchServer('/api/admin/conteudo?key=lgpd'),
+  ])
+  const termos      = termosRes.ok      ? (await termosRes.json() as { content: string }).content      : ''
+  const privacidade = privacidadeRes.ok ? (await privacidadeRes.json() as { content: string }).content : ''
+  const lgpd         = lgpdRes.ok        ? (await lgpdRes.json() as { content: string }).content         : ''
 
   return (
     <div className="p-8 max-w-4xl">

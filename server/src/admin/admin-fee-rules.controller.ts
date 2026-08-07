@@ -14,6 +14,12 @@ export class AdminFeeRulesController {
     return this.admin.listFeeRules(user.id);
   }
 
+  // Fase 7.2, G15 — dropdowns/bootstrap de admin/financeiro/ingressos-online.
+  @Get('opcoes')
+  opcoes(@CurrentUser() user: AuthenticatedUser) {
+    return this.admin.getIngressosOnlineOpcoes(user.id);
+  }
+
   @Post()
   criar(@CurrentUser() user: AuthenticatedUser, @Body() body: Record<string, any>) {
     return this.admin.criarFeeRule(user.id, body);

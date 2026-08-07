@@ -41,4 +41,10 @@ export class AdminMiscController {
   whoami(@CurrentUser() user: AuthenticatedUser) {
     return this.admin.whoami(user.id);
   }
+
+  // Fase 7.2, G15 — cartões da home do admin.
+  @Get('stats')
+  getStats(@CurrentUser() user: AuthenticatedUser) {
+    return this.admin.getStats(user.id);
+  }
 }
