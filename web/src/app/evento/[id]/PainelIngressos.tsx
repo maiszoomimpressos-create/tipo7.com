@@ -36,9 +36,12 @@ function formatPrice(v: number) {
   return v === 0 ? 'Gratuito' : `R$ ${v.toFixed(2).replace('.', ',')}`
 }
 
+// Mesmo fix de EventoPageClient.tsx — timeZone explícito evita descompasso
+// servidor(UTC)/navegador(fuso do visitante) que quebrava a hidratação do
+// React nas páginas de evento com ingressos.
 function formatDateShort(iso: string) {
   if (!iso) return ''
-  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', timeZone: 'America/Sao_Paulo' }).replace('.', '')
 }
 
 function formatTime(t?: string) {
