@@ -51,6 +51,14 @@ export class OrganizationsController {
     return this.organizations.atualizarNicho(user.id, id, body?.nicho);
   }
 
+  // Porte de web/src/lib/orgAdmin.ts (isOrgAdmin) — Fase 7.2, helper
+  // cross-cutting. Sem guard extra: só responde sim/não pro próprio
+  // usuário logado, não vaza dado nenhum da organização.
+  @Get(':id/sou-admin')
+  souAdmin(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.organizations.souAdmin(user.id, id);
+  }
+
   @Get(':id/socios')
   listSocios(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.organizations.listSocios(user.id, id);

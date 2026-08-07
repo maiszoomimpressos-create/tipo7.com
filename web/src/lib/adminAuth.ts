@@ -1,4 +1,5 @@
-import { createServiceClient } from '@/lib/supabase/server'
+import 'server-only'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 
 export type AdminRole = 'super_admin' | 'admin' | 'member'
 
@@ -8,14 +9,15 @@ export type AdminMember = {
   acesso_restrito: boolean
 }
 
+// Porte de leitura direta de platform_settings pro NestJS (GET /admin/whoami,
+// Fase 7.2) — o parâmetro userId é mantido só por compatibilidade com os 13
+// call sites existentes (sempre o próprio usuário logado nesta mesma
+// requisição); apiFetchServer já resolve a identidade via cookie.
 export async function getAdminMember(userId: string): Promise<AdminMember | null> {
-  const admin = createServiceClient()
-  const { data } = await admin
-    .from('platform_team')
-    .select('role, permissions, acesso_restrito')
-    .eq('user_id', userId)
-    .single()
-  return data as AdminMember | null
+  const res = await apiFetchServer('/api/admin/whoami')
+  if (!res.ok) return null
+  const data = await res.json() as { role: AdminRole; permissions: string[]; acessoRestrito: boolean }
+  return { role: data.role, permissions: data.permissions, acesso_restrito: data.acessoRestrito }
 }
 
 export function can(member: AdminMember, perm: string): boolean {

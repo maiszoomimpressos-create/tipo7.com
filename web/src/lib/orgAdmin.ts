@@ -1,22 +1,18 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import 'server-only'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 
-// Dono (organizations.owner_id) OU membro ativo em organization_admins.
-// Mesma regra da function is_org_admin() no banco (usada nas policies de
-// RLS) — mas em código de app, porque estas rotas usam o client de
-// service role, que não passa por RLS nenhuma.
+// Porte pro NestJS (GET /organizations/:id/sou-admin, Fase 7.2) — os
+// parâmetros `_admin`/`_userId` são mantidos só por compatibilidade com os
+// 13 call sites existentes (todos passam o client de service role e
+// user.id do próprio usuário logado nesta mesma requisição); apiFetchServer
+// já resolve a identidade via cookie, e a checagem de dono/admin ativo
+// acontece no NestJS (mesma regra de antes: organizations.owner_id OU
+// organization_admins ativo — ver OrgAdminService no server/).
 export async function isOrgAdmin(
-  admin: SupabaseClient, organizationId: string, userId: string
+  _admin: unknown, organizationId: string, _userId: string
 ): Promise<boolean> {
-  const { data: org } = await admin
-    .from('organizations').select('owner_id').eq('id', organizationId).single()
-  if (org?.owner_id === userId) return true
-
-  const { data: adminRow } = await admin
-    .from('organization_admins')
-    .select('id')
-    .eq('organization_id', organizationId)
-    .eq('user_id', userId)
-    .eq('status', 'ativo')
-    .maybeSingle()
-  return !!adminRow
+  const res = await apiFetchServer(`/api/organizations/${organizationId}/sou-admin`)
+  if (!res.ok) return false
+  const data = await res.json() as { isOrgAdmin: boolean }
+  return data.isOrgAdmin
 }

@@ -131,6 +131,12 @@ export class OrganizationsService {
     return { organizacao: { ...org, role: 'admin', participacao: 'integral', percentual: 100, status: 'ativo' } };
   }
 
+  // GET /organizations/:id/sou-admin — porte de web/src/lib/orgAdmin.ts
+  // (Fase 7.2, helper cross-cutting).
+  async souAdmin(userId: string, id: string) {
+    return { isOrgAdmin: await this.orgAdmin.isOrgAdmin(id, userId) };
+  }
+
   // PUT /organizations/:id
   async atualizar(userId: string, id: string, body: OrgBody) {
     if (!(await this.orgAdmin.isOrgAdmin(id, userId))) throw new ForbiddenException('Sem permissão');

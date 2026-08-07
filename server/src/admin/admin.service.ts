@@ -128,6 +128,16 @@ export class AdminService {
     return { ok: true };
   }
 
+  // ── whoami (Fase 7.2, helper cross-cutting) ─────────────────────────────
+  // Porte de web/src/lib/adminAuth.ts (getAdminMember) — usado por 13
+  // Server Components que checavam platform_team direto via Supabase.
+
+  async whoami(userId: string): Promise<AdminMember> {
+    const member = await this.platformAdmin.getAdminMember(userId);
+    if (!member) throw new NotFoundException();
+    return member;
+  }
+
   // ── roadmap ───────────────────────────────────────────────────────────────
 
   async getRoadmap(userId: string) {

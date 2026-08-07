@@ -69,6 +69,7 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/admin/roadmap',
   '/api/admin/settings',
   '/api/admin/mp-rates',
+  '/api/admin/whoami',
   '/api/admin/fee-rules',
   '/api/admin/saldo-bilheteria',
   '/api/admin/saldo-bilheteria/movimentos',

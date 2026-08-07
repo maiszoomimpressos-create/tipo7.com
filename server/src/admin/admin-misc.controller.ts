@@ -33,4 +33,12 @@ export class AdminMiscController {
   getMpRates(@CurrentUser() user: AuthenticatedUser) {
     return this.admin.getMpRates(user.id);
   }
+
+  // Porte de web/src/lib/adminAuth.ts (getAdminMember) — Fase 7.2, helper
+  // cross-cutting. Sem guard extra além do de classe: só devolve dados do
+  // próprio usuário logado, nada de terceiros.
+  @Get('whoami')
+  whoami(@CurrentUser() user: AuthenticatedUser) {
+    return this.admin.whoami(user.id);
+  }
 }
