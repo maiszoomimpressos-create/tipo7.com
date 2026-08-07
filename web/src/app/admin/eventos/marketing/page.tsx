@@ -1,24 +1,27 @@
-import { createServiceClient } from '@/lib/supabase/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { Megaphone, ExternalLink, QrCode, Share2, BarChart2, Link as LinkIcon } from 'lucide-react'
 import { BannersPromocionaisClient, type BannerSistema } from './BannersPromocionaisClient'
 
+interface EventoBuscar {
+  id: string; title: string | null; date_start: string | null; city: string | null
+}
+
 export default async function MarketingPage() {
-  const admin = createServiceClient()
+  // GET /eventos/buscar já filtra status='publicado' + date_start >= agora,
+  // ordenado asc, mesmos filtros que a query direta fazia (com o bug de
+  // is_published corrigido na origem) — sem q/categoria/cidade, devolve
+  // exatamente a mesma lista (Fase 7.2, G11).
+  const [eventosRes, bannersRes] = await Promise.all([
+    apiFetchServer('/api/eventos/buscar?limit=20'),
+    apiFetchServer('/api/admin/banners-sistema'),
+  ])
 
-  // Eventos publicados com mais ingressos vendidos
-  const { data: eventos } = await admin
-    .from('events')
-    .select('id, title, date_start, city')
-    .eq('is_published', true)
-    .gte('date_start', new Date().toISOString())
-    .order('date_start', { ascending: true })
-    .limit(20)
-
-  const { data: bannersData } = await admin
-    .from('system_banners')
-    .select('id, image_url, active, order_index, created_at')
-    .order('order_index')
-    .order('created_at', { ascending: false })
+  const { eventos } = eventosRes.ok
+    ? await eventosRes.json() as { eventos: EventoBuscar[] }
+    : { eventos: [] as EventoBuscar[] }
+  const bannersData = bannersRes.ok
+    ? (await bannersRes.json() as { banners: BannerSistema[] }).banners
+    : []
 
   const ACCENT = '#E8B84B'
 

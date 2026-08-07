@@ -29,6 +29,54 @@ export class CarrosselService {
     };
   }
 
+  // Porte de segunda-tela/[eventoId]/page.tsx (Fase 7.2, G11) — slides da
+  // organização DO EVENTO (não do usuário logado — quem abre a segunda tela
+  // pode ser um operador, não o dono), com fallback pros próximos eventos
+  // publicados da mesma organização quando não há slide nenhum cadastrado.
+  // Bug real corrigido: o fallback original filtrava por `is_published`/
+  // `cover_url`, colunas que não existem mais no schema — trocado por
+  // `status`/`banner_url` (mesma chave de resposta `cover_url` mantida,
+  // só a origem do dado é corrigida).
+  async getSegundaTela(eventoId: string) {
+    const evento = await this.prisma.event.findUnique({
+      where: { id: eventoId },
+      select: { id: true, title: true, organizationId: true },
+    });
+    const orgId = evento?.organizationId ?? '';
+
+    const slidesRaw = orgId
+      ? await this.prisma.carrosselSlide.findMany({
+          where: { organizationId: orgId },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, imageUrl: true },
+        })
+      : [];
+    const slides = slidesRaw.map((s) => ({ id: s.id, image_url: s.imageUrl }));
+
+    let eventosProximos: Array<{ id: string; title: string; date_start: Date | null; local: string | null; cover_url: string | null }> = [];
+    if (slides.length === 0 && orgId) {
+      const proximos = await this.prisma.event.findMany({
+        where: { organizationId: orgId, status: 'publicado', dateStart: { gte: new Date() } },
+        orderBy: { dateStart: 'asc' },
+        take: 10,
+        select: { id: true, title: true, dateStart: true, venueName: true, city: true, bannerUrl: true },
+      });
+      eventosProximos = proximos.map((e) => ({
+        id: e.id,
+        title: e.title ?? '',
+        date_start: e.dateStart,
+        local: [e.venueName, e.city].filter(Boolean).join(' — ') || null,
+        cover_url: e.bannerUrl,
+      }));
+    }
+
+    return {
+      eventoTitle: evento?.title ?? 'Evento',
+      slides,
+      eventosProximos,
+    };
+  }
+
   async upload(userId: string, orgId: string | undefined, file: Express.Multer.File | undefined) {
     if (!file || !orgId) throw new BadRequestException('Campos obrigatórios ausentes');
 

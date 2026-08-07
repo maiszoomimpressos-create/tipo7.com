@@ -16,6 +16,14 @@ export class CarrosselController {
     return this.carrossel.listarMinhas(user.id);
   }
 
+  // Porte de segunda-tela/[eventoId]/page.tsx (Fase 7.2, G11) — precisa vir
+  // ANTES de ':slideId' abaixo (rota estática, senão ':slideId' capturaria
+  // "segunda-tela" como se fosse um slideId).
+  @Get('segunda-tela/:eventoId')
+  segundaTela(@Param('eventoId') eventoId: string) {
+    return this.carrossel.getSegundaTela(eventoId);
+  }
+
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
   upload(

@@ -1,5 +1,5 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
@@ -8,30 +8,22 @@ import { Megaphone, ExternalLink, QrCode, Share2, Copy, Link as LinkIcon } from 
 
 const ACCENT = '#E8B84B'
 
+interface EventoPublicado {
+  id: string; title: string | null; date_start: string | null
+  venue_name: string | null; city: string | null; cover_url: string | null
+}
+
 export default async function MarketingPage() {
   const user = await getAuthUser()
   if (!user) redirect('/auth?next=/minha-area/marketing')
 
-  const admin = createServiceClient()
-
-  // Organizações do promotor
-  const { data: orgs } = await admin
-    .from('organizations')
-    .select('id')
-    .eq('owner_id', user.id)
-
-  const orgIds = (orgs ?? []).map(o => o.id)
-
-  // Eventos publicados do promotor
-  const { data: eventos } = orgIds.length > 0
-    ? await admin
-        .from('events')
-        .select('id, title, date_start, venue_name, city, cover_url, is_published')
-        .in('organization_id', orgIds)
-        .eq('is_published', true)
-        .order('date_start', { ascending: false })
-        .limit(20)
-    : { data: [] }
+  // GET /minha-area/eventos-publicados (Fase 7.2, G11) — mesmo filtro que
+  // a query direta fazia, corrigido o bug de is_published/cover_url
+  // (colunas que não existem mais no schema).
+  const res = await apiFetchServer('/api/minha-area/eventos-publicados')
+  const { eventos } = res.ok
+    ? await res.json() as { eventos: EventoPublicado[] }
+    : { eventos: [] as EventoPublicado[] }
 
   return (
     <>
