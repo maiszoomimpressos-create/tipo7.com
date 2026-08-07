@@ -1,4 +1,3 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
 import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect, notFound } from 'next/navigation'
@@ -14,7 +13,6 @@ interface Props {
 
 export default async function EditarEventoPage({ params }: Props) {
   const { id }   = await params
-  const supabase = await createClient()
 
   const user = await getAuthUser()
   if (!user) redirect('/auth?next=/criar-evento')
@@ -36,7 +34,7 @@ export default async function EditarEventoPage({ params }: Props) {
   }
 
   if (!evento) notFound()
-  if (!(await isOrgAdmin(supabase, evento.organization_id, user.id))) notFound()
+  if (!(await isOrgAdmin(null, evento.organization_id, user.id))) notFound()
 
   // PJ ou PF é derivado da própria organização (tem CNPJ ou não) — não é
   // mais uma pergunta/flag separada do usuário (ver PromotorForm em /perfil)
@@ -55,13 +53,24 @@ export default async function EditarEventoPage({ params }: Props) {
   // gateways o promotor pode escolher pro evento (PagBank fica travado até
   // o checkout dele estar pronto no frontend, mesmo que a conta já esteja
   // conectada em Configurações > Contas)
-  const admin = createServiceClient()
-  const [{ data: contaMp }, { data: contaPagBank }] = orgOwnerId
+  // LIMITAÇÃO CONHECIDA (Fase 7.2, G13): /mp/status e /pagbank/status só
+  // respondem pelo usuário autenticado (via JWT), não aceitam um userId
+  // arbitrário — diferente da query original, que checava sempre o dono
+  // real da organização (orgOwnerId), podendo ser outra pessoa quando quem
+  // edita é um sócio/co-admin. Nesse caso específico (sócio editando evento
+  // de organização de outro dono) o indicador visual mpConectado/pagbankConectado
+  // pode ficar incorreto (mostra a conta de quem está logado, não a do
+  // dono) — só afeta a UI desta tela, não o fluxo real de pagamento (que
+  // resolve a conta certa no backend na hora de publicar/vender). Ver
+  // relatório desta tarefa para decisão de criar rota própria depois.
+  const [mpRes, pagbankRes] = orgOwnerId
     ? await Promise.all([
-        admin.from('promotor_mp_accounts').select('id').eq('user_id', orgOwnerId).maybeSingle(),
-        admin.from('promotor_pagbank_accounts').select('id').eq('user_id', orgOwnerId).maybeSingle(),
+        apiFetchServer('/api/mp/status'),
+        apiFetchServer('/api/pagbank/status'),
       ])
-    : [{ data: null }, { data: null }]
+    : [null, null]
+  const contaMp = mpRes?.ok ? await mpRes.json() as { connected: boolean } : { connected: false }
+  const contaPagBank = pagbankRes?.ok ? await pagbankRes.json() as { connected: boolean } : { connected: false }
 
   // Locais que o usuário já usou em outros eventos — sugestão imediata ao
   // começar a preencher o local, sem precisar digitar nada
@@ -151,8 +160,8 @@ export default async function EditarEventoPage({ params }: Props) {
           perfilCidade={profile?.city  ?? null}
           perfilEstado={profile?.state ?? null}
           locaisRecentes={locaisRecentes}
-          mpConectado={!!contaMp}
-          pagbankConectado={!!contaPagBank}
+          mpConectado={contaMp.connected}
+          pagbankConectado={contaPagBank.connected}
           responsavel={tipoPessoa === 'pf' ? {
             nome:     profile?.full_name ?? '',
             cpf:      profile?.cpf       ?? '',

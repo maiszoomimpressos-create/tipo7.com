@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { useAuth } from '@/contexts/AuthContext'
 import { Building2, Home, User, Users, Loader2, Check, Plus, Trash2, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -42,7 +42,6 @@ const baseInput  = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 t
 
 export function PromoterOnboarding({ initialData }: Props) {
   const { user } = useAuth()
-  const supabase  = createClient()
   const isEdit    = !!initialData
 
   const [tipoPessoa, setTipoPessoa] = useState<'pf' | 'pj' | ''>(initialData?.tipo_pessoa ?? '')
@@ -78,46 +77,17 @@ export function PromoterOnboarding({ initialData }: Props) {
     setSaved(false)
 
     try {
-      let promotorId: string
-
-      if (isEdit && initialData) {
-        // Atualiza o perfil existente
-        const { error: e1 } = await supabase
-          .from('promotor_profiles')
-          .update({ tipo_pessoa: tipoPessoa, tipo_espaco: tipoEspaco, num_socios: numSocios })
-          .eq('id', initialData.id)
-        if (e1) throw e1
-        promotorId = initialData.id
-
-        // Remove sócios antigos e reinsere os novos
-        await supabase.from('promotor_socios').delete().eq('promotor_id', promotorId)
-      } else {
-        // Insere novo perfil
-        const { data: perfil, error: e1 } = await supabase
-          .from('promotor_profiles')
-          .insert({ user_id: user.id, tipo_pessoa: tipoPessoa, tipo_espaco: tipoEspaco, num_socios: numSocios })
-          .select('id')
-          .single()
-        if (e1) throw e1
-        promotorId = perfil.id
-      }
-
-      // Insere sócios se necessário
-      if (temSocios) {
-        const rows = socios
-          .filter(s => s.nome.trim() && s.cpf.replace(/\D/g,'').length === 11)
-          .map(s => ({
-            promotor_id: promotorId,
-            nome:     s.nome.trim(),
-            cpf:      s.cpf.replace(/\D/g,''),
-            telefone: s.telefone || null,
-            email:    s.email    || null,
-          }))
-        if (rows.length) {
-          const { error: e2 } = await supabase.from('promotor_socios').insert(rows)
-          if (e2) throw e2
-        }
-      }
+      // POST /profile/promotor cuida de criar-ou-atualizar o perfil e
+      // substituir os sócios numa chamada só (mesma lógica update+delete+
+      // reinsere / insert+insere que existia aqui, agora no backend).
+      const res = await apiFetchAuth('/api/profile/promotor', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipoPessoa, tipoEspaco, numSocios,
+          socios: temSocios ? socios : [],
+        }),
+      })
+      if (!res.ok) throw new Error('Falha ao salvar')
 
       setSaved(true)
       setTimeout(() => { setSaved(false); window.location.reload() }, 1200)

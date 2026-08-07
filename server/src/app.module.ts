@@ -31,6 +31,7 @@ import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { PlatformSettingsModule } from './platform-settings/platform-settings.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProfileModule } from './profile/profile.module';
+import { PromotorProfileModule } from './promotor-profile/promotor-profile.module';
 import { QrModule } from './qr/qr.module';
 import { QzModule } from './qz/qz.module';
 import { ScannerModule } from './scanner/scanner.module';
@@ -85,6 +86,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     CarrosselModule,
     UploadsModule,
     ProfileModule,
+    PromotorProfileModule,
     PlatformSettingsModule,
   ],
   controllers: [AppController],

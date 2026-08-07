@@ -1,5 +1,5 @@
-import { createClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect, notFound } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { PublicarClient } from './PublicarClient'
@@ -9,58 +9,55 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
+interface EventoApi {
+  id: string; title: string | null; description: string | null; category: string | null
+  status: string; date_start: string | null; date_end: string | null
+  venue_name: string | null; city: string | null; state: string | null; street: string | null
+  ticket_mode: 'individual' | 'pacote' | 'ambos' | null; package_discount_pct: number | null
+  banner_url: string | null; organization_id: string; payment_gateway: string | null
+  organizations: { owner_id: string | null } | null
+}
+
+interface DiasApi {
+  dias: Array<{
+    day_number: number; date: string; start_time: string | null; end_time: string | null
+    event_day_attractions: Array<{ name: string }>
+  }>
+  ingressos: Array<{ name: string; price: number; quantity: number; event_day_id: string | null }>
+}
+
 export default async function PublicarPage({ params }: Props) {
-  const { id }   = await params
-  const supabase = await createClient()
+  const { id } = await params
 
   const user = await getAuthUser()
   if (!user) redirect('/auth?next=/criar-evento')
 
-  const { data: evento } = await supabase
-    .from('events')
-    .select(`
-      id, title, description, category, status,
-      date_start, date_end,
-      venue_name, city, state, street,
-      ticket_mode, package_discount_pct,
-      banner_url,
-      organization_id, payment_gateway,
-      organizations(owner_id)
-    `)
-    .eq('id', id)
-    .single()
+  const eventoRes = await apiFetchServer(`/api/eventos/${id}`)
+  if (eventoRes.status === 404) notFound()
+  const evento: EventoApi = await eventoRes.json()
 
   if (!evento) notFound()
-  if (!(await isOrgAdmin(supabase, evento.organization_id, user.id))) notFound()
+  if (!(await isOrgAdmin(null, evento.organization_id, user.id))) notFound()
 
   // Conta de pagamento é sempre a do dono da organização — quem publica pode
   // ser um co-admin, mas o dinheiro sempre cai na conta que o dono conectou.
   // O gateway exigido é o escolhido pelo evento — checar sempre Mercado Pago
   // aqui fazia o checklist mostrar "faltando" mesmo com PagBank já conectado
   // (e vice-versa), incoerente com o que /api/eventos/[id]/publicar valida.
-  const orgOwner = Array.isArray(evento.organizations)
-    ? evento.organizations[0]
-    : evento.organizations as { owner_id: string } | null
   const gateway = evento.payment_gateway === 'pagbank' ? 'pagbank' : 'mercadopago'
-  const { data: contaGateway } = await supabase
-    .from(gateway === 'pagbank' ? 'promotor_pagbank_accounts' : 'promotor_mp_accounts')
-    .select('id')
-    .eq('user_id', orgOwner?.owner_id ?? '')
-    .maybeSingle()
-  const gatewayConectado = !!contaGateway
+  // GET /eventos/:id/gateway-status resolve a conta do DONO da organização
+  // no backend — checar /mp/status ou /pagbank/status do usuário logado
+  // bloquearia o botão de publicar incorretamente pra um sócio/co-admin
+  // publicando por uma organização de outro dono (achado na revisão do G13).
+  const gatewayRes = await apiFetchServer(`/api/eventos/${id}/gateway-status`)
+  const gatewayData = gatewayRes.ok ? await gatewayRes.json() as { connected: boolean } : { connected: false }
+  const gatewayConectado = gatewayData.connected
 
   // Busca dias e ingressos para o resumo
-  const { data: dias } = await supabase
-    .from('event_days')
-    .select('id, day_number, date, start_time, end_time, event_day_attractions(name)')
-    .eq('event_id', id)
-    .order('day_number')
-
-  const { data: ingressos } = await supabase
-    .from('event_tickets')
-    .select('id, name, price, quantity, event_day_id')
-    .eq('event_id', id)
-    .order('order_index')
+  const diasRes = await apiFetchServer(`/api/eventos/${id}/dias`)
+  const { dias, ingressos }: DiasApi = diasRes.ok
+    ? await diasRes.json()
+    : { dias: [], ingressos: [] }
 
   // Calcula número de dias
   const calcDias = () => {
@@ -130,18 +127,18 @@ export default async function PublicarPage({ params }: Props) {
             cidade:      evento.city        ?? '',
             estado:      evento.state       ?? '',
             rua:         evento.street      ?? '',
-            ticketMode:  (evento.ticket_mode ?? null) as 'individual' | 'pacote' | 'ambos' | null,
+            ticketMode:  evento.ticket_mode ?? null,
             packageDiscount: evento.package_discount_pct ?? 0,
             bannerUrl:   evento.banner_url ?? null,
           }}
-          dias={(dias ?? []).map(d => ({
+          dias={dias.map(d => ({
             day_number:  d.day_number,
             date:        d.date,
             start_time:  d.start_time ?? '',
             end_time:    d.end_time   ?? '',
-            attractions: (d.event_day_attractions ?? []).map((a: { name: string }) => a.name),
+            attractions: (d.event_day_attractions ?? []).map(a => a.name),
           }))}
-          ingressos={(ingressos ?? []).map(t => ({
+          ingressos={ingressos.map(t => ({
             name:         t.name,
             price:        t.price,
             quantity:     t.quantity,

@@ -1,5 +1,5 @@
-import { createClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect, notFound } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { CheckCircle2, ExternalLink, CalendarPlus } from 'lucide-react'
@@ -9,21 +9,22 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
+interface EventoApi {
+  id: string; title: string | null; status: string; organization_id: string
+}
+
 export default async function PublicadoPage({ params }: Props) {
-  const { id }   = await params
-  const supabase = await createClient()
+  const { id } = await params
 
   const user = await getAuthUser()
   if (!user) redirect('/auth')
 
-  const { data: evento } = await supabase
-    .from('events')
-    .select('id, title, status, organization_id')
-    .eq('id', id)
-    .single()
+  const eventoRes = await apiFetchServer(`/api/eventos/${id}`)
+  if (eventoRes.status === 404) notFound()
+  const evento: EventoApi = await eventoRes.json()
 
   if (!evento) notFound()
-  if (!(await isOrgAdmin(supabase, evento.organization_id, user.id))) notFound()
+  if (!(await isOrgAdmin(null, evento.organization_id, user.id))) notFound()
 
   // Só exibe esta tela se o evento realmente foi publicado
   if (evento.status !== 'publicado') redirect(`/criar-evento/${id}/publicar`)

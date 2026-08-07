@@ -19,6 +19,11 @@ export class EventosAdminController {
     return this.eventos.getIngressosResumo(id);
   }
 
+  @Get('gateway-status')
+  gatewayStatus(@Param('id') id: string) {
+    return this.eventos.getGatewayStatus(id);
+  }
+
   @Get('dashboard')
   dashboard(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.eventos.getDashboard(user.id, id);

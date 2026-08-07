@@ -1,7 +1,6 @@
 // Página de criação de evento
 // Fluxo: perfil 100% completo → modal (nicho + nome do evento) → formulário de evento.
 // CNPJ é opcional e fica em /perfil (aba "Dados de promotor"), não aqui.
-import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser }  from '@/lib/auth/server'
 import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect }     from 'next/navigation'
@@ -24,9 +23,17 @@ const CAMPOS_OBRIGATORIOS = [
   { campo: 'address_type'  as const, label: 'Tipo de residência' },
 ]
 
-export default async function CriarEventoPage() {
-  const supabase = await createClient()
+interface OrgApi {
+  id: string; name: string; type: string; cnpj: string | null; nomeFantasia: string | null
+  role: string; status: 'ativo' | 'convidado'
+}
 
+interface EventoApi {
+  id: string; title: string | null; status: string; date_start: string | null; created_at: string
+  banner_url: string | null; modulo_ingressos: boolean; modulo_estacionamento: boolean
+}
+
+export default async function CriarEventoPage() {
   const user = await getAuthUser()
   if (!user) redirect('/auth?next=/criar-evento')
 
@@ -41,11 +48,8 @@ export default async function CriarEventoPage() {
   const faltando       = CAMPOS_OBRIGATORIOS.filter(({ campo }) => !profile?.[campo as keyof typeof profile])
   const perfilCompleto = faltando.length === 0
 
-  const { data: promotorProfile } = await supabase
-    .from('promotor_profiles')
-    .select('id')
-    .eq('user_id', user.id)
-    .single()
+  const promotorRes = await apiFetchServer('/api/profile/promotor')
+  const promotorProfile = promotorRes.ok ? await promotorRes.json() as { id: string } | null : null
 
   // Busca todas as organizações que o usuário administra — dono integral,
   // sócio, mas só as ativas (convite pendente não conta pra criar evento
@@ -54,32 +58,22 @@ export default async function CriarEventoPage() {
   // evento, em vez de adivinhar. Inclui eventuais linhas legadas de
   // type='estabelecimento' (não são mais criadas, mas ainda têm eventos
   // reais atrelados, então continuam entrando na listagem "Meus eventos").
-  const admin = createServiceClient()
-  const { data: orgAdminRows } = await admin
-    .from('organization_admins')
-    .select('role, organizations (id, name, type, cnpj, nome_fantasia)')
-    .eq('user_id', user.id)
-    .eq('status', 'ativo')
+  const orgsRes = await apiFetchServer('/api/organizations')
+  const { organizacoes: orgsRaw } = orgsRes.ok
+    ? await orgsRes.json() as { organizacoes: OrgApi[] }
+    : { organizacoes: [] as OrgApi[] }
 
-  const orgs = (orgAdminRows ?? []).flatMap(r => {
-    const org = Array.isArray(r.organizations) ? r.organizations[0] : r.organizations
-    return org ? [org] : []
-  })
-
+  const orgs = orgsRaw.filter(o => o.status === 'ativo')
   const orgIds = orgs.map(o => o.id)
   // Só entram no seletor do modal as organizações type='promotora' (as
   // legadas type='estabelecimento' seguem existindo só por causa de
   // eventos antigos, não criam evento novo).
   const organizacoesPromotoras = orgs.filter(o => o.type === 'promotora')
 
-  const { data: eventos } = orgIds.length > 0
-    ? await supabase
-        .from('events')
-        .select('id, title, status, date_start, created_at, banner_url, modulo_ingressos, modulo_estacionamento')
-        .in('organization_id', orgIds)
-        .is('parent_event_id', null)
-        .order('created_at', { ascending: false })
-    : { data: [] }
+  const eventosRes = orgIds.length > 0 ? await apiFetchServer('/api/eventos/meus') : null
+  const { eventos } = eventosRes?.ok
+    ? await eventosRes.json() as { eventos: EventoApi[] }
+    : { eventos: [] as EventoApi[] }
 
   const temOrg = orgIds.length > 0
 
@@ -116,8 +110,8 @@ export default async function CriarEventoPage() {
             id:            o.id,
             name:          o.name,
             type:          o.type as 'promotora' | 'estabelecimento',
-            cnpj:          (o as { cnpj?: string | null }).cnpj ?? null,
-            nome_fantasia: (o as { nome_fantasia?: string | null }).nome_fantasia ?? null,
+            cnpj:          o.cnpj ?? null,
+            nome_fantasia: o.nomeFantasia ?? null,
           }))}
           profile={{
             phone:         profile?.phone         ?? '',
@@ -129,15 +123,15 @@ export default async function CriarEventoPage() {
             state:         profile?.state         ?? '',
             complement:    profile?.complement    ?? '',
           }}
-          eventos={(eventos ?? []).map(e => ({
+          eventos={eventos.map(e => ({
             id:                    e.id,
             title:                 e.title ?? 'Novo evento',
             status:                e.status as 'rascunho' | 'publicado',
-            date_start:            e.date_start ?? null,
+            date_start:            e.date_start,
             created_at:            e.created_at,
-            banner_url:            (e as unknown as { banner_url: string | null }).banner_url ?? null,
-            modulo_ingressos:      (e as unknown as { modulo_ingressos: boolean }).modulo_ingressos,
-            modulo_estacionamento: (e as unknown as { modulo_estacionamento: boolean }).modulo_estacionamento,
+            banner_url:            e.banner_url,
+            modulo_ingressos:      e.modulo_ingressos,
+            modulo_estacionamento: e.modulo_estacionamento,
           }))}
         />
       )}

@@ -64,6 +64,15 @@ export class EventsController {
     return this.eventosAdmin.criarEvento(user.id, body);
   }
 
+  // "Meus eventos" (criar-evento/page.tsx, Fase 7.2, G13) — precisa vir
+  // ANTES de ':id' abaixo (rota estática, senão ':id' capturaria "meus"
+  // como se fosse um id de evento).
+  @UseGuards(SupabaseJwtGuard)
+  @Get('meus')
+  meusEventos(@CurrentUser() user: AuthenticatedUser) {
+    return this.eventosAdmin.getMeusEventos(user.id);
+  }
+
   // Leitura pública do "core" do evento — mesma info que a página pública e
   // o formulário do organizador já buscavam sem guarda de auth.
   @Get(':id')

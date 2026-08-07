@@ -305,6 +305,7 @@ export class EventosAdminService {
         zipCode: true, street: true, streetNumber: true, neighborhood: true,
         city: true, state: true, complement: true, capacity: true, status: true,
         bannerUrl: true, galleryUrls: true, feeMode: true, paymentGateway: true,
+        ticketMode: true, packageDiscountPct: true,
         parentEventId: true, moduloIngressos: true, moduloEstacionamento: true,
         moduloTenda: true, permitirVendaNoCaixaPai: true, lat: true, lng: true,
         organizationId: true,
@@ -335,6 +336,8 @@ export class EventosAdminService {
       gallery_urls: evento.galleryUrls,
       fee_mode: evento.feeMode,
       payment_gateway: evento.paymentGateway,
+      ticket_mode: evento.ticketMode,
+      package_discount_pct: evento.packageDiscountPct,
       parent_event_id: evento.parentEventId,
       modulo_ingressos: evento.moduloIngressos,
       modulo_estacionamento: evento.moduloEstacionamento,
@@ -346,6 +349,65 @@ export class EventosAdminService {
       organizations: evento.organization
         ? { cnpj: evento.organization.cnpj, owner_id: evento.organization.ownerId }
         : null,
+    };
+  }
+
+  // GET /eventos/:id/gateway-status (Fase 7.2, G13 — bugfix achado na
+  // revisão) — o checklist de publicar precisa saber se o GATEWAY DO DONO
+  // da organização está conectado, não do usuário que está logado agora
+  // (pode ser um sócio/co-admin publicando por outra pessoa). Sem isso, o
+  // botão "Publicar" ficaria bloqueado incorretamente pra um co-admin
+  // mesmo com a conta do dono já conectada — resolve server-side, sem
+  // expor a lista de contas de terceiros, só um booleano.
+  async getGatewayStatus(eventoId: string) {
+    const evento = await this.prisma.event.findUnique({
+      where: { id: eventoId },
+      select: { paymentGateway: true, organization: { select: { ownerId: true } } },
+    });
+    if (!evento) throw new NotFoundException('Evento não encontrado');
+
+    const ownerId = evento.organization?.ownerId ?? '';
+    const gateway = evento.paymentGateway === 'pagbank' ? 'pagbank' : 'mercadopago';
+
+    const conta =
+      gateway === 'pagbank'
+        ? await this.prisma.promotorPagbankAccount.findUnique({ where: { userId: ownerId }, select: { id: true } })
+        : await this.prisma.promotorMpAccount.findUnique({ where: { userId: ownerId }, select: { id: true } });
+
+    return { connected: !!conta };
+  }
+
+  // GET /eventos/meus — porte de criar-evento/page.tsx (Fase 7.2, G13).
+  // Todos os eventos-pai (parentEventId null) das organizações que o
+  // usuário administra (dono ou sócio ativo).
+  async getMeusEventos(userId: string) {
+    const orgs = await this.prisma.organizationAdmin.findMany({
+      where: { userId, status: 'ativo' },
+      select: { organizationId: true },
+    });
+    const orgIds = orgs.map((o) => o.organizationId);
+    if (orgIds.length === 0) return { eventos: [] };
+
+    const eventos = await this.prisma.event.findMany({
+      where: { organizationId: { in: orgIds }, parentEventId: null },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, title: true, status: true, dateStart: true, createdAt: true,
+        bannerUrl: true, moduloIngressos: true, moduloEstacionamento: true,
+      },
+    });
+
+    return {
+      eventos: eventos.map((e) => ({
+        id: e.id,
+        title: e.title,
+        status: e.status,
+        date_start: e.dateStart ? e.dateStart.toISOString() : null,
+        created_at: e.createdAt.toISOString(),
+        banner_url: e.bannerUrl,
+        modulo_ingressos: e.moduloIngressos,
+        modulo_estacionamento: e.moduloEstacionamento,
+      })),
     };
   }
 
