@@ -67,6 +67,21 @@ export class AreaRestritaService {
     return Number.isFinite(expiresAt) && Date.now() < expiresAt;
   }
 
+  // Mesmo achado do auth-core.controller.ts (07/08/2026): sem "domain"
+  // explícito, o cookie trava no host exato (ex: www.tipo7.com) — quem
+  // acaba no domínio nu (tipo7.com) perde o desbloqueio sem motivo aparente.
+  private cookieDomain(): string | undefined {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    if (!appUrl) return undefined;
+    try {
+      const host = new URL(appUrl).hostname;
+      if (host === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return undefined;
+      return `.${host.replace(/^www\./, '')}`;
+    } catch {
+      return undefined;
+    }
+  }
+
   private cookieOptions(): CookieOptions {
     return {
       httpOnly: true,
@@ -74,6 +89,7 @@ export class AreaRestritaService {
       sameSite: 'lax',
       maxAge: DURACAO_MS,
       path: '/',
+      domain: this.cookieDomain(),
     };
   }
 
@@ -88,6 +104,6 @@ export class AreaRestritaService {
   }
 
   bloquear(res: Response): void {
-    res.clearCookie(COOKIE_NAME, { path: '/' });
+    res.clearCookie(COOKIE_NAME, { path: '/', domain: this.cookieDomain() });
   }
 }

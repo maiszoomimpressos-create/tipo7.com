@@ -17,8 +17,29 @@ function isInternalPath(path: string): boolean {
   return path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\');
 }
 
+// Achado real (07/08/2026): os cookies de sessão eram gravados sem "domain"
+// explícito — por padrão, o browser trava o cookie no host EXATO que
+// respondeu o request (ex: www.tipo7.com). Se por qualquer motivo o
+// visitante acaba no domínio nu (tipo7.com, sem www — cache de link antigo,
+// digitação direta, etc.), o browser trata como origem DIFERENTE: nenhum
+// cookie de lá é enviado, aparenta estar deslogado mesmo tendo feito login
+// segundos antes. Com "domain: .tipo7.com" (ponto na frente) o cookie vale
+// pro apex E pra qualquer subdomínio, então não importa qual dos dois o
+// browser decidiu usar. Em dev local (localhost/IP) não faz sentido setar
+// domain explícito — o browser rejeita "domain=localhost" com ponto e não
+// precisa disso pra funcionar de qualquer forma.
+function cookieDomain(): string | undefined {
+  try {
+    const host = new URL(APP_URL).hostname;
+    if (host === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return undefined;
+    return `.${host.replace(/^www\./, '')}`;
+  } catch {
+    return undefined;
+  }
+}
+
 function setSessionCookies(res: Response, session: SessionResult) {
-  const base: CookieOptions = { secure: true, sameSite: 'lax' };
+  const base: CookieOptions = { secure: true, sameSite: 'lax', domain: cookieDomain() };
   // access_token: legível por JS de propósito (vida curta, 1h) — o frontend
   // lê direto do cookie pra hidratar a sessão sem round-trip extra, e o
   // apiFetchAuth continua anexando via Authorization: Bearer como sempre.
@@ -32,8 +53,9 @@ function setSessionCookies(res: Response, session: SessionResult) {
 }
 
 function clearSessionCookies(res: Response) {
-  res.clearCookie(ACCESS_COOKIE, { path: '/' });
-  res.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
+  const domain = cookieDomain();
+  res.clearCookie(ACCESS_COOKIE, { path: '/', domain });
+  res.clearCookie(REFRESH_COOKIE, { path: '/api/auth', domain });
 }
 
 function toResponseBody(session: SessionResult) {
