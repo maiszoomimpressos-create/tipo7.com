@@ -2,7 +2,7 @@
 // Fluxo: perfil 100% completo → modal (nicho + nome do evento) → formulário de evento.
 // CNPJ é opcional e fica em /perfil (aba "Dados de promotor"), não aqui.
 import { getAuthUser }  from '@/lib/auth/server'
-import { apiFetchServer } from '@/lib/apiFetchServer'
+import { apiFetchServer, safeJson } from '@/lib/apiFetchServer'
 import { redirect }     from 'next/navigation'
 import { Header }       from '@/components/layout/Header'
 import { PromoterLayout } from '@/components/layout/PromoterLayout'
@@ -38,18 +38,18 @@ export default async function CriarEventoPage() {
   if (!user) redirect('/auth?next=/criar-evento')
 
   const profileRes = await apiFetchServer('/api/profile')
-  const profile = profileRes.ok ? await profileRes.json() as {
+  const profile = await safeJson<{
     full_name: string | null; phone: string | null; cpf: string | null; birth_date: string | null
     zip_code: string | null; street: string | null; street_number: string | null
     neighborhood: string | null; city: string | null; state: string | null
     address_type: string | null; complement: string | null
-  } : null
+  }>(profileRes)
 
   const faltando       = CAMPOS_OBRIGATORIOS.filter(({ campo }) => !profile?.[campo as keyof typeof profile])
   const perfilCompleto = faltando.length === 0
 
   const promotorRes = await apiFetchServer('/api/profile/promotor')
-  const promotorProfile = promotorRes.ok ? await promotorRes.json() as { id: string } | null : null
+  const promotorProfile = await safeJson<{ id: string }>(promotorRes)
 
   // Busca todas as organizações que o usuário administra — dono integral,
   // sócio, mas só as ativas (convite pendente não conta pra criar evento
@@ -59,9 +59,7 @@ export default async function CriarEventoPage() {
   // type='estabelecimento' (não são mais criadas, mas ainda têm eventos
   // reais atrelados, então continuam entrando na listagem "Meus eventos").
   const orgsRes = await apiFetchServer('/api/organizations')
-  const { organizacoes: orgsRaw } = orgsRes.ok
-    ? await orgsRes.json() as { organizacoes: OrgApi[] }
-    : { organizacoes: [] as OrgApi[] }
+  const { organizacoes: orgsRaw } = (await safeJson<{ organizacoes: OrgApi[] }>(orgsRes)) ?? { organizacoes: [] as OrgApi[] }
 
   const orgs = orgsRaw.filter(o => o.status === 'ativo')
   const orgIds = orgs.map(o => o.id)
@@ -71,9 +69,7 @@ export default async function CriarEventoPage() {
   const organizacoesPromotoras = orgs.filter(o => o.type === 'promotora')
 
   const eventosRes = orgIds.length > 0 ? await apiFetchServer('/api/eventos/meus') : null
-  const { eventos } = eventosRes?.ok
-    ? await eventosRes.json() as { eventos: EventoApi[] }
-    : { eventos: [] as EventoApi[] }
+  const { eventos } = (eventosRes ? await safeJson<{ eventos: EventoApi[] }>(eventosRes) : null) ?? { eventos: [] as EventoApi[] }
 
   const temOrg = orgIds.length > 0
 

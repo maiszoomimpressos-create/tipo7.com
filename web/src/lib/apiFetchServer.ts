@@ -13,6 +13,23 @@ import { cookies, headers as nextHeaders } from 'next/headers'
 // chamar uma rota autenticada do NestJS (resto da Fase 7.2).
 const API_URL = process.env.API_URL ?? 'http://localhost:3001'
 
+// Lê o corpo como JSON com tolerância a resposta vazia/malformada — achado
+// real (07/08/2026): uma resposta 2xx com corpo vazio (blip de rede entre
+// `web` e `server`, ainda sob investigação) faz `res.json()` estourar
+// "Unexpected end of JSON input" e derruba a página inteira (Server
+// Component sem try/catch = 500 pro visitante). Usar isso em vez de
+// `res.ok ? await res.json() : null` em qualquer Server Component novo —
+// trata corpo vazio/malformado como "sem dado" em vez de crashar a página.
+export async function safeJson<T>(res: Response): Promise<T | null> {
+  if (!res.ok) return null
+  try {
+    const text = await res.text()
+    return text ? (JSON.parse(text) as T) : null
+  } catch {
+    return null
+  }
+}
+
 export async function apiFetchServer(path: string, init: RequestInit = {}): Promise<Response> {
   const jar = await cookies()
   const token = jar.get('access_token')?.value
