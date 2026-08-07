@@ -19,6 +19,12 @@ export class VenuesController {
     return this.venues.listarMinhas(user.id);
   }
 
+  // Porte de EventoForm.tsx (Fase 7.2-b) — upsert por google_place_id.
+  @Post()
+  upsertGoogle(@Body() body: any) {
+    return this.venues.upsertPorGooglePlaceId(body ?? {});
+  }
+
   @Post(':id/tornar-responsavel')
   tornarResponsavel(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
     return this.venues.tornarResponsavel(user.id, id, body ?? {});

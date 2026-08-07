@@ -1,18 +1,14 @@
-import { createServiceClient } from '@/lib/supabase/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { LegalNav } from '@/components/legal/LegalNav'
 import { marked } from 'marked'
 
-export const revalidate = 3600
-
 export default async function TermosPage() {
-  const admin = createServiceClient()
-  const { data } = await admin
-    .from('platform_content')
-    .select('content, updated_at')
-    .eq('key', 'termos')
-    .single()
+  // GET /admin/conteudo é público, sem guard — 404 quando a chave ainda
+  // não foi publicada (mesmo fallback vazio que o .single() da Supabase já dava).
+  const res  = await apiFetchServer('/api/admin/conteudo?key=termos')
+  const data = res.ok ? await res.json() as { content: string; updated_at: string | null } : null
 
   const raw       = data?.content    ?? ''
   const updatedAt = data?.updated_at ?? null

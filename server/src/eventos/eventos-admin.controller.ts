@@ -29,6 +29,11 @@ export class EventosAdminController {
     return this.eventos.getDashboard(user.id, id);
   }
 
+  @Get('vendidos-por-ingresso')
+  vendidosPorIngresso(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.eventos.getVendidosPorIngresso(user.id, id);
+  }
+
   @Patch()
   atualizarCore(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
     return this.eventos.atualizarCore(user.id, id, body);

@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import {
   Users, Package, Layers, Plus, Trash2, Loader2,
@@ -212,7 +211,6 @@ export function IngressosClient({
   infoCompleta,
 }: Props) {
   const router   = useRouter()
-  const supabase = createClient()
 
   // Se chegou aqui direto (ex: atalho da lista de eventos) sem ter completado
   // Informações, o "continuar" deve voltar pra lá em vez de seguir adiante —
@@ -358,6 +356,15 @@ export function IngressosClient({
 
   // ─── Salvar tudo ─────────────────────────────────────────────────────────────
 
+  // Achado real (07/08/2026): POST /eventos/:id/dias já existia desde a
+  // Fase 7.1 e faz essa transação inteira no servidor (update evento +
+  // upsert dias/atrações + upsert ingressos), atomicamente — melhor que a
+  // sequência de chamadas soltas que rodava antes direto no navegador.
+  // Convenção do endpoint: eventDayId de um ingresso pode ser o id real do
+  // dia OU (se o dia ainda não tem id, é novo) o day_number como string —
+  // o servidor resolve pro id real recém-criado. Por isso a chave de
+  // agrupamento de IngressosPorDia trocou de `new-${date}` pra
+  // `String(day_number)` (ver render mais abaixo).
   const handleSalvar = async (destino?: string) => {
     setSaving(true); setErro(null)
     try {
@@ -367,91 +374,66 @@ export function IngressosClient({
       const novoDateStart = datasEscolhidas?.length ? `${datasEscolhidas[0]}T${(dias.find(d => d.date === datasEscolhidas[0])?.start_time || '00:00')}` : undefined
       const novoDateEnd   = datasEscolhidas?.length ? `${datasEscolhidas[datasEscolhidas.length - 1]}T${(dias.find(d => d.date === datasEscolhidas[datasEscolhidas.length - 1])?.end_time || '23:59')}` : undefined
 
-      await supabase.from('events').update({
-        ticket_mode:          ticketMode,
-        package_discount_pct: packageDiscount,
-        ...(novoDateStart ? { date_start: novoDateStart } : {}),
-        ...(novoDateEnd   ? { date_end:   novoDateEnd   } : {}),
-      }).eq('id', eventoId)
+      const ingressosComNome = ingressos
+        .map((t, i) => ({ t, i }))
+        .filter(x => x.t.name.trim())
 
-      // Mapa placeholder ("new-{date}" ou id real) → id real do dia, montado
-      // durante o próprio save — sem isso, ingressos ligados a um dia recém-criado
-      // tentariam gravar a chave temporária como event_day_id (UUID inválido).
-      const idPlaceholderParaReal: Record<string, string> = {}
+      const body = {
+        ticketMode,
+        packageDiscountPct: packageDiscount,
+        ...(novoDateStart ? { dateStart: novoDateStart } : {}),
+        ...(novoDateEnd   ? { dateEnd:   novoDateEnd   } : {}),
+        ...(ticketMode !== 'pacote' ? {
+          dias: dias.map(dia => ({
+            id:         dia.id,
+            dayNumber:  dia.day_number,
+            date:       dia.date,
+            startTime:  dia.start_time || null,
+            endTime:    dia.end_time   || null,
+            bannerUrl:  dia.banner_url || null,
+            attractions: dia.attractions.filter(a => a.name.trim()).map((a, i) => ({
+              name:          a.name.trim(),
+              description:   a.description || null,
+              orderIndex:    i,
+              scheduledTime: a.scheduled_time || null,
+              imageUrl:      a.image_url || null,
+            })),
+          })),
+        } : {}),
+        ingressos: ingressosComNome.map(({ t }, i) => ({
+          id:         t.id,
+          eventDayId: t.event_day_id,
+          name:       t.name.trim(),
+          description: t.description || null,
+          price:      t.price,
+          quantity:   t.quantity,
+          orderIndex: i,
+        })),
+      }
+
+      const res = await apiFetchAuth(`/api/eventos/${eventoId}/dias`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      })
+      if (!res.ok) { setErro('Erro ao salvar. Tente novamente.'); return }
+      const data = await res.json() as {
+        dias:      { dayNumber: number; id: string }[]
+        ingressos: { index: number; id: string; eventDayId: string | null }[]
+      }
 
       if (ticketMode !== 'pacote') {
-        const diasAtualizados: DiaConfig[] = []
-        for (const dia of dias) {
-          const chavePlaceholder = dia.id ?? `new-${dia.date}`
-          const { data: diaDb } = dia.id
-            ? await supabase.from('event_days').upsert({
-                id:         dia.id,
-                event_id:   eventoId,
-                day_number: dia.day_number,
-                date:       dia.date,
-                start_time: dia.start_time || null,
-                end_time:   dia.end_time   || null,
-                banner_url: dia.banner_url || null,
-              }).select('id').single()
-            : await supabase.from('event_days').upsert({
-                event_id:   eventoId,
-                day_number: dia.day_number,
-                date:       dia.date,
-                start_time: dia.start_time || null,
-                end_time:   dia.end_time   || null,
-                banner_url: dia.banner_url || null,
-              }, { onConflict: 'event_id,day_number' }).select('id').single()
-
-          if (!diaDb) { diasAtualizados.push(dia); continue }
-          const diaId = diaDb.id
-          idPlaceholderParaReal[chavePlaceholder] = diaId
-          diasAtualizados.push({ ...dia, id: diaId })
-
-          await supabase.from('event_day_attractions').delete().eq('event_day_id', diaId)
-          const atracoes = dia.attractions.filter(a => a.name.trim())
-          if (atracoes.length > 0) {
-            await supabase.from('event_day_attractions').insert(
-              atracoes.map((a, i) => ({
-                event_day_id:   diaId,
-                name:           a.name.trim(),
-                description:    a.description || null,
-                order_index:    i,
-                scheduled_time: a.scheduled_time || null,
-                image_url:      a.image_url || null,
-              }))
-            )
-          }
-        }
-        setDias(diasAtualizados)
+        const idPorDayNumber = new Map(data.dias.map(d => [d.dayNumber, d.id]))
+        setDias(prev => prev.map(d => idPorDayNumber.has(d.day_number) ? { ...d, id: idPorDayNumber.get(d.day_number)! } : d))
       }
-
-      for (let i = 0; i < ingressos.length; i++) {
-        const t = ingressos[i]
-        if (!t.name.trim()) continue
-        const eventDayIdReal = t.event_day_id
-          ? (idPlaceholderParaReal[t.event_day_id] ?? t.event_day_id)
-          : null
-        const payload = {
-          event_id:     eventoId,
-          event_day_id: eventDayIdReal,
-          name:         t.name.trim(),
-          description:  t.description || null,
-          price:        t.price,
-          quantity:     t.quantity,
-          order_index:  i,
+      setIngressos(prev => {
+        const out = [...prev]
+        for (const saved of data.ingressos) {
+          const orig = ingressosComNome[saved.index]
+          if (orig) out[orig.i] = { ...out[orig.i], id: saved.id, event_day_id: saved.eventDayId }
         }
-        if (t.id) {
-          await supabase.from('event_tickets').update(payload).eq('id', t.id)
-          if (eventDayIdReal !== t.event_day_id) {
-            setIngressos(prev => prev.map((x, xi) => xi === i ? { ...x, event_day_id: eventDayIdReal } : x))
-          }
-        } else {
-          const { data } = await supabase.from('event_tickets').insert(payload).select('id').single()
-          if (data) {
-            setIngressos(prev => prev.map((x, xi) => xi === i ? { ...x, id: data.id, event_day_id: eventDayIdReal } : x))
-          }
-        }
-      }
+        return out
+      })
 
       if (destino) {
         router.push(destino)
@@ -483,19 +465,37 @@ export function IngressosClient({
       const { url } = await res.json()
       updateDia(dayNumber, { banner_url: url })
 
+      // Reenvia as atrações do dia junto — POST /dias reescreve
+      // event_day_attractions do zero a cada chamada (delete+recria); sem
+      // reenviar, um upload de banner isolado apagaria as atrações do dia.
       const diaAtual = dias.find(d => d.day_number === dayNumber)
-      if (diaAtual?.id) {
-        await supabase.from('event_days').update({ banner_url: url }).eq('id', diaAtual.id)
-      } else if (diaAtual) {
-        const { data: diaDb } = await supabase.from('event_days').upsert({
-          event_id:   eventoId,
-          day_number: dayNumber,
-          date:       diaAtual.date,
-          start_time: diaAtual.start_time || null,
-          end_time:   diaAtual.end_time   || null,
-          banner_url: url,
-        }, { onConflict: 'event_id,day_number' }).select('id').single()
-        if (diaDb) updateDia(dayNumber, { id: diaDb.id })
+      if (diaAtual) {
+        const saveRes = await apiFetchAuth(`/api/eventos/${eventoId}/dias`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            dias: [{
+              id:         diaAtual.id,
+              dayNumber:  diaAtual.day_number,
+              date:       diaAtual.date,
+              startTime:  diaAtual.start_time || null,
+              endTime:    diaAtual.end_time   || null,
+              bannerUrl:  url,
+              attractions: diaAtual.attractions.filter(a => a.name.trim()).map((a, i) => ({
+                name:          a.name.trim(),
+                description:   a.description || null,
+                orderIndex:    i,
+                scheduledTime: a.scheduled_time || null,
+                imageUrl:      a.image_url || null,
+              })),
+            }],
+          }),
+        })
+        if (saveRes.ok) {
+          const data = await saveRes.json() as { dias: { dayNumber: number; id: string }[] }
+          const real = data.dias.find(d => d.dayNumber === dayNumber)
+          if (real) updateDia(dayNumber, { id: real.id })
+        }
       }
     } catch (e) {
       setErro(`Erro ao subir banner do dia: ${e instanceof Error ? e.message : 'erro desconhecido'}`)
@@ -896,7 +896,7 @@ export function IngressosClient({
                       {/* Ingressos do dia — mesmo gatilho da seção de Atrações */}
                       <SecaoBloqueavel ativo={!!dia.start_time} mensagem="Preencha a Abertura do dia primeiro">
                       <IngressosPorDia
-                        dayId={dia.id ?? `new-${dia.date}`}
+                        dayId={dia.id ?? String(dia.day_number)}
                         label={`dia ${dia.day_number}`}
                         ingressos={ingressos}
                         onUpdate={updateIngresso}

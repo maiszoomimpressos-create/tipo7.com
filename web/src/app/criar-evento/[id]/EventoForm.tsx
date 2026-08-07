@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { ArrowLeft, Loader2, Check, Lock, User, MapPin, Search, ArrowRight, ShoppingBag, CreditCard } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -153,7 +152,6 @@ function DateTimeInput24h({ value, onChange, className }: { value: string; onCha
 
 export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, permitirVendaNoCaixaPaiInicial, tipoPessoa, responsavel, inicial, perfilCidade, perfilEstado, locaisRecentes, mpConectado, pagbankConectado }: Props) {
   const router   = useRouter()
-  const supabase = createClient()
 
   // Locais já usados pelo promotor em outros eventos — sugestão imediata,
   // sem precisar digitar nada, reaproveitando o mesmo formato de sugestão
@@ -453,23 +451,24 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
 
       // Se um local do Google Places foi selecionado, upsert na tabela venues
       if (selectedPlaceId) {
-        const { data: venue } = await supabase
-          .from('venues')
-          .upsert({
-            name:            nomeLocal.trim(),
-            google_place_id: selectedPlaceId,
-            zip_code:        cep.replace(/\D/g,'')  || null,
-            street:          rua                     || null,
-            street_number:   numero                  || null,
-            neighborhood:    bairro                  || null,
-            city:            cidade                  || null,
-            state:           estado                  || null,
-            lat:             selectedLat,
-            lng:             selectedLng,
-          }, { onConflict: 'google_place_id' })
-          .select('id')
-          .single()
-        if (venue) {
+        const venueRes = await apiFetchAuth('/api/venues', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name:           nomeLocal.trim(),
+            googlePlaceId:  selectedPlaceId,
+            zipCode:        cep.replace(/\D/g, '') || null,
+            street:         rua                     || null,
+            streetNumber:   numero                  || null,
+            neighborhood:   bairro                  || null,
+            city:           cidade                  || null,
+            state:          estado                  || null,
+            lat:            selectedLat,
+            lng:            selectedLng,
+          }),
+        })
+        if (venueRes.ok) {
+          const venue = await venueRes.json() as { id: string }
           venueIdToSave = venue.id
           setVenueId(venue.id)
         }

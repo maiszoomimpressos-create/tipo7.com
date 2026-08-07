@@ -314,6 +314,24 @@ export class EventosAdminService {
     });
     if (!evento) throw new NotFoundException('Evento não encontrado');
 
+    // fee_pct só importa exibir quando fee_mode = 'comprador' (o comprador vê
+    // o preço com a taxa somada) — porte 1:1 da lógica que estava direto em
+    // evento/[id]/page.tsx: taxa própria do promotor (promotor_mp_accounts)
+    // sobrepõe a taxa padrão da plataforma (platform_settings).
+    let feePct: number | null = null;
+    if (evento.feeMode === 'comprador' && evento.organization?.ownerId) {
+      const mpAcc = await this.prisma.promotorMpAccount.findUnique({
+        where: { userId: evento.organization.ownerId },
+        select: { feePct: true },
+      });
+      if (mpAcc?.feePct) {
+        feePct = Number(mpAcc.feePct);
+      } else {
+        const setting = await this.prisma.platformSetting.findUnique({ where: { key: 'default_fee_pct' } });
+        feePct = setting?.value ? Number(setting.value) : 10;
+      }
+    }
+
     return {
       id: evento.id,
       title: evento.title,
@@ -335,6 +353,7 @@ export class EventosAdminService {
       banner_url: evento.bannerUrl,
       gallery_urls: evento.galleryUrls,
       fee_mode: evento.feeMode,
+      fee_pct: feePct,
       payment_gateway: evento.paymentGateway,
       ticket_mode: evento.ticketMode,
       package_discount_pct: evento.packageDiscountPct,
@@ -975,18 +994,72 @@ export class EventosAdminService {
 
   // Leitura pública (mesma info que já aparecia sem guarda nenhuma na
   // página pública do evento) — só a escrita (saveDias) exige dono.
+  // Filhos (Tendas): só os já PUBLICADOS aparecem aqui, mesmo filtro que
+  // evento/[id]/page.tsx aplicava direto na query da Supabase — um filho
+  // ainda em rascunho não deve aparecer como aba pro público.
   async getDias(eventoId: string) {
     const [proprio, filhosEvents] = await Promise.all([
       this.getDiasDoEvento(eventoId),
-      this.prisma.event.findMany({ where: { parentEventId: eventoId }, select: { id: true } }),
+      this.prisma.event.findMany({
+        where: { parentEventId: eventoId, status: 'publicado' },
+        orderBy: { dateStart: 'asc' },
+        select: {
+          id: true, title: true, bannerUrl: true, dateStart: true,
+          ticketMode: true, packageDiscountPct: true, feeMode: true,
+        },
+      }),
     ]);
 
-    const filhos: Record<string, { dias: unknown[]; ingressos: unknown[] }> = {};
+    const filhos: Record<
+      string,
+      {
+        title: string; banner_url: string | null; date_start: string | null;
+        ticket_mode: string | null; package_discount_pct: number | null; fee_mode: string;
+        dias: unknown[]; ingressos: unknown[];
+      }
+    > = {};
     for (const f of filhosEvents) {
-      filhos[f.id] = await this.getDiasDoEvento(f.id);
+      const diasIngressos = await this.getDiasDoEvento(f.id);
+      filhos[f.id] = {
+        title: f.title ?? 'Atração',
+        banner_url: f.bannerUrl,
+        date_start: f.dateStart ? f.dateStart.toISOString() : null,
+        ticket_mode: f.ticketMode,
+        package_discount_pct: f.packageDiscountPct,
+        fee_mode: f.feeMode ?? 'promotor',
+        ...diasIngressos,
+      };
     }
 
     return { ...proprio, filhos };
+  }
+
+  // GET /eventos/:id/vendidos-por-ingresso (Fase 7.2-b, 07/08/2026) — só o
+  // dono vê; porte da query que evento/[id]/page.tsx fazia direto (usando
+  // service_role, já que RLS bloquearia) pra mostrar "X vendidos" no painel
+  // do organizador. Inclui também os ingressos dos filhos (Tendas), porque
+  // o painel de edição troca pro ingresso ativo conforme a aba selecionada.
+  async getVendidosPorIngresso(userId: string, eventoId: string) {
+    await this.assertOwner(userId, eventoId);
+
+    const filhos = await this.prisma.event.findMany({ where: { parentEventId: eventoId }, select: { id: true } });
+    const ticketIds = await this.prisma.eventTicket.findMany({
+      where: { eventId: { in: [eventoId, ...filhos.map((f) => f.id)] } },
+      select: { id: true },
+    });
+    if (ticketIds.length === 0) return { soldByTicket: {} };
+
+    const soldRows = await this.prisma.orderItem.findMany({
+      where: { ticketId: { in: ticketIds.map((t) => t.id) }, order: { status: 'approved' } },
+      select: { ticketId: true, quantity: true },
+    });
+
+    const soldByTicket: Record<string, number> = {};
+    for (const row of soldRows) {
+      if (!row.ticketId) continue;
+      soldByTicket[row.ticketId] = (soldByTicket[row.ticketId] ?? 0) + row.quantity;
+    }
+    return { soldByTicket };
   }
 
   async saveDias(

@@ -1,5 +1,18 @@
-import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+
+interface UpsertGoogleBody {
+  name?:           string;
+  googlePlaceId?:  string;
+  zipCode?:        string | null;
+  street?:         string | null;
+  streetNumber?:   string | null;
+  neighborhood?:   string | null;
+  city?:           string | null;
+  state?:          string | null;
+  lat?:            number | null;
+  lng?:            number | null;
+}
 
 interface TornarResponsavelBody {
   phone?: string;
@@ -14,6 +27,44 @@ interface TornarResponsavelBody {
 @Injectable()
 export class VenuesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  // POST /venues — porte de criar-evento/[id]/EventoForm.tsx (Fase 7.2-b,
+  // 07/08/2026): upsert por google_place_id, mesma semântica do
+  // .upsert({...}, {onConflict:'google_place_id'}) que rodava direto no
+  // browser contra a Supabase. Sem dono nenhum atribuído aqui — só cria/
+  // atualiza o cadastro básico do local; "tornar-se responsável" continua
+  // sendo uma ação separada e deliberada (rota acima).
+  async upsertPorGooglePlaceId(body: UpsertGoogleBody) {
+    if (!body.googlePlaceId) throw new BadRequestException('googlePlaceId obrigatório');
+    const venue = await this.prisma.venue.upsert({
+      where: { googlePlaceId: body.googlePlaceId },
+      create: {
+        name: body.name ?? '',
+        googlePlaceId: body.googlePlaceId,
+        zipCode: body.zipCode ?? null,
+        street: body.street ?? null,
+        streetNumber: body.streetNumber ?? null,
+        neighborhood: body.neighborhood ?? null,
+        city: body.city ?? null,
+        state: body.state ?? null,
+        lat: body.lat ?? null,
+        lng: body.lng ?? null,
+      },
+      update: {
+        name: body.name ?? '',
+        zipCode: body.zipCode ?? null,
+        street: body.street ?? null,
+        streetNumber: body.streetNumber ?? null,
+        neighborhood: body.neighborhood ?? null,
+        city: body.city ?? null,
+        state: body.state ?? null,
+        lat: body.lat ?? null,
+        lng: body.lng ?? null,
+      },
+      select: { id: true },
+    });
+    return { id: venue.id };
+  }
 
   // GET /venues/minhas — porte de hooks/useCodigos.ts (Fase 7.2, G6) +
   // perfil/page.tsx (Fase 7.2, G14, precisa também do nome do lugar).
