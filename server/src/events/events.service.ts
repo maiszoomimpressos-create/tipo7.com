@@ -92,7 +92,22 @@ export class EventsService {
       }
     }
 
-    return { eventos: eventos.map((e) => ({ ...e, minPrice: minPrices[e.id] ?? null })) };
+    // SearchSection.tsx/EventGrid.tsx esperam snake_case (mesmo shape que o
+    // Supabase devolvia antes) — Prisma devolve camelCase, remapeia explícito
+    // (achado real: SearchSection.tsx já chamava essa rota esperando
+    // date_start/banner_url, que nunca vinham — busca da home quebrada).
+    return {
+      eventos: eventos.map((e) => ({
+        id: e.id,
+        title: e.title,
+        date_start: e.dateStart,
+        city: e.city,
+        state: e.state,
+        banner_url: e.bannerUrl,
+        category: e.category,
+        minPrice: minPrices[e.id] ?? null,
+      })),
+    };
   }
 
   async destaque(params: { estado: string | null; lat: number | null; lng: number | null }) {

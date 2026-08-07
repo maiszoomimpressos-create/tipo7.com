@@ -27,7 +27,20 @@ export class TrabalhosService {
         id: s.id,
         status: s.status,
         created_at: s.createdAt,
-        events: s.event,
+        // TrabalhosClient.tsx espera snake_case (mesmo shape que o Supabase
+        // devolvia antes) — Prisma devolve camelCase, remapeia explícito
+        // (mesma lição já aplicada em carrossel/criar-filho na Fase 5).
+        events: s.event
+          ? {
+              id: s.event.id,
+              title: s.event.title,
+              date_start: s.event.dateStart,
+              venue_name: s.event.venueName,
+              city: s.event.city,
+              state: s.event.state,
+              banner_url: s.event.bannerUrl,
+            }
+          : null,
         event_positions: s.eventPosition
           ? { id: s.eventPosition.id, name: s.eventPosition.name, event_position_permissions: s.eventPosition.eventPositionPermissions }
           : null,

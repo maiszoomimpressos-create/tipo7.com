@@ -7,17 +7,16 @@ import { desconectarContaMP, desconectarContaPagBank } from './actions'
 
 const ACCENT = '#E8B84B'
 
-type ContaMP = {
-  mp_user_id: number
-  mp_access_token: string
-  mp_public_key: string | null
-  updated_at: string
-} | null
+// Shape de GET /mp/status e GET /pagbank/status — nunca inclui o token de
+// acesso bruto (não é pra existir do lado do client de jeito nenhum, ver
+// nota de segurança em ContasPage). connected:false quando não há conta.
+type ContaMP =
+  | { connected: false }
+  | { connected: true; mpUserId: string; updatedAt: string }
 
-type ContaPagBank = {
-  pagbank_account_id: string
-  updated_at: string
-} | null
+type ContaPagBank =
+  | { connected: false }
+  | { connected: true; accountId: string; updatedAt: string }
 
 type Tarifas = {
   platformFeePct: string
@@ -86,8 +85,8 @@ export function ContasClient({ contaAtual, contaPagBankAtual, tarifas }: Props) 
     })
   }
 
-  const conectado       = !!contaAtual
-  const pagbankConectado = !!contaPagBankAtual
+  const conectado        = contaAtual.connected
+  const pagbankConectado = contaPagBankAtual.connected
 
   const metodos = [
     { label: 'Pix',               valor: tarifas.pctPix        },
@@ -146,13 +145,13 @@ export function ContasClient({ contaAtual, contaPagBankAtual, tarifas }: Props) 
 
         {/* Corpo */}
         <div className="px-6 py-5">
-          {conectado ? (
+          {contaAtual.connected ? (
             <>
               <p className="text-[#555] text-sm mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Conta conectada — ID <span className="text-[#888]">{contaAtual.mp_user_id}</span>
+                Conta conectada — ID <span className="text-[#888]">{contaAtual.mpUserId}</span>
               </p>
               <p className="text-[#3a3a3a] text-xs mb-5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Atualizado em {new Date(contaAtual.updated_at).toLocaleDateString('pt-BR')}
+                Atualizado em {new Date(contaAtual.updatedAt).toLocaleDateString('pt-BR')}
               </p>
               <div className="flex gap-3">
                 <a
@@ -223,13 +222,13 @@ export function ContasClient({ contaAtual, contaPagBankAtual, tarifas }: Props) 
 
         {/* Corpo */}
         <div className="px-6 py-5">
-          {pagbankConectado ? (
+          {contaPagBankAtual.connected ? (
             <>
               <p className="text-[#555] text-sm mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Conta conectada — ID <span className="text-[#888]">{contaPagBankAtual.pagbank_account_id}</span>
+                Conta conectada — ID <span className="text-[#888]">{contaPagBankAtual.accountId}</span>
               </p>
               <p className="text-[#3a3a3a] text-xs mb-5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Atualizado em {new Date(contaPagBankAtual.updated_at).toLocaleDateString('pt-BR')}
+                Atualizado em {new Date(contaPagBankAtual.updatedAt).toLocaleDateString('pt-BR')}
               </p>
               <div className="flex gap-3">
                 <a

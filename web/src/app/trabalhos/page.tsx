@@ -1,5 +1,5 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { TrabalhosClient } from './TrabalhosClient'
@@ -8,24 +8,8 @@ export default async function TrabalhosPage() {
   const user = await getAuthUser()
   if (!user) redirect('/auth?next=/trabalhos')
 
-  const admin = createServiceClient()
-
-  const { data: staff } = await admin
-    .from('event_staff')
-    .select(`
-      id, status, created_at,
-      events:event_id (
-        id, title, date_start, venue_name, city, state, banner_url
-      ),
-      event_positions:event_position_id (
-        id, name,
-        event_position_permissions ( permission )
-      ),
-      convidado_por:invited_by ( full_name )
-    `)
-    .eq('user_id', user.id)
-    .in('status', ['pending', 'active'])
-    .order('created_at', { ascending: false })
+  const res = await apiFetchServer('/api/trabalhos')
+  const { staff } = res.ok ? await res.json() as { staff: unknown[] } : { staff: [] as unknown[] }
 
   return (
     <div className="min-h-dvh bg-[#070707]">
@@ -41,7 +25,7 @@ export default async function TrabalhosPage() {
         </div>
 
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        <TrabalhosClient registros={(staff ?? []) as any} />
+        <TrabalhosClient registros={staff as any} />
       </main>
     </div>
   )

@@ -1,5 +1,5 @@
 import 'server-only'
-import { cookies } from 'next/headers'
+import { cookies, headers as nextHeaders } from 'next/headers'
 
 // Fetch autenticado pro NestJS a partir de Server Components/Server Actions
 // (apiFetchAuth, em lib/apiFetch.ts, é 'use client' e não serve aqui — é
@@ -19,6 +19,16 @@ export async function apiFetchServer(path: string, init: RequestInit = {}): Prom
 
   const headers = new Headers(init.headers)
   if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  // Propaga o IP real do visitante pro NestJS — sem isso, todo SSR chamado
+  // daqui (ex: home pública) chegaria no rate-limiter do backend com o IP
+  // interno do container `web`, não o do visitante, e todos os visitantes
+  // acabariam dividindo o mesmo balde de rate-limit (achado real revisando
+  // o porte de EventGrid.tsx pra GET /eventos/buscar, que tem limite de
+  // 20 req/min por IP — sem isso a home cairia sozinha sob tráfego real).
+  const reqHeaders = await nextHeaders()
+  const forwardedFor = reqHeaders.get('x-forwarded-for') ?? reqHeaders.get('x-real-ip')
+  if (forwardedFor) headers.set('x-forwarded-for', forwardedFor)
 
   // Aceita tanto '/api/eventos/123' (caminho público que o browser vê)
   // quanto '/eventos/123' (já sem o prefixo) — sempre bate direto no

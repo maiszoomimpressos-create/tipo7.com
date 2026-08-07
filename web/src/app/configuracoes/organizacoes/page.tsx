@@ -3,7 +3,6 @@
 // cada cidade). Movido pra dentro de "Configurar" no sidebar do promotor
 // (antes só existia escondido dentro de /perfil) — é aqui que quem
 // trabalha no dia a dia (/minha-area, /criar-evento) espera encontrar.
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
 import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect }       from 'next/navigation'
@@ -18,29 +17,28 @@ export default async function OrganizacoesPage() {
   const profileRes = await apiFetchServer('/api/profile')
   const profile = profileRes.ok ? await profileRes.json() as { full_name: string | null } : null
 
-  const admin = createServiceClient()
-  const { data: orgAdminRows } = await admin
-    .from('organization_admins')
-    .select(`
-      role, participacao, percentual, status,
-      organizations (id, codigo, name, cnpj, nome_fantasia, logo_url,
-        city, state, street, street_number, neighborhood, zip_code, complement, phone, nicho, capacity)
-    `)
-    .eq('user_id', user.id)
-    .neq('status', 'removido')
-    .order('created_at')
+  const orgsRes = await apiFetchServer('/api/organizations')
+  const { organizacoes: orgsRaw } = orgsRes.ok
+    ? await orgsRes.json() as { organizacoes: Array<{
+        id: string; codigo: string | null; name: string; cnpj: string | null
+        nomeFantasia: string | null; logoUrl: string | null
+        city: string | null; state: string | null; street: string | null
+        streetNumber: string | null; neighborhood: string | null; zipCode: string | null
+        complement: string | null; phone: string | null; nicho: string | null; capacity: number | null
+        role: string; participacao: 'integral' | 'socio'; percentual: number | null
+        status: 'ativo' | 'convidado'
+      }> }
+    : { organizacoes: [] }
 
-  const organizacoes: OrganizacaoItem[] = (orgAdminRows ?? []).flatMap(r => {
-    const org = Array.isArray(r.organizations) ? r.organizations[0] : r.organizations
-    if (!org) return []
-    return [{
-      ...org,
-      role:         r.role as string,
-      participacao: r.participacao as 'integral' | 'socio',
-      percentual:   r.percentual as number | null,
-      status:       r.status as 'ativo' | 'convidado',
-    }]
-  })
+  // Remapeia camelCase (Prisma) pra snake_case (shape que PromotorForm já espera)
+  const organizacoes: OrganizacaoItem[] = orgsRaw.map(org => ({
+    id: org.id, codigo: org.codigo, name: org.name, cnpj: org.cnpj,
+    nome_fantasia: org.nomeFantasia, logo_url: org.logoUrl,
+    city: org.city, state: org.state, street: org.street,
+    street_number: org.streetNumber, neighborhood: org.neighborhood, zip_code: org.zipCode,
+    complement: org.complement, phone: org.phone, nicho: org.nicho, capacity: org.capacity,
+    role: org.role, participacao: org.participacao, percentual: org.percentual, status: org.status,
+  }))
 
   return (
     <div className="min-h-dvh bg-[#070707] flex flex-col">

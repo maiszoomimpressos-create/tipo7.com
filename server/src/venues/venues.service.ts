@@ -15,13 +15,14 @@ interface TornarResponsavelBody {
 export class VenuesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // GET /venues/minhas — porte de hooks/useCodigos.ts (Fase 7.2, G6).
+  // GET /venues/minhas — porte de hooks/useCodigos.ts (Fase 7.2, G6) +
+  // perfil/page.tsx (Fase 7.2, G14, precisa também do nome do lugar).
   async listarMinhas(userId: string) {
     const admins = await this.prisma.venueAdmin.findMany({
       where: { userId, status: 'ativo' },
-      select: { venue: { select: { codigo: true } } },
+      select: { venue: { select: { codigo: true, name: true } } },
     });
-    return { venues: admins.map((a) => ({ codigo: a.venue.codigo })) };
+    return { venues: admins.map((a) => ({ codigo: a.venue.codigo, name: a.venue.name })) };
   }
 
   // POST /venues/:id/tornar-responsavel — marca o usuário logado como

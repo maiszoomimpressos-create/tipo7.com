@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { MapPin, Calendar, ImageIcon } from 'lucide-react'
 
 const ACCENT_COLORS = ['#a855f7','#f97316','#E8B84B','#ec4899','#22c55e','#06b6d4','#eab308']
@@ -92,31 +92,13 @@ function EventCard({ evento, color }: { evento: EventoItem; color: string }) {
 // ─── Grid principal (server component) ───────────────────────────────────────
 
 export async function EventGrid() {
-  const supabase = await createClient()
-
-  // Eventos publicados futuros — até 6
-  const { data: eventos } = await supabase
-    .from('events')
-    .select('id, title, date_start, city, state, banner_url')
-    .eq('status', 'publicado')
-    .gte('date_start', new Date().toISOString())
-    .order('date_start', { ascending: true })
-    .limit(6)
+  // Eventos publicados futuros — até 6, mesmo filtro/ordenação que a busca
+  // já usava direto no Supabase (GET /eventos/buscar já faz status='publicado'
+  // + date_start >= agora + minPrice calculado numa query só).
+  const res = await apiFetchServer('/api/eventos/buscar?limit=6')
+  const { eventos } = res.ok ? await res.json() as { eventos: EventoItem[] } : { eventos: [] as EventoItem[] }
 
   if (!eventos || eventos.length === 0) return null
-
-  // Preço mínimo por evento (uma query só para todos os ids)
-  const ids = eventos.map(e => e.id)
-  const { data: tickets } = await supabase
-    .from('event_tickets')
-    .select('event_id, price')
-    .in('event_id', ids)
-
-  const minPrices: Record<string, number | null> = Object.fromEntries(ids.map(id => [id, null]))
-  tickets?.forEach(t => {
-    const atual = minPrices[t.event_id]
-    if (atual === null || t.price < atual) minPrices[t.event_id] = t.price
-  })
 
   return (
     <section className="px-4 pb-16 max-w-6xl mx-auto mt-10">
@@ -148,7 +130,7 @@ export async function EventGrid() {
         {eventos.map((ev, i) => (
           <EventCard
             key={ev.id}
-            evento={{ ...ev, minPrice: minPrices[ev.id] ?? null }}
+            evento={ev}
             color={ACCENT_COLORS[i % ACCENT_COLORS.length]}
           />
         ))}

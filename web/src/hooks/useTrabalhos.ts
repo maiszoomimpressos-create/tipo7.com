@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface TrabalhosStatus {
@@ -11,7 +11,6 @@ interface TrabalhosStatus {
 
 export function useTrabalhos(): TrabalhosStatus {
   const { user } = useAuth()
-  const supabase = createClient()
 
   const [pendentes,  setPendentes]  = useState(0)
   const [carregando, setCarregando] = useState(true)
@@ -19,13 +18,10 @@ export function useTrabalhos(): TrabalhosStatus {
   useEffect(() => {
     if (!user) { setCarregando(false); return }
 
-    supabase
-      .from('event_staff')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .eq('status', 'pending')
-      .then(({ count }) => {
-        setPendentes(count ?? 0)
+    apiFetchAuth('/api/trabalhos')
+      .then(res => res.ok ? res.json() : { staff: [] })
+      .then((data: { staff: { status: string }[] }) => {
+        setPendentes((data.staff ?? []).filter(s => s.status === 'pending').length)
         setCarregando(false)
       })
   }, [user])

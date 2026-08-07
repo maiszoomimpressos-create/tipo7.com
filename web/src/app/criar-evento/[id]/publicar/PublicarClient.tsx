@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import {
   ArrowLeft, CheckCircle2, XCircle, Loader2, Rocket,
@@ -104,7 +103,6 @@ function CheckItem({ ok, label, sub, href, eventoId }: {
 
 export function PublicarClient({ eventoId, statusAtual, gateway, gatewayConectado, resumo, dias, ingressos }: Props) {
   const router   = useRouter()
-  const supabase = createClient()
 
   const [publishing,             setPublishing]             = useState(false)
   const [erro,                   setErro]                   = useState<string | null>(null)
@@ -144,31 +142,30 @@ export function PublicarClient({ eventoId, statusAtual, gateway, gatewayConectad
     }
   }
 
+  // Busca o atributo "Estacionamento" (por nome, não tem rota de busca por
+  // nome — pega a lista inteira de atributos disponíveis + valores já
+  // marcados neste evento e filtra no client) e se já está configurado.
+  const buscarAtributoEstacionamento = async () => {
+    const res = await apiFetchAuth(`/api/eventos/${eventoId}/atributos`)
+    if (!res.ok) return { id: null as string | null, jaConfigurado: false }
+    const data = await res.json() as { available: { id: string; name: string }[]; values: { attribute_id: string }[] }
+    const attr = data.available.find(a => a.name.toLowerCase().includes('estacionamento'))
+    if (!attr) return { id: null, jaConfigurado: false }
+    const jaConfigurado = data.values.some(v => v.attribute_id === attr.id)
+    return { id: attr.id, jaConfigurado }
+  }
+
   // ── Abre o modal ou pula direto se estacionamento já configurado ──
   const handlePublicar = async () => {
     if (!podePubilcar || !responsabilidadeAceita) return
 
     // Verifica se o organizador já marcou estacionamento no painel de estrutura
-    const { data: attrPark } = await supabase
-      .from('event_attributes')
-      .select('id')
-      .ilike('name', '%estacionamento%')
-      .eq('active', true)
-      .maybeSingle()
+    const { jaConfigurado } = await buscarAtributoEstacionamento()
 
-    if (attrPark?.id) {
-      const { data: jaConfigurado } = await supabase
-        .from('event_attribute_values')
-        .select('attribute_id')
-        .eq('event_id', eventoId)
-        .eq('attribute_id', attrPark.id)
-        .maybeSingle()
-
-      if (jaConfigurado) {
-        // Estacionamento já está marcado — publica direto sem modal
-        await publicarEvento()
-        return
-      }
+    if (jaConfigurado) {
+      // Estacionamento já está marcado — publica direto sem modal
+      await publicarEvento()
+      return
     }
 
     setEtapaEst('pergunta')
@@ -180,22 +177,16 @@ export function PublicarClient({ eventoId, statusAtual, gateway, gatewayConectad
     if (opts.tem) {
       setPublishing(true); setErro(null)
       try {
-        const { data: attr } = await supabase
-          .from('event_attributes')
-          .select('id')
-          .ilike('name', '%estacionamento%')
-          .eq('active', true)
-          .maybeSingle()
-        if (attr?.id) {
+        const { id: attrId } = await buscarAtributoEstacionamento()
+        if (attrId) {
           const valueJson = opts.tipo === 'pago'
             ? { parking_type: 'pago', spots: opts.vagas ?? null, price_per_spot: opts.valor ?? null }
             : { parking_type: 'gratuito' }
-          await supabase
-            .from('event_attribute_values')
-            .upsert(
-              { event_id: eventoId, attribute_id: attr.id, value_json: valueJson },
-              { onConflict: 'event_id,attribute_id' }
-            )
+          const res = await apiFetchAuth(`/api/eventos/${eventoId}/atributos/${attrId}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ valueJson }),
+          })
+          if (!res.ok) throw new Error('Falha ao salvar estacionamento')
         }
       } catch {
         setErro('Erro ao salvar estacionamento. Tente novamente.')

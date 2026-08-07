@@ -1,6 +1,5 @@
 // Página de perfil do usuário — busca dados do banco e exibe formulário editável
 // Rota protegida: o proxy redireciona para /auth se não estiver logado
-import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
 import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect }      from 'next/navigation'
@@ -10,8 +9,6 @@ import { PerfilBanner }  from './PerfilBanner'
 import { PerfilTabs }    from './PerfilTabs'
 
 export default async function PerfilPage() {
-  const supabase = await createClient()
-
   // Busca o usuário logado (garantido pelo proxy, mas verificamos por segurança)
   const user = await getAuthUser()
   if (!user) redirect('/auth')
@@ -56,44 +53,39 @@ export default async function PerfilPage() {
   // Busca todas as organizações que o usuário administra — dono integral,
   // sócio, ou convite pendente (organization_admins é a fonte única desde
   // que passamos a permitir mais de uma organização por pessoa, ex: a
-  // mesma marca "Caldeirão" com CNPJ próprio em cada cidade). Precisa de
-  // service role porque um convite pendente ainda não passa na RLS de
-  // organizations (só libera leitura pra quem já está 'ativo').
-  const admin = createServiceClient()
-  const { data: orgAdminRows } = await admin
-    .from('organization_admins')
-    .select(`
-      role, participacao, percentual, status,
-      organizations (id, codigo, name, cnpj, nome_fantasia, logo_url,
-        city, state, street, street_number, neighborhood, zip_code, complement, phone, nicho, capacity)
-    `)
-    .eq('user_id', user.id)
-    .neq('status', 'removido')
-    .order('created_at')
+  // mesma marca "Caldeirão" com CNPJ próprio em cada cidade). GET /organizations
+  // já resolve isso (inclusive convite pendente) do lado do NestJS.
+  const orgsRes = await apiFetchServer('/api/organizations')
+  const { organizacoes: orgsRaw } = orgsRes.ok
+    ? await orgsRes.json() as { organizacoes: Array<{
+        id: string; codigo: string | null; name: string; cnpj: string | null
+        nomeFantasia: string | null; logoUrl: string | null
+        city: string | null; state: string | null; street: string | null
+        streetNumber: string | null; neighborhood: string | null; zipCode: string | null
+        complement: string | null; phone: string | null; nicho: string | null; capacity: number | null
+        role: string; participacao: 'integral' | 'socio'; percentual: number | null
+        status: 'ativo' | 'convidado'
+      }> }
+    : { organizacoes: [] }
 
-  const organizacoes = (orgAdminRows ?? []).flatMap(r => {
-    const org = Array.isArray(r.organizations) ? r.organizations[0] : r.organizations
-    if (!org) return []
-    return [{
-      ...org,
-      role:         r.role as string,
-      participacao: r.participacao as 'integral' | 'socio',
-      percentual:   r.percentual as number | null,
-      status:       r.status as 'ativo' | 'convidado',
-    }]
-  })
+  // Remapeia camelCase (Prisma) pra snake_case (shape que PerfilTabs/PromotorForm já esperam)
+  const organizacoes = orgsRaw.map(org => ({
+    id: org.id, codigo: org.codigo, name: org.name, cnpj: org.cnpj,
+    nome_fantasia: org.nomeFantasia, logo_url: org.logoUrl,
+    city: org.city, state: org.state, street: org.street,
+    street_number: org.streetNumber, neighborhood: org.neighborhood, zip_code: org.zipCode,
+    complement: org.complement, phone: org.phone, nicho: org.nicho, capacity: org.capacity,
+    role: org.role, participacao: org.participacao, percentual: org.percentual, status: org.status,
+  }))
   const orgs = organizacoes.filter(o => o.status === 'ativo')
 
-  // Busca os lugares que o usuário administra (venue_admins) — "estabelecimento"
-  // não é mais uma organização, é um venue com um responsável atribuído.
-  const { data: venueAdminsData } = await supabase
-    .from('venue_admins')
-    .select('venues ( codigo, name )')
-    .eq('user_id', user.id)
-    .eq('status', 'ativo')
-  const lugaresAdministrados = (venueAdminsData ?? [])
-    .map(va => Array.isArray(va.venues) ? va.venues[0] : va.venues)
-    .filter((v): v is { codigo: string | null; name: string } => !!v?.codigo)
+  // Busca os lugares que o usuário administra — "estabelecimento" não é
+  // mais uma organização, é um venue com um responsável atribuído.
+  const venuesRes = await apiFetchServer('/api/venues/minhas')
+  const { venues: venuesRaw } = venuesRes.ok
+    ? await venuesRes.json() as { venues: { codigo: string | null; name: string }[] }
+    : { venues: [] as { codigo: string | null; name: string }[] }
+  const lugaresAdministrados = venuesRaw.filter((v): v is { codigo: string; name: string } => !!v.codigo)
 
   // Pega a inicial do nome ou email para o avatar placeholder
   const inicialAvatar = (profile?.full_name ?? user.email ?? '?').charAt(0).toUpperCase()

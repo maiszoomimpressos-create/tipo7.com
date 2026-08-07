@@ -18,20 +18,19 @@ export default async function ContasPage() {
 
   if (!orgs || orgs.length === 0) redirect('/criar-evento')
 
-  const [{ data: contaMP }, { data: contaPagBank }, settingsRes] = await Promise.all([
-    supabase
-      .from('promotor_mp_accounts')
-      .select('mp_user_id, mp_access_token, mp_public_key, updated_at')
-      .eq('user_id', user.id)
-      .maybeSingle(),
-    supabase
-      .from('promotor_pagbank_accounts')
-      .select('pagbank_account_id, updated_at')
-      .eq('user_id', user.id)
-      .maybeSingle(),
+  // Nunca buscar mp_access_token/mp_public_key aqui — GET /mp/status e
+  // GET /pagbank/status já nunca devolvem o token bruto, de propósito
+  // (achado de segurança real na Fase 7.2, G14: o objeto cru do Supabase
+  // ia direto pro Client Component, vazando o token de acesso da conta
+  // Mercado Pago do promotor no payload RSC que chega no navegador).
+  const [mpRes, pagbankRes, settingsRes] = await Promise.all([
+    apiFetchServer('/api/mp/status'),
+    apiFetchServer('/api/pagbank/status'),
     apiFetchServer('/api/platform-settings/public'),
   ])
 
+  const contaMP        = mpRes.ok      ? await mpRes.json()      : { connected: false }
+  const contaPagBank   = pagbankRes.ok ? await pagbankRes.json() : { connected: false }
   const s: Record<string, string> = settingsRes.ok ? await settingsRes.json() : {}
 
   const tarifas = {
@@ -63,7 +62,7 @@ export default async function ContasPage() {
             </p>
           </div>
 
-          <ContasClient contaAtual={contaMP ?? null} contaPagBankAtual={contaPagBank ?? null} tarifas={tarifas} />
+          <ContasClient contaAtual={contaMP} contaPagBankAtual={contaPagBank} tarifas={tarifas} />
 
         </main>
       </PromoterLayout>

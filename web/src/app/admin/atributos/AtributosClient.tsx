@@ -6,7 +6,7 @@ import {
   Baby, HeartPulse, Cigarette, Camera, Tag,
   Plus, Loader2, Check, Trash2, Eye, EyeOff, ChevronUp, ChevronDown,
 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import type { LucideIcon } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
@@ -57,18 +57,17 @@ export function AtributosClient({ atributos: initialAtributos }: Props) {
   async function handleCriar() {
     if (!novoNome.trim()) { setErroForm('Informe o nome do atributo'); return }
     setCriando(true); setErroForm(null)
-    const supabase = createClient()
-    const nextOrder = (atributos.at(-1)?.order_index ?? 0) + 1
-    const { data, error } = await supabase
-      .from('event_attributes')
-      .insert({ name: novoNome.trim(), icon: novoIcone, order_index: nextOrder })
-      .select('id, name, icon, active, order_index')
-      .single()
+    const res = await apiFetchAuth('/api/admin/atributos', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nome: novoNome.trim(), icone: novoIcone }),
+    })
+    const data = res.ok ? await res.json() as { id: string } : null
 
-    if (error || !data) {
+    if (!data) {
       setErroForm('Erro ao criar atributo. Verifique suas permissões.')
     } else {
-      setAtributos(prev => [...prev, data as Atributo])
+      const nextOrder = (atributos.at(-1)?.order_index ?? 0) + 1
+      setAtributos(prev => [...prev, { id: data.id, name: novoNome.trim(), icon: novoIcone, active: true, order_index: nextOrder }])
       setNovoNome(''); setNovoIcone('Tag'); setShowForm(false)
     }
     setCriando(false)
@@ -76,13 +75,12 @@ export function AtributosClient({ atributos: initialAtributos }: Props) {
 
   async function handleToggleAtivo(attr: Atributo) {
     setToggling(attr.id)
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('event_attributes')
-      .update({ active: !attr.active })
-      .eq('id', attr.id)
+    const res = await apiFetchAuth(`/api/admin/atributos/${attr.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: !attr.active }),
+    })
 
-    if (!error) {
+    if (res.ok) {
       setAtributos(prev => prev.map(a => a.id === attr.id ? { ...a, active: !a.active } : a))
     }
     setToggling(null)
@@ -90,9 +88,8 @@ export function AtributosClient({ atributos: initialAtributos }: Props) {
 
   async function handleExcluir(id: string) {
     setExcluindo(id); setConfirmDel(null)
-    const supabase = createClient()
-    const { error } = await supabase.from('event_attributes').delete().eq('id', id)
-    if (!error) {
+    const res = await apiFetchAuth(`/api/admin/atributos/${id}`, { method: 'DELETE' })
+    if (res.ok) {
       setAtributos(prev => prev.filter(a => a.id !== id))
     }
     setExcluindo(null)
@@ -107,12 +104,17 @@ export function AtributosClient({ atributos: initialAtributos }: Props) {
     setReordering(id)
     const atual = atributos[idx]
     const viz   = atributos[vizIdx]
-    const supabase = createClient()
 
     // Troca os order_index dos dois
     await Promise.all([
-      supabase.from('event_attributes').update({ order_index: viz.order_index  }).eq('id', atual.id),
-      supabase.from('event_attributes').update({ order_index: atual.order_index }).eq('id', viz.id),
+      apiFetchAuth(`/api/admin/atributos/${atual.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIndex: viz.order_index }),
+      }),
+      apiFetchAuth(`/api/admin/atributos/${viz.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIndex: atual.order_index }),
+      }),
     ])
 
     setAtributos(prev => {

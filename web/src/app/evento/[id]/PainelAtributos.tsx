@@ -6,7 +6,7 @@ import {
   Shield, Car, UtensilsCrossed, Beer, Accessibility, Wifi,
   Baby, HeartPulse, Cigarette, Camera, Tag, Loader2, Check,
 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { apiFetchAuth } from '@/lib/apiFetch'
 import type { LucideIcon } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
@@ -37,38 +37,29 @@ export function PainelAtributos({ eventoId }: Props) {
 
   // Carrega lista global de atributos e quais estão ativos para este evento
   useEffect(() => {
-    const supabase = createClient()
-    Promise.all([
-      supabase.from('event_attributes').select('id, name, icon, order_index').eq('active', true).order('order_index'),
-      supabase.from('event_attribute_values').select('attribute_id').eq('event_id', eventoId),
-    ]).then(([{ data: attrs }, { data: vals }]) => {
-      setAttributes(attrs ?? [])
-      setActive(new Set((vals ?? []).map(v => v.attribute_id)))
-      setLoading(false)
-    })
+    apiFetchAuth(`/api/eventos/${eventoId}/atributos`)
+      .then(res => res.ok ? res.json() : { available: [], values: [] })
+      .then((data: { available: Attribute[]; values: { attribute_id: string }[] }) => {
+        setAttributes(data.available ?? [])
+        setActive(new Set((data.values ?? []).map(v => v.attribute_id)))
+        setLoading(false)
+      })
   }, [eventoId])
 
   async function toggle(attributeId: string) {
     setToggling(attributeId)
-    const supabase = createClient()
     const isActive = active.has(attributeId)
 
     if (isActive) {
       // Remove o atributo do evento
-      await supabase
-        .from('event_attribute_values')
-        .delete()
-        .eq('event_id', eventoId)
-        .eq('attribute_id', attributeId)
+      await apiFetchAuth(`/api/eventos/${eventoId}/atributos/${attributeId}`, { method: 'DELETE' })
       setActive(prev => { const next = new Set(prev); next.delete(attributeId); return next })
     } else {
-      // Ativa o atributo — upsert ignorando duplicatas preserva value_json existente
-      await supabase
-        .from('event_attribute_values')
-        .upsert(
-          { event_id: eventoId, attribute_id: attributeId },
-          { onConflict: 'event_id,attribute_id', ignoreDuplicates: true }
-        )
+      // Ativa o atributo — upsert sem value_json preserva o que já existia (mesma
+      // semântica do ignoreDuplicates original: PUT sem body.valueJson não sobrescreve)
+      await apiFetchAuth(`/api/eventos/${eventoId}/atributos/${attributeId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      })
       setActive(prev => new Set([...prev, attributeId]))
     }
     setToggling(null)
