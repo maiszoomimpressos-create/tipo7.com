@@ -250,6 +250,31 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
     return (
       <div className="min-h-dvh bg-[#070707] flex flex-col">
         <Header eventoTitle={eventoTitle} eventoId={eventoId} />
+
+        {/* Achado real (07/08/2026): quando alguém pausa as vendas ao
+             começar "Configurar e abrir caixas" e abandona no meio (sem
+             confirmar nem fechar), o evento ficava com vendas_online_pausadas
+             travado em true pra sempre — o botão "Retomar" só existia na
+             tela de caixas já abertos, então sem nenhum caixa aberto não
+             tinha como destravar pela UI. */}
+        {pausado && (
+          <div className="px-6 py-3 flex items-center justify-between gap-3"
+               style={{ background: 'rgba(232,184,75,0.06)', borderBottom: '1px solid rgba(232,184,75,0.15)' }}>
+            <div className="flex items-center gap-2">
+              <Lock size={13} style={{ color: ACCENT }} />
+              <p className="text-[11px]" style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                Vendas online pausadas
+              </p>
+            </div>
+            <button type="button" onClick={retomar} disabled={pausando}
+              className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg"
+              style={{ background: `${ACCENT}20`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+              {pausando ? <Loader2 size={11} className="animate-spin" /> : <Unlock size={11} />}
+              Retomar
+            </button>
+          </div>
+        )}
+
         <div className="max-w-lg mx-auto w-full px-5 py-12 flex flex-col items-center gap-8 text-center">
           <div className="w-20 h-20 rounded-3xl flex items-center justify-center"
                style={{ background: `${ACCENT}12`, border: `1px solid ${ACCENT}25` }}>
