@@ -32,6 +32,8 @@ interface Props {
   pctCredito12x:  string
   notaExtra:      string
   mpCredenciais:      MpCredenciais
+  mpCredenciais2:     MpCredenciais
+  mpContaAtiva:       '1' | '2'
   pagbankCredenciais: PagBankCredenciais
   logoMercadoPago: string | null
   logoPagbank:     string | null
@@ -95,28 +97,64 @@ export function BancosClient(props: Props) {
       setUploadingLogo(null)
     }
   }
+  // Conta 1 e Conta 2 do Mercado Pago — duas contas cadastradas em paralelo,
+  // só uma "ativa" por vez (é essa que o checkout/OAuth/webhook usam de
+  // verdade, ver PlatformCredentialsService.getMpCredentials no backend).
+  // Pensado pra troca rápida se uma conta ficar indisponível (ex: bloqueio
+  // judicial) sem perder as credenciais antigas cadastradas.
   const [mpAccessToken,   setMpAccessToken]   = useState(props.mpCredenciais.accessToken)
   const [mpPublicKey,     setMpPublicKey]     = useState(props.mpCredenciais.publicKey)
   const [mpClientId,      setMpClientId]      = useState(props.mpCredenciais.clientId)
   const [mpClientSecret,  setMpClientSecret]  = useState(props.mpCredenciais.clientSecret)
   const [mpWebhookSecret, setMpWebhookSecret] = useState(props.mpCredenciais.webhookSecret)
+
+  const [mpAccessToken2,   setMpAccessToken2]   = useState(props.mpCredenciais2.accessToken)
+  const [mpPublicKey2,     setMpPublicKey2]     = useState(props.mpCredenciais2.publicKey)
+  const [mpClientId2,      setMpClientId2]      = useState(props.mpCredenciais2.clientId)
+  const [mpClientSecret2,  setMpClientSecret2]  = useState(props.mpCredenciais2.clientSecret)
+  const [mpWebhookSecret2, setMpWebhookSecret2] = useState(props.mpCredenciais2.webhookSecret)
+
+  const [mpContaSelecionada, setMpContaSelecionada] = useState<'1' | '2'>('1') // qual aba está aberta
+  const [mpContaAtiva,       setMpContaAtiva]       = useState(props.mpContaAtiva) // qual conta o sistema usa de verdade
+  const [ativando, setAtivando] = useState(false)
+
   const [credSaving, setCredSaving] = useState(false)
   const [credSaved,  setCredSaved]  = useState(false)
 
   async function salvarCredenciaisMp() {
     setCredSaving(true); setCredSaved(false)
     try {
-      await Promise.all([
-        saveCredKey('mp_access_token',   mpAccessToken.trim()),
-        saveCredKey('mp_public_key',     mpPublicKey.trim()),
-        saveCredKey('mp_client_id',      mpClientId.trim()),
-        saveCredKey('mp_client_secret',  mpClientSecret.trim()),
-        saveCredKey('mp_webhook_secret', mpWebhookSecret.trim()),
-      ])
+      if (mpContaSelecionada === '1') {
+        await Promise.all([
+          saveCredKey('mp_access_token',   mpAccessToken.trim()),
+          saveCredKey('mp_public_key',     mpPublicKey.trim()),
+          saveCredKey('mp_client_id',      mpClientId.trim()),
+          saveCredKey('mp_client_secret',  mpClientSecret.trim()),
+          saveCredKey('mp_webhook_secret', mpWebhookSecret.trim()),
+        ])
+      } else {
+        await Promise.all([
+          saveCredKey('mp_access_token_2',   mpAccessToken2.trim()),
+          saveCredKey('mp_public_key_2',     mpPublicKey2.trim()),
+          saveCredKey('mp_client_id_2',      mpClientId2.trim()),
+          saveCredKey('mp_client_secret_2',  mpClientSecret2.trim()),
+          saveCredKey('mp_webhook_secret_2', mpWebhookSecret2.trim()),
+        ])
+      }
       setCredSaved(true)
       setTimeout(() => setCredSaved(false), 2500)
     } finally {
       setCredSaving(false)
+    }
+  }
+
+  async function tornarContaAtiva(conta: '1' | '2') {
+    setAtivando(true)
+    try {
+      const res = await saveCredKey('mp_conta_ativa', conta)
+      if (res.ok) setMpContaAtiva(conta)
+    } finally {
+      setAtivando(false)
     }
   }
 
@@ -290,20 +328,14 @@ export function BancosClient(props: Props) {
             ))}
           </div>
 
-          {/* Painel Mercado Pago — já validado, credenciais controlam o checkout ao vivo */}
+          {/* Painel Mercado Pago — duas contas cadastráveis, só uma ativa por vez */}
           {gatewayAberto === 'mercadopago' && (
             <div className="rounded-2xl p-6" style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
               <div className="flex items-start justify-between gap-3 mb-1">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Credenciais Mercado Pago
-                    </p>
-                    <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                          style={{ background: '#22c55e12', color: '#4ade80', fontFamily: 'var(--font-dm-sans)' }}>
-                      <ShieldCheck size={9} /> Ativo
-                    </span>
-                  </div>
+                  <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Credenciais Mercado Pago
+                  </p>
                   <p className="text-[#444] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                     Conta própria da Tipo7 — usada como padrão do checkout e no fluxo de conexão OAuth dos promotores
                   </p>
@@ -319,14 +351,50 @@ export function BancosClient(props: Props) {
                 </button>
               </div>
 
+              {/* Sub-abas Conta 1 / Conta 2 — a badge "Ativo" mostra qual conta o
+                   sistema usa de verdade, independente de qual está aberta aqui */}
+              <div className="flex items-center gap-2 mt-4">
+                {(['1', '2'] as const).map(conta => (
+                  <button
+                    key={conta}
+                    type="button"
+                    onClick={() => setMpContaSelecionada(conta)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-all"
+                    style={{
+                      background: mpContaSelecionada === conta ? '#E8B84B10' : 'transparent',
+                      borderColor: mpContaSelecionada === conta ? '#E8B84B40' : '#222',
+                      color: mpContaSelecionada === conta ? '#fff' : '#777',
+                      fontFamily: 'var(--font-dm-sans)',
+                    }}
+                  >
+                    Conta {conta}
+                    {mpContaAtiva === conta && (
+                      <span className="flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                            style={{ background: '#22c55e12', color: '#4ade80' }}>
+                        <ShieldCheck size={8} /> Ativo
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
               <div className="flex flex-col gap-3 mt-4">
-                {([
-                  { label: 'Access Token',   value: mpAccessToken,   set: setMpAccessToken,   secreto: true,  placeholder: 'APP_USR-...' },
-                  { label: 'Public Key',     value: mpPublicKey,     set: setMpPublicKey,     secreto: false, placeholder: 'APP_USR-...' },
-                  { label: 'Client ID',      value: mpClientId,      set: setMpClientId,      secreto: false, placeholder: '1234567890123456' },
-                  { label: 'Client Secret',  value: mpClientSecret,  set: setMpClientSecret,  secreto: true,  placeholder: '' },
-                  { label: 'Webhook Secret', value: mpWebhookSecret, set: setMpWebhookSecret, secreto: true,  placeholder: '' },
-                ] as const).map(({ label, value, set, secreto, placeholder }) => (
+                {(mpContaSelecionada === '1'
+                  ? [
+                      { label: 'Access Token',   value: mpAccessToken,   set: setMpAccessToken,   secreto: true,  placeholder: 'APP_USR-...' },
+                      { label: 'Public Key',     value: mpPublicKey,     set: setMpPublicKey,     secreto: false, placeholder: 'APP_USR-...' },
+                      { label: 'Client ID',      value: mpClientId,      set: setMpClientId,      secreto: false, placeholder: '1234567890123456' },
+                      { label: 'Client Secret',  value: mpClientSecret,  set: setMpClientSecret,  secreto: true,  placeholder: '' },
+                      { label: 'Webhook Secret', value: mpWebhookSecret, set: setMpWebhookSecret, secreto: true,  placeholder: '' },
+                    ]
+                  : [
+                      { label: 'Access Token',   value: mpAccessToken2,   set: setMpAccessToken2,   secreto: true,  placeholder: 'APP_USR-...' },
+                      { label: 'Public Key',     value: mpPublicKey2,     set: setMpPublicKey2,     secreto: false, placeholder: 'APP_USR-...' },
+                      { label: 'Client ID',      value: mpClientId2,      set: setMpClientId2,      secreto: false, placeholder: '1234567890123456' },
+                      { label: 'Client Secret',  value: mpClientSecret2,  set: setMpClientSecret2,  secreto: true,  placeholder: '' },
+                      { label: 'Webhook Secret', value: mpWebhookSecret2, set: setMpWebhookSecret2, secreto: true,  placeholder: '' },
+                    ]
+                ).map(({ label, value, set, secreto, placeholder }) => (
                   <div key={label} className="flex flex-col gap-1">
                     <label className="text-[#666] text-[11px] font-medium tracking-widest uppercase" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                       {label}
@@ -344,7 +412,19 @@ export function BancosClient(props: Props) {
                 ))}
               </div>
 
-              <div className="flex justify-end mt-5">
+              <div className="flex justify-end items-center gap-2 mt-5">
+                {mpContaAtiva !== mpContaSelecionada && (
+                  <button
+                    type="button"
+                    onClick={() => tornarContaAtiva(mpContaSelecionada)}
+                    disabled={ativando}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold disabled:opacity-60 transition-all"
+                    style={{ background: '#111', border: '1px solid #333', color: '#ddd', fontFamily: 'var(--font-dm-sans)' }}
+                  >
+                    {ativando ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={13} />}
+                    Tornar Conta {mpContaSelecionada} ativa
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={salvarCredenciaisMp}

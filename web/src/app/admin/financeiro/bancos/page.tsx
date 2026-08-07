@@ -49,6 +49,14 @@ export default async function BancosPage() {
           clientSecret:  s['mp_client_secret']   ?? '',
           webhookSecret: s['mp_webhook_secret']  ?? '',
         }}
+        mpCredenciais2={{
+          accessToken:   s['mp_access_token_2']   ?? '',
+          publicKey:     s['mp_public_key_2']      ?? '',
+          clientId:      s['mp_client_id_2']       ?? '',
+          clientSecret:  s['mp_client_secret_2']   ?? '',
+          webhookSecret: s['mp_webhook_secret_2']  ?? '',
+        }}
+        mpContaAtiva={s['mp_conta_ativa'] === '2' ? '2' : '1'}
         pagbankCredenciais={{
           token:        s['pagbank_token']         ?? '',
           accountId:    s['pagbank_account_id']    ?? '',
