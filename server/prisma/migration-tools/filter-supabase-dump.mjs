@@ -36,7 +36,13 @@ const lines = src.split('\n');
 const headerRe = /^-- Name: (.+); Type: ([A-Z ]+);/;
 
 const DROP_TYPES = new Set(['POLICY', 'ROW SECURITY', 'ACL']);
-const DROP_FUNCTION_NAMES = new Set(['handle_new_user()']);
+// is_org_admin/is_org_owner: achado real (07/08/2026, migração de dados da
+// Fase 7.5) — só existiam pra uso dentro das políticas de RLS (já removidas
+// acima), chamam auth.uid() (não existe fora da Supabase). App já tem essa
+// mesma regra replicada em código (OrgAdminService) desde a Fase 7.2 — sem
+// chamador nenhum restando, confirmado via grep em server/src antes de
+// adicionar aqui.
+const DROP_FUNCTION_NAMES = new Set(['handle_new_user()', 'is_org_admin(uuid)', 'is_org_owner(uuid)']);
 const EMAIL_FUNCTIONS = new Set([
   'find_user_id_by_email(text)',
   'get_emails_by_ids(uuid[])',
@@ -96,7 +102,19 @@ for (const block of blocks) {
   outBlocks.push(text.split('\n'));
 }
 
-const out = outBlocks.map((b) => b.join('\n')).join('\n');
+// Achado real (07/08/2026): pg_dump 17 envolve o dump inteiro num par
+// \restrict <token> ... \unrestrict <token>. Quando o ÚLTIMO bloco do
+// arquivo é descartado (ex: a última POLICY antes do rodapé), o
+// \unrestrict que vinha grudado nele (sem header próprio) some junto,
+// deixando um \restrict órfão — psql recusa rodar o arquivo assim. Como
+// este é um dump de confiança (nosso próprio filtro, não entrada externa),
+// não precisa do modo restrito: remove os dois incondicionalmente.
+const out = outBlocks
+  .map((b) => b.join('\n'))
+  .join('\n')
+  .split('\n')
+  .filter((l) => !l.startsWith('\\restrict ') && !l.startsWith('\\unrestrict '))
+  .join('\n');
 writeFileSync(outPath, out, 'utf8');
 console.log(`blocos totais: ${blocks.length}, removidos: ${droppedCount}, FK reescritas: ${rewrittenFk}, funcoes de email reescritas: ${rewrittenEmailFn}`);
 console.log(`arquivo limpo salvo: ${outPath} (${out.length} chars)`);
