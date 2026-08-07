@@ -16,6 +16,13 @@ export class EstacionamentoController {
     return this.estacionamento.listEstacionamentos(user.id, id);
   }
 
+  // Fase 7.2, G7 — leitura pra tela de atendente (dono OU staff com
+  // permissão de entrada/saída), diferente da rota acima (só dono).
+  @Get('eventos/:id/estacionamentos/ativos')
+  listEstacionamentosAtivos(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.estacionamento.listEstacionamentosAtivos(user.id, id);
+  }
+
   @Post('eventos/:id/estacionamentos')
   criarEstacionamento(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
     return this.estacionamento.criarEstacionamento(user.id, id, body);

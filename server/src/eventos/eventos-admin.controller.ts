@@ -14,6 +14,16 @@ export class EventosAdminController {
     return this.eventos.getMeuAcesso(id, user.id);
   }
 
+  @Get('ingressos-resumo')
+  ingressosResumo(@Param('id') id: string) {
+    return this.eventos.getIngressosResumo(id);
+  }
+
+  @Get('dashboard')
+  dashboard(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.eventos.getDashboard(user.id, id);
+  }
+
   @Patch()
   atualizarCore(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: any) {
     return this.eventos.atualizarCore(user.id, id, body);

@@ -73,6 +73,175 @@ export class EventosAdminService {
     return { evento, isOwner, staff };
   }
 
+  // GET /eventos/:id/ingressos-resumo (Fase 7.2, G7) — tickets do evento
+  // (só o próprio, sem expandir família como o bootstrap de caixa) com
+  // quantidade vendida/disponível. Porte de trabalho/[eventoId]/page.tsx.
+  // Sem checagem de dono/staff além do guard de classe (autenticado) — a
+  // mesma info (nome/preço/disponibilidade) já é pública na página do evento.
+  async getIngressosResumo(eventoId: string) {
+    const tickets = await this.prisma.eventTicket.findMany({
+      where: { eventId: eventoId },
+      orderBy: { price: 'asc' },
+      select: { id: true, name: true, price: true, quantity: true },
+    });
+
+    const ticketIds = tickets.map((t) => t.id);
+    const vendidosPorTicket: Record<string, number> = {};
+    if (ticketIds.length > 0) {
+      const ordensAtivas = await this.prisma.order.findMany({
+        where: { eventId: eventoId, status: { notIn: ['rejected', 'cancelled'] } },
+        select: { id: true },
+      });
+      const orderIds = ordensAtivas.map((o) => o.id);
+      if (orderIds.length > 0) {
+        const itens = await this.prisma.orderItem.findMany({
+          where: { orderId: { in: orderIds }, ticketId: { in: ticketIds } },
+          select: { ticketId: true, quantity: true },
+        });
+        for (const item of itens) {
+          if (!item.ticketId) continue;
+          vendidosPorTicket[item.ticketId] = (vendidosPorTicket[item.ticketId] ?? 0) + item.quantity;
+        }
+      }
+    }
+
+    return {
+      ingressos: tickets.map((t) => {
+        const vendidos = vendidosPorTicket[t.id] ?? 0;
+        return {
+          id: t.id,
+          name: t.name ?? 'Ingresso',
+          price: Number(t.price ?? 0),
+          total: t.quantity ?? 0,
+          vendidos,
+          disponivel: Math.max(0, (t.quantity ?? 0) - vendidos),
+        };
+      }),
+    };
+  }
+
+  // GET /eventos/:id/dashboard (Fase 7.2, G7) — agregação de receita/vendas/
+  // check-ins pro dono do evento. Porte de dashboard/[eventoId]/page.tsx.
+  async getDashboard(userId: string, eventoId: string) {
+    // Distingue 404 (evento não existe) de 403 (existe, mas não é dono) —
+    // a página original faz notFound() num caso e redirect(`/evento/:id`)
+    // no outro, diferente de assertOwner (que sempre lança 403 pros dois).
+    const evento = await this.prisma.event.findUnique({
+      where: { id: eventoId },
+      select: { id: true, title: true, dateStart: true, organizationId: true },
+    });
+    if (!evento) throw new NotFoundException('Evento não encontrado');
+    if (!(await this.orgAdmin.isOrgAdmin(evento.organizationId, userId))) {
+      throw new ForbiddenException('Sem permissão');
+    }
+
+    const orders = await this.prisma.order.findMany({
+      where: { eventId: eventoId, status: 'approved' },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, total: true, createdAt: true, userId: true,
+        orderItems: {
+          select: {
+            id: true, quantity: true, unitPrice: true,
+            ticket: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    // Order não tem relação modelada pra Profile (userId é FK solta) —
+    // busca os nomes separado, mesmo padrão já usado em listarPromotores.
+    const buyerIds = [...new Set(orders.map((o) => o.userId).filter((v): v is string => !!v))];
+    const buyerNameMap: Record<string, string> = {};
+    if (buyerIds.length > 0) {
+      const perfis = await this.prisma.profile.findMany({ where: { id: { in: buyerIds } }, select: { id: true, fullName: true } });
+      for (const p of perfis) buyerNameMap[p.id] = p.fullName ?? 'Comprador';
+    }
+
+    const tickets = await this.prisma.ticket.findMany({
+      where: { orderItem: { order: { eventId: eventoId } } },
+      select: { orderItemId: true, status: true },
+    });
+    const checkInsByItem: Record<string, number> = {};
+    for (const t of tickets) {
+      if (t.status === 'used') {
+        checkInsByItem[t.orderItemId] = (checkInsByItem[t.orderItemId] ?? 0) + 1;
+      }
+    }
+
+    const tiposIngressos = await this.prisma.eventTicket.findMany({
+      where: { eventId: eventoId },
+      orderBy: { orderIndex: 'asc' },
+      select: { id: true, name: true, quantity: true },
+    });
+
+    let totalArrecadado = 0;
+    let ingressosVendidos = 0;
+    let checkInsRealizados = 0;
+    const vendasPorDiaMap: Record<string, { quantidade: number; valor: number }> = {};
+    const porTipoMap: Record<string, { vendidos: number; valor: number; checkIns: number }> = {};
+    const compradores: Array<{
+      orderId: string; buyerName: string; ticketName: string; quantity: number;
+      unitPrice: number; total: number; createdAt: Date; checkIns: number;
+    }> = [];
+
+    for (const order of orders) {
+      const buyerName = order.userId ? (buyerNameMap[order.userId] ?? 'Comprador') : 'Comprador';
+      const dateKey = order.createdAt.toISOString().slice(0, 10);
+
+      totalArrecadado += Number(order.total);
+      if (!vendasPorDiaMap[dateKey]) vendasPorDiaMap[dateKey] = { quantidade: 0, valor: 0 };
+      vendasPorDiaMap[dateKey].valor += Number(order.total);
+
+      for (const item of order.orderItems) {
+        const ticketName = item.ticket?.name ?? 'Ingresso';
+        const ticketId = item.ticket?.id ?? 'unknown';
+        const itemCheckIns = checkInsByItem[item.id] ?? 0;
+
+        ingressosVendidos += item.quantity;
+        checkInsRealizados += itemCheckIns;
+        vendasPorDiaMap[dateKey].quantidade += item.quantity;
+
+        if (!porTipoMap[ticketId]) porTipoMap[ticketId] = { vendidos: 0, valor: 0, checkIns: 0 };
+        porTipoMap[ticketId].vendidos += item.quantity;
+        porTipoMap[ticketId].valor += item.quantity * Number(item.unitPrice);
+        porTipoMap[ticketId].checkIns += itemCheckIns;
+
+        compradores.push({
+          orderId: order.id,
+          buyerName,
+          ticketName,
+          quantity: item.quantity,
+          unitPrice: Number(item.unitPrice),
+          total: item.quantity * Number(item.unitPrice),
+          createdAt: order.createdAt,
+          checkIns: itemCheckIns,
+        });
+      }
+    }
+
+    const vendasPorDia = Object.entries(vendasPorDiaMap)
+      .map(([date, v]) => ({ date, ...v }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const porTipo = tiposIngressos.map((t) => ({
+      id: t.id,
+      name: t.name ?? 'Ingresso',
+      total: t.quantity ?? 0,
+      vendidos: porTipoMap[t.id]?.vendidos ?? 0,
+      valor: porTipoMap[t.id]?.valor ?? 0,
+      checkIns: porTipoMap[t.id]?.checkIns ?? 0,
+    }));
+
+    return {
+      evento: { id: evento.id, title: evento.title ?? 'Evento', dateStart: evento.dateStart },
+      resumo: { totalArrecadado, ingressosVendidos, checkInsRealizados },
+      vendasPorDia,
+      porTipo,
+      compradores,
+    };
+  }
+
   // ==== core (criar / editar / excluir) ====
   // Porte de web/src/app/criar-evento/TipoPessoaModal.tsx (criação),
   // EventoForm.tsx/ImagensClient.tsx/EventoPageClient.tsx/PainelEventosFilhos.tsx

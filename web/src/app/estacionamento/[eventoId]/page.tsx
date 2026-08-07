@@ -1,13 +1,32 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect } from 'next/navigation'
 import { ShieldX } from 'lucide-react'
 import { GerenciadorEstacionamentos } from './GerenciadorEstacionamentos'
 import { AtendenteClient } from './AtendenteClient'
-import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ eventoId: string }>
+}
+
+interface MeuAcesso {
+  evento: { id: string; title: string | null } | null
+  isOwner: boolean
+  staff: { portaoId: string | null; permissions: string[] } | null
+}
+
+interface EstacionamentoApi {
+  id: string
+  nome: string
+  cobraModo: 'gratis' | 'fixo' | 'por_tempo'
+  precoFixo: string | null
+  precoPrimeiraHora: string | null
+  precoHoraAdicional: string | null
+  tetoDiario: string | null
+  toleranciaMinutos: number
+  controlaSaida: boolean
+  vagasTotais: number | null
+  estacionamentoPortoes: Array<{ id: string; nome: string; tipo: 'entrada' | 'saida' | 'ambos'; ativo: boolean }>
 }
 
 export default async function EstacionamentoPage({ params }: Props) {
@@ -16,64 +35,56 @@ export default async function EstacionamentoPage({ params }: Props) {
   const user = await getAuthUser()
   if (!user) redirect(`/auth?next=/estacionamento/${eventoId}`)
 
-  const admin = createServiceClient()
+  const acessoRes = await apiFetchServer(`/api/eventos/${eventoId}/meu-acesso`)
+  const acesso: MeuAcesso = acessoRes.ok
+    ? await acessoRes.json()
+    : { evento: null, isOwner: false, staff: null }
 
-  const { data: evento } = await admin
-    .from('events')
-    .select('id, title, organization_id')
-    .eq('id', eventoId)
-    .single()
+  if (!acesso.evento) return <SemPermissao mensagem="Evento não encontrado." />
 
-  if (!evento) return <SemPermissao mensagem="Evento não encontrado." />
-
-  const isOwner = await isOrgAdmin(admin, evento.organization_id, user.id)
-
-  if (isOwner) {
-    return <GerenciadorEstacionamentos eventoId={eventoId} eventoTitle={evento.title ?? 'Evento'} />
+  if (acesso.isOwner) {
+    return <GerenciadorEstacionamentos eventoId={eventoId} eventoTitle={acesso.evento.title ?? 'Evento'} />
   }
 
-  // Staff com permissão de entrada e/ou saída do estacionamento
-  const { data: staff } = await admin
-    .from('event_staff')
-    .select('id, portao_id, event_positions(event_position_permissions(permission))')
-    .eq('event_id', eventoId)
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .single()
-
-  const pos = staff?.event_positions as unknown as {
-    event_position_permissions: { permission: string }[]
-  } | null
-  const permissoes    = pos?.event_position_permissions ?? []
-  const podeEntrada   = permissoes.some(p => p.permission === 'estacionamento_entrada')
-  const podeSaida     = permissoes.some(p => p.permission === 'estacionamento_saida')
-  const portaoRestrito = staff?.portao_id ?? null
+  const permissoes = acesso.staff?.permissions ?? []
+  const podeEntrada = permissoes.includes('estacionamento_entrada')
+  const podeSaida = permissoes.includes('estacionamento_saida')
+  const portaoRestrito = acesso.staff?.portaoId ?? null
 
   if (!podeEntrada && !podeSaida) {
     return <SemPermissao mensagem="Você não tem permissão para acessar o estacionamento deste evento." />
   }
 
-  // Caixa aberto designado a este operador (se houver) — usado só na hora de cobrar
-  const { data: caixaAberto } = await admin
-    .from('caixas')
-    .select('id, nome')
-    .eq('evento_id', eventoId)
-    .eq('operador_id', user.id)
-    .eq('status', 'aberto')
-    .maybeSingle()
+  const [caixaRes, estacionamentosRes] = await Promise.all([
+    apiFetchServer(`/api/eventos/${eventoId}/meu-caixa`),
+    apiFetchServer(`/api/eventos/${eventoId}/estacionamentos/ativos`),
+  ])
 
-  const { data: estacionamentos } = await admin
-    .from('estacionamentos')
-    .select('*, estacionamento_portoes(*)')
-    .eq('event_id', eventoId)
-    .eq('ativo', true)
-    .order('created_at')
+  const caixaAberto = caixaRes.ok ? await caixaRes.json() as { id: string; nome: string } | null : null
+  const { estacionamentos: estacionamentosRaw } = estacionamentosRes.ok
+    ? await estacionamentosRes.json() as { estacionamentos: EstacionamentoApi[] }
+    : { estacionamentos: [] as EstacionamentoApi[] }
+
+  // Remapeia camelCase (Prisma) pra snake_case (shape que AtendenteClient já espera)
+  const estacionamentos = estacionamentosRaw.map(e => ({
+    id: e.id,
+    nome: e.nome,
+    cobra_modo: e.cobraModo,
+    preco_fixo: e.precoFixo !== null ? Number(e.precoFixo) : null,
+    preco_primeira_hora: e.precoPrimeiraHora !== null ? Number(e.precoPrimeiraHora) : null,
+    preco_hora_adicional: e.precoHoraAdicional !== null ? Number(e.precoHoraAdicional) : null,
+    teto_diario: e.tetoDiario !== null ? Number(e.tetoDiario) : null,
+    tolerancia_minutos: e.toleranciaMinutos,
+    controla_saida: e.controlaSaida,
+    vagas_totais: e.vagasTotais,
+    estacionamento_portoes: e.estacionamentoPortoes,
+  }))
 
   return (
     <AtendenteClient
       eventoId={eventoId}
-      eventoTitle={evento.title ?? 'Evento'}
-      estacionamentos={estacionamentos ?? []}
+      eventoTitle={acesso.evento.title ?? 'Evento'}
+      estacionamentos={estacionamentos}
       caixaId={caixaAberto?.id ?? null}
       caixaNome={caixaAberto?.nome ?? null}
       podeEntrada={podeEntrada}

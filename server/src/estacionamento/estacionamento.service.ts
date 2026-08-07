@@ -25,6 +25,23 @@ export class EstacionamentoService {
     return { estacionamentos };
   }
 
+  // GET /eventos/:id/estacionamentos/ativos — porte de
+  // estacionamento/[eventoId]/page.tsx (Fase 7.2, G7). Diferente do CRUD
+  // acima (só dono), libera também staff ativo com permissão de entrada
+  // OU saída — o atendente do portão não é dono do evento.
+  async listEstacionamentosAtivos(userId: string, eventoId: string) {
+    if (!(await this.eventPermissions.hasEventPermission(userId, eventoId, ['estacionamento_entrada', 'estacionamento_saida']))) {
+      throw new ForbiddenException('Sem permissão');
+    }
+
+    const estacionamentos = await this.prisma.estacionamento.findMany({
+      where: { eventId: eventoId, ativo: true },
+      orderBy: { createdAt: 'asc' },
+      include: { estacionamentoPortoes: true },
+    });
+    return { estacionamentos };
+  }
+
   async criarEstacionamento(userId: string, eventoId: string, body: Record<string, any>) {
     if (!(await this.eventPermissions.isEventOwner(userId, eventoId))) throw new ForbiddenException('Sem permissão');
 

@@ -19,6 +19,18 @@ export class CaixasController {
     return this.caixas.getCaixa(user.id, caixaId);
   }
 
+  // Fase 7.2, G7 — bootstrap da tela de venda (permissão mais ampla que
+  // getCaixa acima, ver comentário no service).
+  @Get('caixas/:caixaId/bootstrap')
+  getCaixaParaOperador(@CurrentUser() user: AuthenticatedUser, @Param('caixaId') caixaId: string) {
+    return this.caixas.getCaixaParaOperador(user.id, caixaId);
+  }
+
+  @Get('eventos/:id/meu-caixa')
+  meuCaixaAberto(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.caixas.getMeuCaixaAberto(user.id, id);
+  }
+
   @Post('caixas/abrir')
   abrir(@CurrentUser() user: AuthenticatedUser, @Body() body: any) {
     return this.caixas.abrir(user.id, body);

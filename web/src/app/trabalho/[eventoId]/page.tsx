@@ -1,14 +1,31 @@
-import { createServiceClient } from '@/lib/supabase/server'
-import { getAuthUser }                       from '@/lib/auth/server'
-import { redirect }                          from 'next/navigation'
-import { ShieldX }                           from 'lucide-react'
-import { Header }                            from '@/components/layout/Header'
-import { TrabalhoClient }                    from './TrabalhoClient'
-import { isOrgAdmin }                        from '@/lib/orgAdmin'
+import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
+import { redirect } from 'next/navigation'
+import { ShieldX } from 'lucide-react'
+import { Header } from '@/components/layout/Header'
+import { TrabalhoClient } from './TrabalhoClient'
 
 interface Props {
   params: Promise<{ eventoId: string }>
 }
+
+interface MeuAcesso {
+  evento: {
+    id: string; title: string | null; dateStart: string | null
+    venueName: string | null; city: string | null; state: string | null; bannerUrl: string | null
+  } | null
+  isOwner: boolean
+  staff: { id: string; positionName: string | null; permissions: string[] } | null
+}
+
+interface IngressoResumo {
+  id: string; name: string; price: number; total: number; vendidos: number; disponivel: number
+}
+
+const PERMISSOES_DONO = [
+  'validar_ingresso', 'vender_ingresso', 'ver_lista_convidados', 'ver_relatorios',
+  'gerenciar_checkin', 'gerenciar_equipe', 'estacionamento_entrada', 'estacionamento_saida',
+]
 
 export default async function TrabalhoPage({ params }: Props) {
   const { eventoId } = await params
@@ -16,115 +33,42 @@ export default async function TrabalhoPage({ params }: Props) {
   const user = await getAuthUser()
   if (!user) redirect(`/auth?next=/trabalho/${eventoId}`)
 
-  const admin = createServiceClient()
+  const [acessoRes, caixaRes, ingressosRes] = await Promise.all([
+    apiFetchServer(`/api/eventos/${eventoId}/meu-acesso`),
+    apiFetchServer(`/api/eventos/${eventoId}/meu-caixa`),
+    apiFetchServer(`/api/eventos/${eventoId}/ingressos-resumo`),
+  ])
 
-  // Busca o vínculo do usuário com o evento
-  const { data: staff } = await admin
-    .from('event_staff')
-    .select(`
-      id, status,
-      event_positions:event_position_id (
-        id, name,
-        event_position_permissions ( permission )
-      )
-    `)
-    .eq('event_id', eventoId)
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .maybeSingle()
+  const acesso: MeuAcesso = acessoRes.ok
+    ? await acessoRes.json()
+    : { evento: null, isOwner: false, staff: null }
 
-  // Verifica se é organizador (pode acessar mesmo sem ser staff)
-  const { data: evento } = await admin
-    .from('events')
-    .select('id, title, date_start, venue_name, city, state, banner_url, organization_id')
-    .eq('id', eventoId)
-    .single()
+  if (!acesso.evento) return <SemAcesso mensagem="Evento não encontrado." />
 
-  if (!evento) return <SemAcesso mensagem="Evento não encontrado." />
-
-  const isOwner = await isOrgAdmin(admin, evento.organization_id, user.id)
-
-  if (!isOwner && !staff) {
+  if (!acesso.isOwner && !acesso.staff) {
     return <SemAcesso mensagem="Você não faz parte da equipe deste evento." />
   }
 
-  const cargo = (staff?.event_positions as unknown) as {
-    id: string
-    name: string
-    event_position_permissions: { permission: string }[]
-  } | null
+  const permissoes = acesso.isOwner ? PERMISSOES_DONO : (acesso.staff?.permissions ?? [])
 
-  const permissoes = isOwner
-    ? ['validar_ingresso', 'vender_ingresso', 'ver_lista_convidados', 'ver_relatorios', 'gerenciar_checkin', 'gerenciar_equipe', 'estacionamento_entrada', 'estacionamento_saida']
-    : (cargo?.event_position_permissions ?? []).map(p => p.permission)
-
-  // Busca caixa designado para este usuário
-  const { data: caixaDesignado } = await admin
-    .from('caixas')
-    .select('id, nome')
-    .eq('evento_id', eventoId)
-    .eq('operador_id', user.id)
-    .eq('status', 'aberto')
-    .maybeSingle()
-
-  // Busca tipos de ingresso do evento
-  const { data: tickets } = await admin
-    .from('event_tickets')
-    .select('id, name, price, quantity')
-    .eq('event_id', eventoId)
-    .order('price')
-
-  // Calcula vendidos por ticket via order_items
-  const ticketIds = (tickets ?? []).map(t => t.id)
-  let vendidosPorTicket: Record<string, number> = {}
-
-  if (ticketIds.length > 0) {
-    const { data: ordensAtivas } = await admin
-      .from('orders')
-      .select('id')
-      .eq('event_id', eventoId)
-      .not('status', 'in', '(rejected,cancelled)')
-
-    const orderIds = (ordensAtivas ?? []).map(o => o.id)
-
-    if (orderIds.length > 0) {
-      const { data: itens } = await admin
-        .from('order_items')
-        .select('ticket_id, quantity')
-        .in('order_id', orderIds)
-        .in('ticket_id', ticketIds)
-
-      for (const item of itens ?? []) {
-        vendidosPorTicket[item.ticket_id] = (vendidosPorTicket[item.ticket_id] ?? 0) + (item.quantity ?? 0)
-      }
-    }
-  }
-
-  const ingressos = (tickets ?? []).map(t => {
-    const vendidos = vendidosPorTicket[t.id] ?? 0
-    return {
-      id:         t.id,
-      name:       t.name ?? 'Ingresso',
-      price:      Number(t.price ?? 0),
-      total:      t.quantity ?? 0,
-      vendidos,
-      disponivel: Math.max(0, (t.quantity ?? 0) - vendidos),
-    }
-  })
+  const caixaDesignado = caixaRes.ok ? await caixaRes.json() as { id: string; nome: string } | null : null
+  const { ingressos } = ingressosRes.ok
+    ? await ingressosRes.json() as { ingressos: IngressoResumo[] }
+    : { ingressos: [] as IngressoResumo[] }
 
   return (
     <div className="min-h-dvh bg-[#070707]">
       <Header />
       <TrabalhoClient
         eventoId={eventoId}
-        eventoTitle={evento.title ?? 'Evento'}
-        eventoDate={evento.date_start ?? null}
-        eventoLocal={[evento.venue_name, evento.city, evento.state].filter(Boolean).join(' — ')}
-        eventoBanner={evento.banner_url ?? null}
-        cargoNome={isOwner ? 'Organizador' : (cargo?.name ?? 'Equipe')}
+        eventoTitle={acesso.evento.title ?? 'Evento'}
+        eventoDate={acesso.evento.dateStart ?? null}
+        eventoLocal={[acesso.evento.venueName, acesso.evento.city, acesso.evento.state].filter(Boolean).join(' — ')}
+        eventoBanner={acesso.evento.bannerUrl ?? null}
+        cargoNome={acesso.isOwner ? 'Organizador' : (acesso.staff?.positionName ?? 'Equipe')}
         permissoes={permissoes}
         ingressos={ingressos}
-        isOwner={isOwner}
+        isOwner={acesso.isOwner}
         caixaDesignado={caixaDesignado ? { id: caixaDesignado.id, nome: caixaDesignado.nome } : null}
       />
     </div>

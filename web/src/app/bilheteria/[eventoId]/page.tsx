@@ -1,12 +1,17 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { getAuthUser } from '@/lib/auth/server'
+import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect } from 'next/navigation'
 import { ShieldX, ArrowLeft } from 'lucide-react'
 import { GerenciadorCaixas } from './GerenciadorCaixas'
-import { isOrgAdmin } from '@/lib/orgAdmin'
 
 interface Props {
   params: Promise<{ eventoId: string }>
+}
+
+interface MeuAcesso {
+  evento: { id: string; title: string | null } | null
+  isOwner: boolean
+  staff: { permissions: string[] } | null
 }
 
 export default async function BilheteriaPage({ params }: Props) {
@@ -15,79 +20,55 @@ export default async function BilheteriaPage({ params }: Props) {
   const user = await getAuthUser()
   if (!user) redirect(`/auth?next=/bilheteria/${eventoId}`)
 
-  const admin = createServiceClient()
+  const acessoRes = await apiFetchServer(`/api/eventos/${eventoId}/meu-acesso`)
+  const acesso: MeuAcesso = acessoRes.ok
+    ? await acessoRes.json()
+    : { evento: null, isOwner: false, staff: null }
 
-  const { data: evento } = await admin
-    .from('events')
-    .select('id, title, date_start, venue_name, city, state, organization_id')
-    .eq('id', eventoId)
-    .single()
-
-  if (!evento) return <SemPermissao mensagem="Evento não encontrado." />
-
-  const isOwner = await isOrgAdmin(admin, evento.organization_id, user.id)
-
-  // Operadores com permissão vender_ingresso são redirecionados ao caixa designado
-  if (!isOwner) {
-    const { data: staff } = await admin
-      .from('event_staff')
-      .select('id, event_positions(event_position_permissions(permission))')
-      .eq('event_id', eventoId)
-      .eq('user_id', user.id)
-      .eq('status', 'active')
-      .single()
-
-    if (staff) {
-      const pos = staff.event_positions as unknown as {
-        event_position_permissions: { permission: string }[]
-      } | null
-      const isVendedor = (pos?.event_position_permissions ?? []).some(p => p.permission === 'vender_ingresso')
-
-      if (isVendedor) {
-        // Busca caixa aberto designado para este operador
-        const { data: caixa } = await admin
-          .from('caixas')
-          .select('id')
-          .eq('evento_id', eventoId)
-          .eq('operador_id', user.id)
-          .eq('status', 'aberto')
-          .single()
-
-        if (caixa) redirect(`/bilheteria/${eventoId}/caixa/${caixa.id}`)
-
-        // Sem caixa designado: mostra mensagem de espera
-        return (
-          <div className="min-h-dvh bg-[#070707] flex flex-col items-center justify-center px-6 text-center gap-4">
-            <h1 className="text-white text-xl font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
-              Aguardando abertura do caixa
-            </h1>
-            <p className="text-[#555] text-sm max-w-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              O promotor ainda não abriu e designou um caixa para você. Atualize a página em instantes.
-            </p>
-            <a
-              href={`/trabalho/${eventoId}`}
-              className="flex items-center gap-2 mt-2 text-sm text-[#444] hover:text-white transition-colors"
-              style={{ fontFamily: 'var(--font-dm-sans)' }}
-            >
-              <ArrowLeft size={14} />
-              Voltar ao evento
-            </a>
-          </div>
-        )
-      }
-    }
-
-    return <SemPermissao mensagem="Você não tem permissão para acessar a bilheteria deste evento." />
-  }
+  if (!acesso.evento) return <SemPermissao mensagem="Evento não encontrado." />
 
   // Dono do evento: painel de gerenciamento de caixas
-  return (
-    <GerenciadorCaixas
-      eventoId={eventoId}
-      eventoTitle={evento.title ?? 'Evento'}
-      userId={user.id}
-    />
-  )
+  if (acesso.isOwner) {
+    return (
+      <GerenciadorCaixas
+        eventoId={eventoId}
+        eventoTitle={acesso.evento.title ?? 'Evento'}
+        userId={user.id}
+      />
+    )
+  }
+
+  // Operadores com permissão vender_ingresso são redirecionados ao caixa designado
+  const isVendedor = (acesso.staff?.permissions ?? []).includes('vender_ingresso')
+
+  if (isVendedor) {
+    const caixaRes = await apiFetchServer(`/api/eventos/${eventoId}/meu-caixa`)
+    const caixa = caixaRes.ok ? await caixaRes.json() as { id: string; nome: string } | null : null
+
+    if (caixa) redirect(`/bilheteria/${eventoId}/caixa/${caixa.id}`)
+
+    // Sem caixa designado: mostra mensagem de espera
+    return (
+      <div className="min-h-dvh bg-[#070707] flex flex-col items-center justify-center px-6 text-center gap-4">
+        <h1 className="text-white text-xl font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
+          Aguardando abertura do caixa
+        </h1>
+        <p className="text-[#555] text-sm max-w-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          O promotor ainda não abriu e designou um caixa para você. Atualize a página em instantes.
+        </p>
+        <a
+          href={`/trabalho/${eventoId}`}
+          className="flex items-center gap-2 mt-2 text-sm text-[#444] hover:text-white transition-colors"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}
+        >
+          <ArrowLeft size={14} />
+          Voltar ao evento
+        </a>
+      </div>
+    )
+  }
+
+  return <SemPermissao mensagem="Você não tem permissão para acessar a bilheteria deste evento." />
 }
 
 function SemPermissao({ mensagem }: { mensagem: string }) {

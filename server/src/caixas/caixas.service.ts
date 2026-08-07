@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { AuthCoreService } from '../auth-core/auth-core.service';
 import { EventFamilyService } from '../common/event-family.service';
 import { SaldoBilheteriaService } from '../common/saldo-bilheteria.service';
+import { EventPermissionsService } from '../event-permissions/event-permissions.service';
 import { OrgAdminService } from '../org-admin/org-admin.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -22,7 +23,47 @@ export class CaixasService {
     private readonly eventFamily: EventFamilyService,
     private readonly saldoBilheteria: SaldoBilheteriaService,
     private readonly authCore: AuthCoreService,
+    private readonly eventPermissions: EventPermissionsService,
   ) {}
+
+  // Extraído de getCaixa (Fase 7.2, G7) pra reuso em getCaixaParaOperador —
+  // mesma conta, sem mudar o comportamento de getCaixa em si.
+  private async calcularSaldoCaixa(caixaId: string, ingressosAlocados: number) {
+    const trans = await this.prisma.caixaTransferencia.findMany({
+      where: { OR: [{ caixaOrigemId: caixaId }, { caixaDestinoId: caixaId }] },
+      select: { caixaOrigemId: true, caixaDestinoId: true, quantidade: true },
+    });
+    const recebidos = trans.filter((t) => t.caixaDestinoId === caixaId).reduce((s, t) => s + t.quantidade, 0);
+    const enviados = trans.filter((t) => t.caixaOrigemId === caixaId).reduce((s, t) => s + t.quantidade, 0);
+
+    const orders = await this.prisma.order.findMany({
+      where: { caixaId, status: { notIn: ['rejected', 'cancelled'] } },
+      select: { id: true, total: true, paymentMethod: true },
+    });
+    const orderIds = orders.map((o) => o.id);
+    let vendidos = 0;
+    if (orderIds.length > 0) {
+      const itens = await this.prisma.orderItem.findMany({ where: { orderId: { in: orderIds } }, select: { quantity: true } });
+      vendidos = itens.reduce((s, i) => s + i.quantity, 0);
+    }
+
+    let totalDinheiro = 0;
+    let totalPix = 0;
+    let totalCartao = 0;
+    for (const o of orders) {
+      const v = Number(o.total ?? 0);
+      if (o.paymentMethod === 'dinheiro') totalDinheiro += v;
+      else if (o.paymentMethod === 'pix') totalPix += v;
+      else if (o.paymentMethod === 'cartao') totalCartao += v;
+    }
+
+    return {
+      saldoIngressos: ingressosAlocados + recebidos - enviados - vendidos,
+      vendidos, recebidos, enviados,
+      totalDinheiro, totalPix, totalCartao,
+      totalVendas: totalDinheiro + totalPix + totalCartao,
+    };
+  }
 
   // GET /eventos/:id/caixas
   async listPorEvento(userId: string, eventoId: string) {
@@ -135,45 +176,123 @@ export class CaixasService {
     const isOperador = caixa.operadorId === userId;
     if (!isOwner && !isOperador) throw new ForbiddenException('Sem permissão');
 
-    const trans = await this.prisma.caixaTransferencia.findMany({
-      where: { OR: [{ caixaOrigemId: caixaId }, { caixaDestinoId: caixaId }] },
-      select: { caixaOrigemId: true, caixaDestinoId: true, quantidade: true },
-    });
-    const recebidos = trans.filter((t) => t.caixaDestinoId === caixaId).reduce((s, t) => s + t.quantidade, 0);
-    const enviados = trans.filter((t) => t.caixaOrigemId === caixaId).reduce((s, t) => s + t.quantidade, 0);
-
-    const orders = await this.prisma.order.findMany({
-      where: { caixaId, status: { notIn: ['rejected', 'cancelled'] } },
-      select: { id: true, total: true, paymentMethod: true },
-    });
-    const orderIds = orders.map((o) => o.id);
-    let vendidos = 0;
-    if (orderIds.length > 0) {
-      const itens = await this.prisma.orderItem.findMany({ where: { orderId: { in: orderIds } }, select: { quantity: true } });
-      vendidos = itens.reduce((s, i) => s + i.quantity, 0);
-    }
-
-    let totalDinheiro = 0;
-    let totalPix = 0;
-    let totalCartao = 0;
-    for (const o of orders) {
-      const v = Number(o.total ?? 0);
-      if (o.paymentMethod === 'dinheiro') totalDinheiro += v;
-      else if (o.paymentMethod === 'pix') totalPix += v;
-      else if (o.paymentMethod === 'cartao') totalCartao += v;
-    }
-
-    const saldoIngressos = caixa.ingressosAlocados + recebidos - enviados - vendidos;
+    const saldo = await this.calcularSaldoCaixa(caixaId, caixa.ingressosAlocados);
 
     const { evento, ...caixaFields } = caixa;
     return {
       ...caixaFields,
       evento,
-      saldoIngressos,
-      vendidos, recebidos, enviados,
-      totalDinheiro, totalPix, totalCartao,
-      totalVendas: totalDinheiro + totalPix + totalCartao,
-      expectedGaveta: Number(caixa.fundoInicial) + totalDinheiro,
+      ...saldo,
+      expectedGaveta: Number(caixa.fundoInicial) + saldo.totalDinheiro,
+    };
+  }
+
+  // GET /eventos/:id/meu-caixa — caixa aberto designado ao usuário logado
+  // neste evento (Fase 7.2, G7). Usado por trabalho/bilheteria/estacionamento
+  // pra saber se o operador já tem um caixa pra vender/cobrar.
+  async getMeuCaixaAberto(userId: string, eventoId: string) {
+    const caixa = await this.prisma.caixa.findFirst({
+      where: { eventoId, operadorId: userId, status: 'aberto' },
+      select: { id: true, nome: true },
+    });
+    return caixa ?? null;
+  }
+
+  // GET /caixas/:caixaId/bootstrap — dados completos pra abrir a tela de
+  // venda de um caixa (Fase 7.2, G7). Diferente de getCaixa (só-dono-ou-
+  // operador, usado por outros fluxos como fechar/transferir), esta rota
+  // TAMBÉM libera staff ativo com a permissão vender_ingresso mesmo sem
+  // ser o operador designado daquele caixa específico — mesmo comportamento
+  // de bilheteria/[eventoId]/caixa/[caixaId]/page.tsx original ("Também
+  // permite staff com permissão vender_ingresso, sem caixa designado").
+  async getCaixaParaOperador(userId: string, caixaId: string) {
+    const caixa = await this.prisma.caixa.findUnique({
+      where: { id: caixaId },
+      include: {
+        evento: {
+          select: { id: true, title: true, dateStart: true, venueName: true, city: true, state: true, organizationId: true },
+        },
+      },
+    });
+    if (!caixa) throw new NotFoundException('Caixa não encontrado.');
+    if (caixa.status === 'fechado') throw new BadRequestException('Este caixa já foi fechado.');
+    if (caixa.status === 'fechamento_pendente') {
+      throw new BadRequestException('A contagem deste caixa já foi enviada — aguardando validação do organizador.');
+    }
+
+    const isOwner = await this.orgAdmin.isOrgAdmin(caixa.evento.organizationId, userId);
+    const isOperador = caixa.operadorId === userId;
+    const isVendedor =
+      !isOwner && !isOperador
+        ? await this.eventPermissions.hasEventPermission(userId, caixa.eventoId, 'vender_ingresso')
+        : false;
+    if (!isOwner && !isOperador && !isVendedor) {
+      throw new ForbiddenException('Você não tem permissão para acessar este caixa.');
+    }
+
+    const saldo = await this.calcularSaldoCaixa(caixaId, caixa.ingressosAlocados);
+
+    // Tickets de toda a família vendável (o próprio evento + filhos que
+    // optaram por vender no caixa do pai) — mesma lógica de
+    // web/src/lib/eventFamily.ts, já portada em EventFamilyService.
+    const eventosVendaveis = await this.eventFamily.getEventosVendaveisNoCaixa(caixa.eventoId);
+    const eventoIdsVendaveis = eventosVendaveis.map((e) => e.id);
+    const eventoTituloMap = Object.fromEntries(eventosVendaveis.map((e) => [e.id, e.title]));
+
+    const ticketsRaw = await this.prisma.eventTicket.findMany({
+      where: { eventId: { in: eventoIdsVendaveis } },
+      select: { id: true, name: true, price: true, quantity: true, eventId: true },
+    });
+
+    // Agrupa por evento (pai primeiro, filhos depois) antes de ordenar por
+    // preço dentro do grupo — mesma ordem que a página original montava.
+    const ordemEvento = new Map(eventoIdsVendaveis.map((id, i) => [id, i]));
+    const tickets = [...ticketsRaw].sort((a, b) => {
+      const posA = ordemEvento.get(a.eventId) ?? 0;
+      const posB = ordemEvento.get(b.eventId) ?? 0;
+      return posA !== posB ? posA - posB : Number(a.price) - Number(b.price);
+    });
+
+    const ticketIds = tickets.map((t) => t.id);
+    const vendidosPorTicket: Record<string, number> = {};
+    if (ticketIds.length > 0) {
+      const ordensAtivas = await this.prisma.order.findMany({
+        where: { eventId: { in: eventoIdsVendaveis }, status: { notIn: ['rejected', 'cancelled'] } },
+        select: { id: true },
+      });
+      const orderIds = ordensAtivas.map((o) => o.id);
+      if (orderIds.length > 0) {
+        const itens = await this.prisma.orderItem.findMany({
+          where: { orderId: { in: orderIds }, ticketId: { in: ticketIds } },
+          select: { ticketId: true, quantity: true },
+        });
+        for (const item of itens) {
+          if (!item.ticketId) continue;
+          vendidosPorTicket[item.ticketId] = (vendidosPorTicket[item.ticketId] ?? 0) + item.quantity;
+        }
+      }
+    }
+
+    const profile = await this.prisma.profile.findUnique({ where: { id: userId }, select: { fullName: true } });
+
+    const { evento, ...caixaFields } = caixa;
+    return {
+      ...caixaFields,
+      evento,
+      isOwner,
+      ...saldo,
+      ingressos: tickets.map((t) => {
+        const vendidos = vendidosPorTicket[t.id] ?? 0;
+        return {
+          id: t.id,
+          name: t.name ?? 'Ingresso',
+          price: Number(t.price ?? 0),
+          disponivel: Math.max(0, (t.quantity ?? 0) - vendidos),
+          eventoId: t.eventId,
+          eventoTitle: eventoTituloMap[t.eventId] ?? evento.title ?? 'Evento',
+        };
+      }),
+      operadorName: profile?.fullName ?? 'Operador',
     };
   }
 
