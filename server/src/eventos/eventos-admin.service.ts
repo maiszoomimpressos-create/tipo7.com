@@ -560,8 +560,17 @@ export class EventosAdminService {
         created_at: s.createdAt,
         user_id: s.userId,
         portao_id: s.portaoId,
-        profiles: s.user,
-        event_positions: s.eventPosition,
+        // Achado real (07/08/2026): esses dois campos aninhados iam crus do
+        // Prisma (camelCase) — PainelEquipe.tsx espera snake_case tanto em
+        // `profiles.full_name`/`user_code` quanto em
+        // `event_positions.event_position_permissions`. O segundo quebrava
+        // a tela com "Cannot read properties of undefined (reading 'length')"
+        // (position.event_position_permissions.length); o primeiro só
+        // deixava o nome do membro em branco, silencioso.
+        profiles: s.user ? { id: s.user.id, full_name: s.user.fullName, user_code: s.user.userCode } : null,
+        event_positions: s.eventPosition
+          ? { id: s.eventPosition.id, name: s.eventPosition.name, event_position_permissions: s.eventPosition.eventPositionPermissions }
+          : null,
         estacionamento_portoes: s.portao,
         email: emailMap.get(s.userId) ?? null,
         userCode: s.user?.userCode ?? null,
