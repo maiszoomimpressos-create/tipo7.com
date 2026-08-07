@@ -106,14 +106,22 @@ const CATEGORIAS = [
   'Gastronomia', 'Arte', 'Tecnologia', 'Religioso', 'Outro',
 ]
 
+// Achado real (07/08/2026): sem timeZone explícito, o mesmo instante forma
+// texto diferente no servidor (container roda em UTC) e no navegador de
+// quem acessa (fuso local, ex: America/Sao_Paulo). Datas de evento salvas
+// como meia-noite UTC viram "dia anterior" no Brasil — servidor e cliente
+// discordavam na primeira renderização e o React derrubava a hidratação
+// inteira (erro #418), o que também fazia a sessão de login "piscar" como
+// deslogada por causa do remount forçado. Fixar o fuso pros eventos (sempre
+// Brasil) resolve os dois de uma vez.
 function formatDate(iso: string) {
   if (!iso) return ''
-  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' })
 }
 
 function formatDateShort(iso: string) {
   if (!iso) return ''
-  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', timeZone: 'America/Sao_Paulo' }).replace('.', '')
 }
 
 function formatTime(t: string) {
