@@ -2,8 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { createClient as createSupabase } from '@/lib/supabase/client'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 import {
   Ticket, User, Phone, CreditCard, Calendar, Printer, ChevronDown,
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
@@ -95,7 +93,6 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   const printRef         = useRef<HTMLDivElement>(null)
   const dropdownRef      = useRef<HTMLDivElement>(null)
   const pollingRef       = useRef<ReturnType<typeof setInterval> | null>(null)
-  const realtimeRef      = useRef<RealtimeChannel | null>(null)
   const segundaRef       = useRef<Window | null>(null)
   const pixBroadcastRef  = useRef<object | null>(null)   // último payload PIX enviado
 
@@ -216,16 +213,16 @@ if exist "%CHROME%" (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [etapa, resultado, formato])
 
-  // Cria o canal Realtime ao montar — permite comunicação entre dispositivos
-  useEffect(() => {
-    const supabase = createSupabase()
-    const channel = supabase.channel(`bilheteria-${eventoId}`, {
-      config: { broadcast: { self: false } },
-    })
-    channel.subscribe()
-    realtimeRef.current = channel
-    return () => { supabase.removeChannel(channel); realtimeRef.current = null }
-  }, [eventoId])
+  // Fase 7.3: avisa a Segunda Tela via SSE (NestJS) em vez do canal Realtime
+  // da Supabase — POST dispara, o backend redistribui pra quem estiver
+  // com GET /bilheteria/:eventoId/stream aberto (SegundaTelaClient).
+  function broadcast(event: string, payload: unknown) {
+    apiFetchAuth(`/api/bilheteria/${eventoId}/broadcast`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ event, payload }),
+    }).catch(() => {})
+  }
 
   // Abre segunda tela no mesmo browser
   function abrirSegundaTela() {
@@ -297,7 +294,7 @@ if exist "%CHROME%" (
       const aprovMsg = { type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length }
       localStorage.setItem(`tipo7-pix-${eventoId}`, JSON.stringify(aprovMsg))
       setTimeout(() => localStorage.removeItem(`tipo7-pix-${eventoId}`), 5500)
-      realtimeRef.current?.send({ type: 'broadcast', event: 'aprovado', payload: aprovMsg })
+      broadcast('aprovado', aprovMsg)
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao confirmar pagamento')
     } finally {
@@ -391,7 +388,7 @@ if exist "%CHROME%" (
         }
         pixBroadcastRef.current = pixPayload
         localStorage.setItem(`tipo7-pix-${eventoId}`, JSON.stringify(pixPayload))
-        realtimeRef.current?.send({ type: 'broadcast', event: 'pix', payload: pixPayload })
+        broadcast('pix', pixPayload)
       } catch (e: unknown) {
         setErr(e instanceof Error ? e.message : 'Erro ao gerar PIX')
       } finally {
@@ -460,7 +457,7 @@ if exist "%CHROME%" (
     if (pollingRef.current) clearInterval(pollingRef.current)
     pixBroadcastRef.current = null
     localStorage.removeItem(`tipo7-pix-${eventoId}`)
-    realtimeRef.current?.send({ type: 'broadcast', event: 'cancelado', payload: {} })
+    broadcast('cancelado', {})
   }
 
   async function gerarNovoPix() {
@@ -472,7 +469,7 @@ if exist "%CHROME%" (
     if (pollingRef.current) clearInterval(pollingRef.current)
     pixBroadcastRef.current = null
     localStorage.removeItem(`tipo7-pix-${eventoId}`)
-    realtimeRef.current?.send({ type: 'broadcast', event: 'cancelado', payload: {} })
+    broadcast('cancelado', {})
     await handleVender()
   }
 

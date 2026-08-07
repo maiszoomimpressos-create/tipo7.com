@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import QRCode from 'react-qr-code'
 import { CheckCircle2, Clock, MapPin, Calendar, Ticket as TicketIcon } from 'lucide-react'
 
@@ -151,26 +150,26 @@ export function SegundaTelaClient({ eventoId, eventoTitle, slides, eventosProxim
     return () => window.removeEventListener('storage', onStorage)
   }, [eventoId])
 
-  // Supabase Realtime — escuta mensagens em tempo real da bilheteria (funciona entre dispositivos)
+  // Fase 7.3: SSE (NestJS) — escuta em tempo real os broadcasts da
+  // bilheteria, substitui o canal Realtime da Supabase. EventSource
+  // reconecta sozinho se a conexão cair (comportamento nativo do browser),
+  // então não precisa de lógica extra de retry aqui.
   useEffect(() => {
-    const supabase = createClient()
-    const channel = supabase
-      .channel(`bilheteria-${eventoId}`)
-      .on('broadcast', { event: 'pix' }, ({ payload }) => {
-        setPixPayload(payload as PixPayload)
-        setEstado('pix')
-      })
-      .on('broadcast', { event: 'aprovado' }, ({ payload }) => {
-        setAprovadoPayload(payload as AprovadoPayload)
-        setEstado('aprovado')
-        setTimeout(() => { setEstado('idle'); setAprovadoPayload(null) }, 8000)
-      })
-      .on('broadcast', { event: 'cancelado' }, () => {
-        setEstado('idle')
-        setPixPayload(null)
-      })
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
+    const es = new EventSource(`/api/bilheteria/${eventoId}/stream`)
+    es.addEventListener('pix', (e: MessageEvent) => {
+      setPixPayload(JSON.parse(e.data) as PixPayload)
+      setEstado('pix')
+    })
+    es.addEventListener('aprovado', (e: MessageEvent) => {
+      setAprovadoPayload(JSON.parse(e.data) as AprovadoPayload)
+      setEstado('aprovado')
+      setTimeout(() => { setEstado('idle'); setAprovadoPayload(null) }, 8000)
+    })
+    es.addEventListener('cancelado', () => {
+      setEstado('idle')
+      setPixPayload(null)
+    })
+    return () => { es.close() }
   }, [eventoId])
 
   // Countdown do PIX — retorna ao idle automaticamente quando expira

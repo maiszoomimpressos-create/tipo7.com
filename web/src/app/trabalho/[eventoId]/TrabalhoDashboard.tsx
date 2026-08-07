@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import {
   Banknote, Smartphone, CreditCard, Ticket,
   RefreshCw, TrendingUp,
@@ -50,39 +49,16 @@ export function TrabalhoDashboard({ eventoId }: { eventoId: string }) {
   useEffect(() => {
     fetchData()
 
-    // Polling a cada 30s como fallback ao Realtime
+    // Fase 7.3: Realtime (Supabase postgres_changes) removido — só o
+    // polling de 30s ficou, que já era o fallback e cobre 100% dos dados.
+    // pulseId/setPulseId (efeito visual de "pulso" quando chegava uma venda
+    // nova) fica inerte agora, sem infra pra disparar — decisão já tomada
+    // no plano da fase (não vale a pena montar SSE só por causa de um
+    // detalhe visual nesta tela específica).
     const poll = setInterval(fetchData, 30_000)
-
-    const supabase = createClient()
-
-    // Nome do canal precisa ser único a cada montagem — em dev, o StrictMode
-    // roda o efeito duas vezes de forma síncrona, e Date.now() pode repetir
-    // o mesmo milissegundo, fazendo o cliente reaproveitar um canal já
-    // inscrito (daí o erro "cannot add postgres_changes... after subscribe()")
-    const channel = supabase
-      .channel(`dash-${eventoId}-${crypto.randomUUID()}`)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'orders',
-        filter: `event_id=eq.${eventoId}`,
-      }, (payload) => {
-        const caixaId = (payload.new as { caixa_id?: string })?.caixa_id
-        if (caixaId) {
-          setPulseId(caixaId)
-          setTimeout(() => setPulseId(null), 1500)
-        }
-        fetchData()
-      })
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'caixas',
-        filter: `evento_id=eq.${eventoId}`,
-      }, () => {
-        fetchData()
-      })
-      .subscribe()
 
     return () => {
       clearInterval(poll)
-      supabase.removeChannel(channel)
     }
   }, [eventoId, fetchData])
 
