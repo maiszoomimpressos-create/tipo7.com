@@ -80,7 +80,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = subscribe(setInternalSession)
-    initSession().finally(() => setLoading(false))
+    // Achado real (07/08/2026): initSession() resolve de forma SÍNCRONA
+    // quando acha sessão válida em localStorage/cookie (só o fallback via
+    // /api/auth/refresh é assíncrono de verdade). React roda o efeito de
+    // componentes FILHOS antes do efeito deste Provider (pai) — se algum
+    // filho da árvore também chamar apiFetchAuth (que também chama
+    // initSession() por baixo) no próprio efeito, ele "ganha a corrida":
+    // resolve a sessão E chama persist() ANTES do subscribe() acima rodar,
+    // então o listener nunca é notificado dessa resolução. O token
+    // continua válido (é por isso que checkout/APIs sempre funcionavam),
+    // mas o header nunca aprendia disso e ficava preso em "deslogado" até
+    // a próxima renovação de sessão de verdade. Corrigido aplicando
+    // diretamente o valor de retorno de initSession() aqui, em vez de
+    // confiar só no listener pra pegar a atualização — cobre os dois
+    // casos (quem ganhou a corrida e quem não ganhou).
+    initSession().then(setInternalSession).finally(() => setLoading(false))
     return unsubscribe
   }, [])
 
