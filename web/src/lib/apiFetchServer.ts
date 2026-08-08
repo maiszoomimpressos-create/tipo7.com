@@ -66,5 +66,31 @@ export async function apiFetchServer(path: string, init: RequestInit = {}): Prom
   // quanto '/eventos/123' (já sem o prefixo) — sempre bate direto no
   // NestJS, nunca passa pelo rewrite do Next.
   const cleanPath = path.replace(/^\/api/, '')
-  return fetch(`${API_URL}${cleanPath}`, { ...init, headers, cache: 'no-store' })
+  const url = `${API_URL}${cleanPath}`
+
+  // Achado real (07/08/2026): de vez em quando um request pra API_URL volta
+  // 2xx com o corpo VAZIO (nada nos logs do `server` pra esse período — tudo
+  // indica um blip pontual de conexão entre os containers `web`/`server`,
+  // não um erro de aplicação). Antes disso derrubava a página inteira: os
+  // ~90 call sites espalhados (`res.ok ? await res.json() : ...`) sempre
+  // assumiram que "ok" implica corpo parseável, e `res.json()` num corpo
+  // vazio estoura sem tratamento nenhum. Em vez de caçar e blindar cada
+  // call site um por um (alto risco de erro de digitação em 40 arquivos),
+  // resolvido aqui na fonte: se um 2xx vier vazio, tenta de novo até 2x
+  // (cobre o caso comum de ser só um blip passageiro) e, se persistir,
+  // devolve uma Response sintética com ok:false — todo call site que já
+  // checa `res.ok` (a esmagadora maioria) cai automaticamente no fallback
+  // seguro dele sem precisar de nenhuma mudança de código.
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    const res = await fetch(url, { ...init, headers, cache: 'no-store' })
+    if (!res.ok) return res
+
+    const text = await res.text()
+    if (text) return new Response(text, { status: res.status, statusText: res.statusText, headers: res.headers })
+
+    if (tentativa < 3) continue
+    return new Response(null, { status: 502, statusText: 'Empty response from upstream' })
+  }
+  // Inalcançável (o loop acima sempre retorna), só pra satisfazer o TS.
+  return new Response(null, { status: 502 })
 }

@@ -1,5 +1,5 @@
 import { getAuthUser } from '@/lib/auth/server'
-import { apiFetchServer } from '@/lib/apiFetchServer'
+import { apiFetchServer, safeJson } from '@/lib/apiFetchServer'
 import { redirect, notFound } from 'next/navigation'
 import { Header } from '@/components/layout/Header'
 import { IngressosClient } from './IngressosClient'
@@ -34,7 +34,7 @@ export default async function IngressosPage({ params }: Props) {
 
   const eventoRes = await apiFetchServer(`/api/eventos/${id}`)
   if (eventoRes.status === 404) notFound()
-  const evento: EventoApi = await eventoRes.json()
+  const evento = await safeJson<EventoApi>(eventoRes)
 
   if (!evento) notFound()
   if (!(await isOrgAdmin(null, evento.organization_id, user.id))) notFound()

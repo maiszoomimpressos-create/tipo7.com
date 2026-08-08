@@ -1,5 +1,5 @@
 import { getAuthUser } from '@/lib/auth/server'
-import { apiFetchServer } from '@/lib/apiFetchServer'
+import { apiFetchServer, safeJson } from '@/lib/apiFetchServer'
 import { redirect, notFound } from 'next/navigation'
 import { Header }     from '@/components/layout/Header'
 import { EventoForm } from './EventoForm'
@@ -19,7 +19,7 @@ export default async function EditarEventoPage({ params }: Props) {
 
   const eventoRes = await apiFetchServer(`/api/eventos/${id}`)
   if (eventoRes.status === 404) notFound()
-  const evento = await eventoRes.json() as {
+  const evento = await safeJson<{
     id: string; title: string | null; description: string | null; category: string | null
     date_start: string | null; date_end: string | null
     venue_name: string | null; venue_id: string | null
@@ -31,7 +31,7 @@ export default async function EditarEventoPage({ params }: Props) {
     permitir_venda_no_caixa_pai: boolean | null; organization_id: string
     lat: number | null; lng: number | null
     organizations: { cnpj: string | null; owner_id: string | null } | null
-  }
+  }>(eventoRes)
 
   if (!evento) notFound()
   if (!(await isOrgAdmin(null, evento.organization_id, user.id))) notFound()
