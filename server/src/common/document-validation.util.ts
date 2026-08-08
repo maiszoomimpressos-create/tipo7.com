@@ -1,3 +1,16 @@
+// Achado real (08/08/2026): CPF/telefone/CNPJ eram gravados no banco do
+// jeito que chegassem no body — às vezes com máscara (pontos/traço/
+// parênteses), às vezes sem. Como as colunas são @unique e o Postgres
+// compara texto puro, "456.123.789-55" e "45612378955" são duas strings
+// DIFERENTES pro banco, mesmo sendo o mesmo CPF na vida real — a trava de
+// unicidade não pega esse caso, permitindo duas contas com o "mesmo" dado.
+// Regra do projeto a partir de agora: máscara só existe na exibição do
+// front — todo write no banco usa isso aqui antes de gravar, não importa
+// o que o body mandou.
+export function apenasDigitos(v: string): string {
+  return v.replace(/\D/g, '');
+}
+
 // Porte 1:1 de web/src/lib/documentValidation.ts.
 export function validarCPF(cpf: string): boolean {
   const d = cpf.replace(/\D/g, '');

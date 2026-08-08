@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
-import { validarCNPJ } from '../common/document-validation.util';
+import { apenasDigitos, validarCNPJ } from '../common/document-validation.util';
 import { OrgAdminService } from '../org-admin/org-admin.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -144,7 +144,7 @@ export class OrganizationsService {
           city: body.city || null,
           state: body.state || null,
           complement: body.complement || null,
-          phone: body.phone || null,
+          phone: body.phone ? apenasDigitos(body.phone) : null,
           nicho: body.nicho || null,
         },
       });
@@ -207,7 +207,7 @@ export class OrganizationsService {
           city: body.city || null,
           state: body.state || null,
           complement: body.complement || null,
-          phone: body.phone || null,
+          phone: body.phone ? apenasDigitos(body.phone) : null,
         },
       });
     } catch (err) {

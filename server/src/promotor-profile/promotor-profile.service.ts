@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { apenasDigitos } from '../common/document-validation.util';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Porte de web/src/app/criar-evento/{page,PromoterOnboarding}.tsx (Fase 7.2, G13).
@@ -55,8 +56,8 @@ export class PromotorProfileService {
         data: socios.map((s) => ({
           promotorId,
           nome: s.nome.trim(),
-          cpf: s.cpf.replace(/\D/g, ''),
-          telefone: s.telefone || null,
+          cpf: apenasDigitos(s.cpf),
+          telefone: s.telefone ? apenasDigitos(s.telefone) : null,
           email: s.email || null,
         })),
       });

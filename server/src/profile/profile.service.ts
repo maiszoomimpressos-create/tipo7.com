@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
+import { apenasDigitos } from '../common/document-validation.util';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Mesmo padrão de webhooks.service.ts (isUniqueConstraintError) — detecta
@@ -104,8 +105,10 @@ export class ProfileService {
         where: { id: userId },
         data: {
           ...(body.fullName !== undefined ? { fullName: body.fullName } : {}),
-          ...(body.phone !== undefined ? { phone: body.phone } : {}),
-          ...(body.cpf !== undefined ? { cpf: body.cpf } : {}),
+          // Máscara é só do front — aqui sempre grava só dígitos (ou null),
+          // nunca o que o body mandou cru. Ver apenasDigitos().
+          ...(body.phone !== undefined ? { phone: body.phone ? apenasDigitos(body.phone) : null } : {}),
+          ...(body.cpf !== undefined ? { cpf: body.cpf ? apenasDigitos(body.cpf) : null } : {}),
           ...(body.rg !== undefined ? { rg: body.rg } : {}),
           ...(body.birthDate !== undefined ? { birthDate: body.birthDate ? new Date(body.birthDate) : null } : {}),
           ...(body.avatarUrl !== undefined ? { avatarUrl: body.avatarUrl } : {}),

@@ -240,7 +240,12 @@ export class WebhooksService {
       const valorAtual = (perfilAtual as Record<string, unknown>)[prismaKey];
       const valorNovo = payload.data[payloadKey];
       if ((valorAtual === null || valorAtual === '') && valorNovo) {
-        atualizacoes[prismaKey] = prismaKey === 'birthDate' ? new Date(String(valorNovo)) : valorNovo;
+        // cpf/phone: dado vindo de fora (Autosave) pode chegar com máscara —
+        // nunca grava cru, mesma regra de apenasDigitos() em profile.service.ts.
+        atualizacoes[prismaKey] =
+          prismaKey === 'birthDate' ? new Date(String(valorNovo))
+          : prismaKey === 'cpf' || prismaKey === 'phone' ? String(valorNovo).replace(/\D/g, '')
+          : valorNovo;
       }
     }
 

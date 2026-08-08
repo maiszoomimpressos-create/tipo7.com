@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AutosaveService } from '../common/autosave.service';
+import { apenasDigitos } from '../common/document-validation.util';
 import { maskEmail, maskPhone } from '../common/mask.util';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -107,8 +108,11 @@ export class CadastroService {
       external_id: userId,
       full_name: profile.fullName ?? undefined,
       email: email ?? undefined,
-      cpf: profile.cpf ?? undefined,
-      phone: profile.phone ?? undefined,
+      // Manda sempre sem máscara pra Autosave, mesmo se o dado salvo aqui
+      // ainda estiver sujo (legado) — nunca propaga formatação inconsistente
+      // pro sistema externo. Achado real 08/08/2026.
+      cpf: profile.cpf ? apenasDigitos(profile.cpf) : undefined,
+      phone: profile.phone ? apenasDigitos(profile.phone) : undefined,
       rg: profile.rg ?? undefined,
       // birthDate é @db.Date — mesmo bug já corrigido em profile.service.ts:
       // .toISOString() cru manda timestamp completo pra Autosave, que volta

@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { apenasDigitos } from '../common/document-validation.util';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Porte 1:1 de web/src/app/api/holders/route.ts.
@@ -25,10 +26,11 @@ export class HoldersService {
     });
     if (!item || item.order.userId !== userId) throw new ForbiddenException('Acesso negado');
 
+    const cpfLimpo = apenasDigitos(cpf);
     await this.prisma.ticketHolder.upsert({
       where: { orderItemId_slotNumber: { orderItemId: order_item_id, slotNumber: slot_number } },
-      create: { orderItemId: order_item_id, slotNumber: slot_number, fullName: full_name, cpf, email, birthDate: new Date(birth_date) },
-      update: { fullName: full_name, cpf, email, birthDate: new Date(birth_date) },
+      create: { orderItemId: order_item_id, slotNumber: slot_number, fullName: full_name, cpf: cpfLimpo, email, birthDate: new Date(birth_date) },
+      update: { fullName: full_name, cpf: cpfLimpo, email, birthDate: new Date(birth_date) },
     });
 
     return { ok: true };
