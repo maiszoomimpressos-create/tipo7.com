@@ -12,6 +12,7 @@
 |---|---|
 | [landing-page.md](./landing-page.md) | Página inicial — o que o visitante vê ao entrar no site |
 | [boot-whats-details.md](./boot-whats-details.md) | Documento pro time externo da Boot Whats — novo campo `details` na integração de WhatsApp |
+| [autosave-veiculo-modal.md](./autosave-veiculo-modal.md) | Documento pro time externo da Autosave — campos coletados no modal de Veículo + problema de `type`/`status` encontrado em teste |
 
 ---
 
