@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 const AUTOSAVE_TIMEOUT_MS = 3000;
@@ -86,6 +86,8 @@ export interface AutosaveCustomer {
 // principal, qualquer falha/instabilidade vira "não achou" (best-effort).
 @Injectable()
 export class AutosaveService {
+  private readonly logger = new Logger(AutosaveService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async getCredenciais(area: Area): Promise<{ baseUrl: string; apiKey: string } | null> {
@@ -195,13 +197,19 @@ export class AutosaveService {
         headers: { 'Content-Type': 'application/json', 'x-api-key': creds.apiKey },
         body: JSON.stringify(dados),
       });
-      const body = await res.json().catch(() => null) as { vehicle?: Record<string, unknown>; created?: boolean; message?: string } | null;
+      // Achado real (08/08/2026): a Autosave devolve o erro em `error`, não
+      // `message` (ex: {"error":"invalid input value for enum vehicle_type:
+      // \"carro\""}) — só lendo `body?.message` a mensagem real nunca
+      // chegava no usuário, sempre caía no genérico.
+      const body = await res.json().catch(() => null) as { vehicle?: Record<string, unknown>; created?: boolean; message?: string; error?: string } | null;
       if (!res.ok) {
-        return { ok: false, status: res.status, message: body?.message || 'A Autosave recusou os dados do veículo.' };
+        this.logger.warn(`[autosave/vehicles] recusado (${res.status}) pra placa ${dados.plate}: ${body?.error || body?.message || 'sem detalhe'}`);
+        return { ok: false, status: res.status, message: body?.error || body?.message || 'A Autosave recusou os dados do veículo.' };
       }
       if (!body?.vehicle) return { ok: false, status: 502, message: 'Resposta inesperada da Autosave.' };
       return { ok: true, vehicle: body.vehicle, created: body.created ?? false };
-    } catch {
+    } catch (err) {
+      this.logger.error(`[autosave/vehicles] falha ao falar com a Autosave pra placa ${dados.plate}`, err as Error);
       return { ok: false, status: 504, message: 'Não foi possível falar com a Autosave agora. Tente de novo em instantes.' };
     }
   }

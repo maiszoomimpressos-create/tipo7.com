@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import { AutosaveService, type AutosaveVehicleFull } from '../common/autosave.service';
 import { apenasDigitos } from '../common/document-validation.util';
@@ -191,8 +191,14 @@ export class ProfileService {
 
     const resultado = await this.autosave.criarOuAtualizarVeiculo(dados);
     if (!resultado.ok) {
-      if (resultado.status === 503) throw new ServiceUnavailableException(resultado.message);
-      if (resultado.status >= 500) throw new BadGatewayException(resultado.message);
+      // Achado real (08/08/2026): devolver 502/503 pro cliente aqui fazia
+      // a EasyPanel/Traefik interceptar a resposta e trocar o corpo pela
+      // página genérica deles ("Service is not reachable") — a mensagem de
+      // erro de verdade (ex: "invalid input value for enum vehicle_type")
+      // nunca chegava no usuário, e nem log nosso mostrava nada (o
+      // logger.warn no autosave.service.ts já resolve a parte de log).
+      // 400 sempre, com a mensagem real da Autosave — não é problema de
+      // rede/infra do ponto de vista de quem preenche o formulário.
       throw new BadRequestException(resultado.message);
     }
 
