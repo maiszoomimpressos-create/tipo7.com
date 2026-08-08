@@ -3,8 +3,17 @@
 import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
-import { Copy, Check, Clock, Loader2, CheckCircle2, XCircle, Ticket } from 'lucide-react'
+import { Copy, Check, Clock, Loader2, CheckCircle2, XCircle, Ticket, Mail, MessageCircle } from 'lucide-react'
 import { apiFetchAuth } from '@/lib/apiFetch'
+
+// Mesma formatação DDD+número usada no envio de verdade (whatsapp.service.ts,
+// server) — só pra exibição, não muda o que é realmente enviado.
+function formatarTelefoneExibicao(phone: string) {
+  const d = phone.replace(/\D/g, '')
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
+  return phone
+}
 
 type OrderStatus = 'pending' | 'in_process' | 'approved' | 'rejected' | 'cancelled'
 
@@ -69,7 +78,18 @@ function PixPageContent() {
   const [loading, setLoading] = useState(true)
   const [copied,  setCopied]  = useState(false)
   const [error,   setError]   = useState<string | null>(null)
+  const [contato, setContato] = useState<{ email: string | null; phone: string | null } | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Busca só pra mostrar "pra onde vamos mandar o ingresso" na tela de
+  // sucesso — mesmo email/telefone que o envio de verdade usa (perfil do
+  // próprio comprador logado), não precisa de rota nova.
+  useEffect(() => {
+    apiFetchAuth('/api/profile')
+      .then(res => res.ok ? res.json() : null)
+      .then(d => { if (d) setContato({ email: d.email ?? null, phone: d.phone ?? null }) })
+      .catch(() => {})
+  }, [])
 
   const countdown = useCountdown(data?.expiresAt ?? null)
 
@@ -171,6 +191,27 @@ function PixPageContent() {
                 Redirecionando para seus ingressos…
               </p>
             </div>
+
+            {contato && (contato.email || contato.phone) && (
+              <div className="w-full rounded-xl border border-[#1a1a1a] bg-[#0a0a0a] p-4 flex flex-col gap-2.5 text-left">
+                <p className="text-[#444] text-[11px] font-semibold uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Enviaremos seus ingressos para
+                </p>
+                {contato.email && (
+                  <div className="flex items-center gap-2.5">
+                    <Mail size={14} className="text-[#E8B84B] shrink-0" />
+                    <p className="text-[#ccc] text-sm truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>{contato.email}</p>
+                  </div>
+                )}
+                {contato.phone && (
+                  <div className="flex items-center gap-2.5">
+                    <MessageCircle size={14} className="text-[#25D366] shrink-0" />
+                    <p className="text-[#ccc] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>{formatarTelefoneExibicao(contato.phone)}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="w-6 h-6">
               <Loader2 size={20} className="animate-spin text-[#E8B84B]" />
             </div>
