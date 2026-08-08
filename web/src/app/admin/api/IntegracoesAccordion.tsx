@@ -6,7 +6,7 @@
 // muda o que o código realmente envia/pede, isso ainda exige deploy).
 import { useState } from 'react'
 import {
-  ArrowRight, ArrowLeft, Radio, Users, Car, ChevronDown, Eye, EyeOff,
+  ArrowRight, ArrowLeft, Radio, Users, Car, MessageCircle, ChevronDown, Eye, EyeOff,
   Pencil, Check, X, Loader2, KeyRound,
 } from 'lucide-react'
 import { apiFetchAuth } from '@/lib/apiFetch'
@@ -27,7 +27,7 @@ interface Rota {
 
 interface Integracao {
   id:             string
-  area_slug:      'usuarios' | 'estacionamento'
+  area_slug:      'usuarios' | 'estacionamento' | 'whatsapp'
   nome:           string
   base_url:       string | null
   api_key:        string | null
@@ -35,9 +35,14 @@ interface Integracao {
   rotas:          Rota[]
 }
 
-const AREA_ICON = { usuarios: Users, estacionamento: Car } as const
-const AREA_COR  = { usuarios: '#E8B84B', estacionamento: '#38bdf8' } as const
-const AREA_SUB  = { usuarios: 'cadastro e edição de perfil', estacionamento: 'registro de entrada de veículos' } as const
+const AREA_ICON = { usuarios: Users, estacionamento: Car, whatsapp: MessageCircle } as const
+const AREA_COR  = { usuarios: '#E8B84B', estacionamento: '#38bdf8', whatsapp: '#25D366' } as const
+const AREA_SUB  = {
+  usuarios:      'cadastro e edição de perfil',
+  estacionamento: 'registro de entrada de veículos',
+  whatsapp:      'envio de ingresso/estacionamento via Boot Whats',
+} as const
+const AREA_NOME = { usuarios: 'Usuários', estacionamento: 'Estacionamento', whatsapp: 'WhatsApp' } as const
 
 const inp = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40 font-mono placeholder:text-[#383838] placeholder:font-sans'
 const lbl = 'text-[#666] text-[11px] font-medium tracking-widest uppercase'
@@ -165,12 +170,12 @@ function RotaCard({ item }: { item: Rota }) {
   const [saving,    setSaving]    = useState(false)
 
   const [gatilho,     setGatilho]     = useState(item.gatilho ?? '')
-  const [enviaTexto,  setEnviaTexto]  = useState(item.campos_envia.join(', '))
-  const [recebeTexto, setRecebeTexto] = useState(item.campos_recebe.join(', '))
+  const [enviaTexto,  setEnviaTexto]  = useState((item.campos_envia ?? []).join(', '))
+  const [recebeTexto, setRecebeTexto] = useState((item.campos_recebe ?? []).join(', '))
   const [observacao,  setObservacao]  = useState(item.observacao ?? '')
 
-  const [envia,  setEnvia]  = useState(item.campos_envia)
-  const [recebe, setRecebe] = useState(item.campos_recebe)
+  const [envia,  setEnvia]  = useState(item.campos_envia ?? [])
+  const [recebe, setRecebe] = useState(item.campos_recebe ?? [])
 
   const salvar = async () => {
     setSaving(true)
@@ -291,7 +296,7 @@ function RotaCard({ item }: { item: Rota }) {
 function Secao({ integracao }: { integracao: Integracao }) {
   const [aberto, setAberto] = useState(false)
   const Icon = AREA_ICON[integracao.area_slug]
-  const nome = integracao.area_slug === 'usuarios' ? 'Usuários' : 'Estacionamento'
+  const nome = AREA_NOME[integracao.area_slug]
 
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: '#0a0a0a', border: '1px solid #1a1a1a' }}>

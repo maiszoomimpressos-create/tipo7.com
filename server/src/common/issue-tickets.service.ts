@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EmailService } from './email.service';
+import { WhatsAppService } from './whatsapp.service';
 import { gerarQrToken } from './qr-token.util';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -12,6 +13,7 @@ export class IssueTicketsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly email: EmailService,
+    private readonly whatsapp: WhatsAppService,
   ) {}
 
   async issueTickets(orderId: string): Promise<void> {
@@ -53,7 +55,7 @@ export class IssueTicketsService {
     const buyerEmail = emailRows[0]?.email;
     if (!buyerEmail) return;
 
-    const profile = await this.prisma.profile.findUnique({ where: { id: order.userId }, select: { fullName: true } });
+    const profile = await this.prisma.profile.findUnique({ where: { id: order.userId }, select: { fullName: true, phone: true } });
     const buyerName = profile?.fullName ?? 'Cliente';
 
     const ticketEmailList = generatedTickets.map((t) => {
@@ -83,6 +85,21 @@ export class IssueTicketsService {
       });
     } catch (err) {
       this.logger.error('[issueTickets] falha ao enviar email', err as Error);
+    }
+
+    // WhatsApp (Boot Whats) — best-effort, nunca bloqueia a emissão do
+    // ingresso se falhar. A API deles só aceita 1 QR code por mensagem
+    // (ver documentação da integração), então manda uma chamada por
+    // ingresso do pedido, não uma só pra tudo.
+    if (profile?.phone) {
+      for (const t of ticketEmailList) {
+        await this.whatsapp.enviar({
+          to: profile.phone,
+          recipientName: buyerName,
+          type: 'ingresso_emitido',
+          qrData: t.qr_token,
+        });
+      }
     }
   }
 }

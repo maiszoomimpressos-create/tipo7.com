@@ -13,6 +13,7 @@ import { PedidoAtomicoService } from './pedido-atomico.service';
 import { PlatformCredentialsService } from './platform-credentials.service';
 import { RateLimitDbService } from './rate-limit-db.service';
 import { SaldoBilheteriaService } from './saldo-bilheteria.service';
+import { WhatsAppService } from './whatsapp.service';
 
 const PROVIDERS = [
   RateLimitDbService,
@@ -26,6 +27,7 @@ const PROVIDERS = [
   PedidoAtomicoService,
   GatewayResolverService,
   EmailService,
+  WhatsAppService,
   IssueTicketsService,
   PagBankClientService,
   PagBankTokenService,
