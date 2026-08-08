@@ -13,6 +13,52 @@ interface AutosaveVehicle {
   driver_phone?: string;
 }
 
+// Contrato completo de POST /vehicles, recebido do time da Autosave em
+// 08/08/2026 — ver docs/boot-whats-details.md (não, esse é do WhatsApp;
+// contrato de veículo ficou em memória de projeto, não em docs/ ainda).
+// `type`/`status` são enum fixo do lado deles — valores aceitos ainda não
+// confirmados, por isso ficam como string livre aqui também por enquanto
+// (o campo é opcional; se vier errado, a Autosave rejeita e devolvemos o
+// erro deles pro usuário, não inventamos validação nossa sem saber a lista
+// real).
+export interface AutosaveVehicleFull {
+  plate: string;
+  name?: string;
+  type?: string;
+  brand?: string;
+  model?: string;
+  year?: number;
+  color?: string;
+  status?: string;
+  category?: string;
+  species?: string;
+  body_type?: string;
+  chassis_number?: string;
+  renavam?: string;
+  engine_number?: string;
+  security_code?: string;
+  license_expiry?: string; // AAAA-MM-DD
+  licensing_year?: number;
+  restrictions?: string;
+  odometer_km?: number;
+  fuel_type?: string;
+  capacity?: number;
+  power_cv?: number;
+  displacement?: string;
+  cmt?: string;
+  axles?: number;
+  owner_name?: string;
+  owner_document?: string;
+  driver_phone?: string;
+  city?: string;
+  state?: string;
+  notes?: string;
+}
+
+export type SalvarVeiculoResultado =
+  | { ok: true; vehicle: Record<string, unknown>; created: boolean }
+  | { ok: false; status: number; message: string };
+
 export interface VeiculoConsultado {
   modelo: string | null;
   cor: string | null;
@@ -130,6 +176,33 @@ export class AutosaveService {
       });
     } catch {
       // Best-effort — se a Autosave estiver fora do ar, ignora.
+    }
+  }
+
+  // Achado real (08/08/2026): salvarVeiculoNaAutosave() acima é best-effort
+  // silencioso, pensado pra chamada em background durante a entrada do
+  // estacionamento (não pode travar o fluxo do atendente). O modal de
+  // Veículo em /perfil é uma ação direta do usuário — precisa saber se
+  // salvou ou não, e por quê (ex: enum de type/status inválido). Método
+  // novo, em vez de reaproveitar o silencioso.
+  async criarOuAtualizarVeiculo(dados: AutosaveVehicleFull): Promise<SalvarVeiculoResultado> {
+    const creds = await this.getCredenciais('estacionamento');
+    if (!creds) return { ok: false, status: 503, message: 'Integração com a Autosave não está configurada.' };
+
+    try {
+      const res = await this.fetchComTimeout(`${creds.baseUrl}/vehicles`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': creds.apiKey },
+        body: JSON.stringify(dados),
+      });
+      const body = await res.json().catch(() => null) as { vehicle?: Record<string, unknown>; created?: boolean; message?: string } | null;
+      if (!res.ok) {
+        return { ok: false, status: res.status, message: body?.message || 'A Autosave recusou os dados do veículo.' };
+      }
+      if (!body?.vehicle) return { ok: false, status: 502, message: 'Resposta inesperada da Autosave.' };
+      return { ok: true, vehicle: body.vehicle, created: body.created ?? false };
+    } catch {
+      return { ok: false, status: 504, message: 'Não foi possível falar com a Autosave agora. Tente de novo em instantes.' };
     }
   }
 

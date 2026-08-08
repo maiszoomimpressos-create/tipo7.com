@@ -1,5 +1,6 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
+import { AutosaveService, type AutosaveVehicleFull } from '../common/autosave.service';
 import { apenasDigitos } from '../common/document-validation.util';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -50,7 +51,10 @@ const CAMPO_LABEL: Record<string, string> = {
 // liam/escreviam a tabela profiles direto (Fase 7.2, grupo G2).
 @Injectable()
 export class ProfileService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly autosave: AutosaveService,
+  ) {}
 
   // Resposta em snake_case — minimiza o diff nos vários consumidores que
   // hoje leem direto do Supabase (mesmo padrão do getEventoCore, Fase 7.1-b).
@@ -136,5 +140,62 @@ export class ProfileService {
     }
 
     return { ok: true };
+  }
+
+  // POST /profile/veiculo — aba "Veículo" em /perfil (08/08/2026). Não
+  // grava nada em tabela própria do Tipo7 — só normaliza e repassa pra
+  // Autosave (fonte única de verdade dos veículos, decisão do usuário).
+  // `type`/`status` são enum fixo do lado deles, valores ainda não
+  // confirmados — mandados como texto livre por enquanto; se a Autosave
+  // rejeitar, o erro dela é repassado pro usuário tal como veio.
+  async salvarVeiculo(userId: string, body: Record<string, unknown>) {
+    const placa = typeof body.plate === 'string' ? body.plate.trim().toUpperCase() : '';
+    if (!placa) throw new BadRequestException('Placa é obrigatória.');
+
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+
+    const dados: AutosaveVehicleFull = {
+      plate: placa,
+      name: str(body.name),
+      type: str(body.type),
+      brand: str(body.brand),
+      model: str(body.model),
+      year: num(body.year),
+      color: str(body.color),
+      status: str(body.status),
+      category: str(body.category),
+      species: str(body.species),
+      body_type: str(body.body_type),
+      chassis_number: str(body.chassis_number),
+      renavam: str(body.renavam),
+      engine_number: str(body.engine_number),
+      security_code: str(body.security_code),
+      license_expiry: str(body.license_expiry),
+      licensing_year: num(body.licensing_year),
+      restrictions: str(body.restrictions),
+      odometer_km: num(body.odometer_km),
+      fuel_type: str(body.fuel_type),
+      capacity: num(body.capacity),
+      power_cv: num(body.power_cv),
+      displacement: str(body.displacement),
+      cmt: str(body.cmt),
+      axles: num(body.axles),
+      owner_name: str(body.owner_name),
+      owner_document: typeof body.owner_document === 'string' && body.owner_document.trim() ? apenasDigitos(body.owner_document) : undefined,
+      driver_phone: typeof body.driver_phone === 'string' && body.driver_phone.trim() ? apenasDigitos(body.driver_phone) : undefined,
+      city: str(body.city),
+      state: str(body.state),
+      notes: str(body.notes),
+    };
+
+    const resultado = await this.autosave.criarOuAtualizarVeiculo(dados);
+    if (!resultado.ok) {
+      if (resultado.status === 503) throw new ServiceUnavailableException(resultado.message);
+      if (resultado.status >= 500) throw new BadGatewayException(resultado.message);
+      throw new BadRequestException(resultado.message);
+    }
+
+    return { vehicle: resultado.vehicle, created: resultado.created };
   }
 }

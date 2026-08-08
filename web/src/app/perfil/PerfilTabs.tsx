@@ -5,12 +5,13 @@
 // form/estado) — trocar de aba só esconde a seção via CSS, não desmonta,
 // então nada que a pessoa digitou se perde ao ir e voltar entre abas.
 import { useState } from 'react'
-import { User, Building2, MapPin, ArrowRight } from 'lucide-react'
+import { User, Building2, MapPin, Car, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ProfileForm } from './ProfileForm'
+import { VeiculoForm } from './VeiculoForm'
 import type { OrganizacaoItem } from './PromotorForm'
 
-type Aba = 'pessoais' | 'promotor' | 'endereco'
+type Aba = 'pessoais' | 'promotor' | 'endereco' | 'veiculo'
 
 interface Props {
   userId:      string
@@ -29,6 +30,7 @@ const ABAS: { value: Aba; label: string; icon: typeof User }[] = [
   { value: 'pessoais', label: 'Dados pessoais',   icon: User },
   { value: 'promotor', label: 'Dados de promotor', icon: Building2 },
   { value: 'endereco', label: 'Endereço',          icon: MapPin },
+  { value: 'veiculo',  label: 'Veículo',           icon: Car },
 ]
 
 export function PerfilTabs({ userId, initialPessoal, organizacoes }: Props) {
@@ -55,15 +57,19 @@ export function PerfilTabs({ userId, initialPessoal, organizacoes }: Props) {
 
       {/* ProfileForm fica sempre montado (preserva o que foi digitado) e
           esconde Dados pessoais/Endereço entre si via secaoAtiva — mas some
-          por inteiro (foto inclusa) na aba "promotor", que é tabela/form
-          diferente e não dá pra misturar no mesmo estado. */}
-      <div className={aba === 'promotor' ? 'hidden' : undefined}>
+          por inteiro (foto inclusa) nas abas "promotor"/"veiculo", que são
+          form/estado completamente diferentes. */}
+      <div className={aba === 'promotor' || aba === 'veiculo' ? 'hidden' : undefined}>
         <ProfileForm
           userId={userId}
           secaoAtiva={aba === 'endereco' ? 'endereco' : 'pessoais'}
           initial={initialPessoal}
         />
       </div>
+
+      {/* Veículo não guarda estado entre trocas de aba hoje (não grava
+          local, é só um POST direto pra Autosave) — sem problema desmontar. */}
+      {aba === 'veiculo' && <VeiculoForm />}
 
       <div className={aba === 'promotor' ? undefined : 'hidden'}>
         <a href="/configuracoes/organizacoes"
