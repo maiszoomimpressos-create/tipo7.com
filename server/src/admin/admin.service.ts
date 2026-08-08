@@ -474,7 +474,19 @@ export class AdminService {
         api_key: i.apiKey,
         webhook_secret: i.webhookSecret,
         updated_at: i.updatedAt,
-        rotas: rotas.filter((r) => r.integracaoId === i.id),
+        rotas: rotas
+          .filter((r) => r.integracaoId === i.id)
+          .map((r) => ({
+            id: r.id,
+            integracao_id: r.integracaoId,
+            rota: r.rota,
+            direcao: r.direcao,
+            gatilho: r.gatilho,
+            campos_envia: r.camposEnvia,
+            campos_recebe: r.camposRecebe,
+            observacao: r.observacao,
+            order_index: r.orderIndex,
+          })),
       })),
     };
   }
