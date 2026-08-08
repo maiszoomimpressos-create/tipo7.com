@@ -1,5 +1,11 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+// Mesmo padrão de profile.service.ts / webhooks.service.ts.
+function isUniqueConstraintError(err: unknown): err is Prisma.PrismaClientKnownRequestError {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
 
 interface UpsertGoogleBody {
   name?:           string;
@@ -107,7 +113,18 @@ export class VenuesService {
     if (body.has_parking !== undefined) data.hasParking = body.has_parking;
     if (body.parking_spots !== undefined) data.parkingSpots = body.parking_spots || null;
 
-    const venueAtualizado = await this.prisma.venue.update({ where: { id: venueId }, data });
+    // Achado real (08/08/2026, varredura): cnpj é @unique em Venue e sem
+    // try/catch aqui — pior ainda, o único chamador (EventoForm.tsx) engole
+    // o erro inteiro num `.catch(() => {})` "pra não bloquear o salvamento
+    // do evento", então uma colisão de CNPJ falhava 100% em silêncio: o
+    // usuário achava que tinha assumido o estabelecimento e nada era gravado.
+    let venueAtualizado;
+    try {
+      venueAtualizado = await this.prisma.venue.update({ where: { id: venueId }, data });
+    } catch (err) {
+      if (isUniqueConstraintError(err)) throw new ConflictException('Este CNPJ já está cadastrado em outro estabelecimento.');
+      throw err;
+    }
     return { venue: venueAtualizado };
   }
 }

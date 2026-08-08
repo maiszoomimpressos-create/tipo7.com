@@ -6,9 +6,15 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client';
 import { validarCNPJ } from '../common/document-validation.util';
 import { OrgAdminService } from '../org-admin/org-admin.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+// Mesmo padrão de profile.service.ts / webhooks.service.ts.
+function isUniqueConstraintError(err: unknown): err is Prisma.PrismaClientKnownRequestError {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
 
 interface OrgBody {
   documento?: string;
@@ -95,26 +101,41 @@ export class OrganizationsService {
     const codigo = rows[0]?.generate_org_code;
     if (!codigo) throw new InternalServerErrorException('Erro ao gerar código');
 
-    const org = await this.prisma.organization.create({
-      data: {
-        ownerId: userId,
-        type: 'promotora',
-        codigo,
-        name: nome,
-        cnpj,
-        nomeFantasia: body.nomeFantasia?.trim() || null,
-        logoUrl: body.logoUrl || null,
-        zipCode: body.zipCode || null,
-        street: body.street || null,
-        streetNumber: body.streetNumber || null,
-        neighborhood: body.neighborhood || null,
-        city: body.city || null,
-        state: body.state || null,
-        complement: body.complement || null,
-        phone: body.phone || null,
-        nicho: body.nicho || null,
-      },
-    });
+    // Achado real (08/08/2026, varredura): sem try/catch aqui, um duplo
+    // clique ou um `orgId` desatualizado no state do TipoPessoaModal.tsx
+    // estourava a constraint única [ownerId, type] cru — causa raiz
+    // confirmada do bug já conhecido de "promotor duplicado". A checagem de
+    // cnpj acima (via count()) também é race-prone; o catch cobre os dois.
+    let org;
+    try {
+      org = await this.prisma.organization.create({
+        data: {
+          ownerId: userId,
+          type: 'promotora',
+          codigo,
+          name: nome,
+          cnpj,
+          nomeFantasia: body.nomeFantasia?.trim() || null,
+          logoUrl: body.logoUrl || null,
+          zipCode: body.zipCode || null,
+          street: body.street || null,
+          streetNumber: body.streetNumber || null,
+          neighborhood: body.neighborhood || null,
+          city: body.city || null,
+          state: body.state || null,
+          complement: body.complement || null,
+          phone: body.phone || null,
+          nicho: body.nicho || null,
+        },
+      });
+    } catch (err) {
+      if (isUniqueConstraintError(err)) {
+        const alvo = (err.meta?.target as string[] | undefined) ?? [];
+        if (alvo.includes('cnpj')) throw new ConflictException('Este CNPJ já está cadastrado por outra organização.');
+        throw new ConflictException('Você já tem uma organização deste tipo cadastrada.');
+      }
+      throw err;
+    }
 
     await this.prisma.organizationAdmin.create({
       data: {
@@ -150,23 +171,29 @@ export class OrganizationsService {
       if (count > 0) throw new ConflictException('Este CNPJ já está cadastrado por outra organização.');
     }
 
-    const org = await this.prisma.organization.update({
-      where: { id },
-      data: {
-        name: nome,
-        cnpj,
-        nomeFantasia: body.nomeFantasia?.trim() || null,
-        logoUrl: body.logoUrl || null,
-        zipCode: body.zipCode || null,
-        street: body.street || null,
-        streetNumber: body.streetNumber || null,
-        neighborhood: body.neighborhood || null,
-        city: body.city || null,
-        state: body.state || null,
-        complement: body.complement || null,
-        phone: body.phone || null,
-      },
-    });
+    let org;
+    try {
+      org = await this.prisma.organization.update({
+        where: { id },
+        data: {
+          name: nome,
+          cnpj,
+          nomeFantasia: body.nomeFantasia?.trim() || null,
+          logoUrl: body.logoUrl || null,
+          zipCode: body.zipCode || null,
+          street: body.street || null,
+          streetNumber: body.streetNumber || null,
+          neighborhood: body.neighborhood || null,
+          city: body.city || null,
+          state: body.state || null,
+          complement: body.complement || null,
+          phone: body.phone || null,
+        },
+      });
+    } catch (err) {
+      if (isUniqueConstraintError(err)) throw new ConflictException('Este CNPJ já está cadastrado por outra organização.');
+      throw err;
+    }
 
     return { organizacao: org };
   }

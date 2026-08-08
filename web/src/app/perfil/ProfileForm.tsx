@@ -10,9 +10,21 @@ import { Loader2, CheckCircle, AlertCircle, Camera, MapPin, Search } from 'lucid
 import { cn } from '@/lib/utils'
 
 interface PlaceSuggestion {
-  placeId: string
-  nomePrincipal: string
+  origem?:        'venue' | 'google'
+  placeId:        string
+  nomePrincipal:  string
   nomeSecundario: string
+  // Campos embutidos só quando origem === 'venue' (achado real 08/08/2026,
+  // varredura: faltava aqui — igual já existe em EventoForm.tsx — então uma
+  // sugestão de venue tinha placeId vazio e a chamada a /places/details
+  // sempre falhava em silêncio, sem preencher nada).
+  zipCode?:       string
+  street?:        string
+  streetNumber?:  string
+  neighborhood?:  string
+  city?:          string
+  state?:         string
+  complement?:    string
 }
 
 // ─── Formatadores ──────────────────────────────────────────────────────────────
@@ -307,6 +319,20 @@ export function ProfileForm({ userId, secaoAtiva, initial }: Props) {
     setShowAddrDropdown(false)
     setAddrSuggestions([])
     setAddrHighlight(-1)
+
+    // Venue já cadastrado na plataforma — preenche direto com os campos
+    // embutidos, sem chamar /places/details (o placeId vem vazio pra essas
+    // sugestões e a chamada sempre falharia em silêncio).
+    if (s.origem === 'venue') {
+      if (s.zipCode) { setZipCode(formatCEP(s.zipCode)); setCepError(null) }
+      setStreet(s.street ?? '')
+      setStreetNumber(s.streetNumber ?? '')
+      setNeighborhood(s.neighborhood ?? '')
+      if (s.city)  setCity(s.city)
+      if (s.state) setUf(s.state.slice(0, 2).toUpperCase())
+      return
+    }
+
     try {
       const res  = await apiFetchAuth(`/api/places/details?place_id=${s.placeId}`)
       const data = await res.json()

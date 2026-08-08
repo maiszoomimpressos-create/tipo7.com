@@ -53,8 +53,12 @@ type EventoDestaque = {
   lng: number | null;
 };
 
+// Achado real (08/08/2026, varredura pós-bug do admin/api): só renomeava
+// bannerUrl -> cover_url; dateStart ficava em ...rest sem virar date_start,
+// e o Carousel.tsx da home (público, visto por qualquer visitante) mostrava
+// "Invalid Date" em todo card.
 function normalizar(rows: EventoDestaque[]) {
-  return rows.map(({ bannerUrl, ...rest }) => ({ ...rest, cover_url: bannerUrl ?? null }));
+  return rows.map(({ bannerUrl, dateStart, ...rest }) => ({ ...rest, cover_url: bannerUrl ?? null, date_start: dateStart }));
 }
 
 @Injectable()

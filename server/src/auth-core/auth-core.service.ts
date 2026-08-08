@@ -6,6 +6,12 @@ import { createHash, randomBytes, randomUUID } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { EmailService } from '../common/email.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '../../generated/prisma/client';
+
+// Mesmo padrão de profile.service.ts / webhooks.service.ts.
+function isUniqueConstraintError(err: unknown): err is Prisma.PrismaClientKnownRequestError {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
 
 const ACCESS_TTL_SECONDS = 60 * 60; // 1h
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
@@ -124,27 +130,38 @@ export class AuthCoreService {
     const encryptedPassword = await bcrypt.hash(input.password, BCRYPT_COST);
     const userCode = await this.gerarUserCode();
 
-    const profile = await this.prisma.profile.create({
-      data: {
-        id: randomUUID(),
-        email,
-        encryptedPassword,
-        emailVerified: false,
-        fullName: input.fullName?.trim() || null,
-        phone: phone ?? null,
-        cpf: cpf ?? null,
-        birthDate: input.birthDate ? new Date(input.birthDate) : null,
-        rg: input.rg?.trim() || null,
-        zipCode: input.zipCode?.trim() || null,
-        street: input.street?.trim() || null,
-        streetNumber: input.streetNumber?.trim() || null,
-        neighborhood: input.neighborhood?.trim() || null,
-        city: input.city?.trim() || null,
-        state: input.state?.trim() || null,
-        complement: input.complement?.trim() || null,
-        userCode,
-      },
-    });
+    // Achado real (08/08/2026, varredura): os findUnique acima são só um
+    // pre-check (TOCTOU) — sem try/catch no create(), duas submissões
+    // concorrentes com mesmo email/cpf/telefone (duplo clique, duas abas)
+    // faziam a segunda estourar 500 cru em vez do ConflictException que o
+    // pre-check tenta garantir.
+    let profile;
+    try {
+      profile = await this.prisma.profile.create({
+        data: {
+          id: randomUUID(),
+          email,
+          encryptedPassword,
+          emailVerified: false,
+          fullName: input.fullName?.trim() || null,
+          phone: phone ?? null,
+          cpf: cpf ?? null,
+          birthDate: input.birthDate ? new Date(input.birthDate) : null,
+          rg: input.rg?.trim() || null,
+          zipCode: input.zipCode?.trim() || null,
+          street: input.street?.trim() || null,
+          streetNumber: input.streetNumber?.trim() || null,
+          neighborhood: input.neighborhood?.trim() || null,
+          city: input.city?.trim() || null,
+          state: input.state?.trim() || null,
+          complement: input.complement?.trim() || null,
+          userCode,
+        },
+      });
+    } catch (err) {
+      if (isUniqueConstraintError(err)) throw new ConflictException('Email, CPF ou telefone já cadastrado.');
+      throw err;
+    }
 
     return this.issueSession(profile);
   }
@@ -209,15 +226,25 @@ export class AuthCoreService {
 
     let profile = await this.prisma.profile.findUnique({ where: { email } });
     if (!profile) {
-      profile = await this.prisma.profile.create({
-        data: {
-          id: randomUUID(),
-          email,
-          fullName: payload?.name ?? null,
-          emailVerified: true,
-          userCode: await this.gerarUserCode(),
-        },
-      });
+      try {
+        profile = await this.prisma.profile.create({
+          data: {
+            id: randomUUID(),
+            email,
+            fullName: payload?.name ?? null,
+            emailVerified: true,
+            userCode: await this.gerarUserCode(),
+          },
+        });
+      } catch (err) {
+        // Mesma corrida do register() acima — duas abas fazendo login com
+        // Google ao mesmo tempo pela primeira vez podiam colidir no email.
+        if (isUniqueConstraintError(err)) {
+          profile = await this.prisma.profile.findUniqueOrThrow({ where: { email } });
+        } else {
+          throw err;
+        }
+      }
     } else if (!profile.emailVerified) {
       profile = await this.prisma.profile.update({ where: { id: profile.id }, data: { emailVerified: true } });
     }

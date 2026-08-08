@@ -132,7 +132,12 @@ export class MinhaAreaService {
       compradores.push({
         nome: h.fullName,
         email: h.email,
-        birth_date: h.birthDate,
+        // birthDate é @db.Date — serialização automática do NestJS chama
+        // toISOString() (timestamp completo, meia-noite UTC). DashboardClient
+        // faz `new Date(birth)` e lê mês/dia em horário LOCAL do browser —
+        // no fuso do Brasil isso retrocede o dia, deslocando calcIdade() em
+        // casos de borda (aniversário/virada de ano). Achado real 08/08/2026.
+        birth_date: h.birthDate ? new Date(h.birthDate.toISOString().slice(0, 10) + 'T12:00:00.000Z') : null,
         ticket_type: itemTicketNameMap.get(h.orderItemId) ?? 'Ingresso',
         event_id: eventId,
         event_title: eventoTitleMap.get(eventId) ?? '',

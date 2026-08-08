@@ -518,19 +518,30 @@ export function EventoForm({ eventoId, herdaDadosDoPai, isChild, parentEventId, 
       })
 
       // Assume o lugar como responsável — só cuida dos dados do venue
-      // (endereço/capacidade/estacionamento), nunca de dinheiro/caixa
+      // (endereço/capacidade/estacionamento), nunca de dinheiro/caixa.
+      // Não bloqueia o salvamento do evento (o evento em si já foi salvo
+      // acima), mas achado real (08/08/2026, varredura): antes isso falhava
+      // 100% em silêncio num `.catch(() => {})` — ex: CNPJ já em uso por
+      // outro estabelecimento — e o usuário achava que tinha assumido o
+      // lugar quando nada foi gravado. Agora pelo menos avisa.
       if (souResponsavel && venueIdToSave) {
-        await apiFetchAuth(`/api/venues/${venueIdToSave}/tornar-responsavel`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone:         venuePhone || undefined,
-            nicho:         venueNicho || undefined,
-            capacity:      capacidade ? parseInt(capacidade, 10) : undefined,
-            has_parking:   venueTemEstacionamento === 'sim' ? true : venueTemEstacionamento === 'nao' ? false : undefined,
-            parking_spots: venueTemEstacionamento === 'sim' && venueVagas ? parseInt(venueVagas, 10) : undefined,
-          }),
-        }).catch(() => { /* não bloqueia o salvamento do evento */ })
+        try {
+          const resVenue = await apiFetchAuth(`/api/venues/${venueIdToSave}/tornar-responsavel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              phone:         venuePhone || undefined,
+              nicho:         venueNicho || undefined,
+              capacity:      capacidade ? parseInt(capacidade, 10) : undefined,
+              has_parking:   venueTemEstacionamento === 'sim' ? true : venueTemEstacionamento === 'nao' ? false : undefined,
+              parking_spots: venueTemEstacionamento === 'sim' && venueVagas ? parseInt(venueVagas, 10) : undefined,
+            }),
+          })
+          if (!resVenue.ok) {
+            const corpo = await resVenue.json().catch(() => null) as { message?: string } | null
+            setErro(`Evento salvo, mas não foi possível assumir o estabelecimento: ${corpo?.message || 'erro desconhecido'}.`)
+          }
+        } catch { /* falha de rede aqui não bloqueia o salvamento do evento */ }
       }
 
       if (destino) {

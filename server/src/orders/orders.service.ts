@@ -46,9 +46,12 @@ export class OrdersService {
           quantity: oi.quantity,
           unit_price: Number(oi.unitPrice),
           event_tickets: oi.ticket ? { id: oi.ticket.id, name: oi.ticket.name } : null,
+          // birthDate é @db.Date — .toISOString() cru devolve timestamp
+          // completo, que corrompe o parser "AAAA-MM-DD" do front (mesmo
+          // bug já corrigido em profile.service.ts). Achado real 08/08/2026.
           ticket_holders: oi.ticketHolders.map((th) => ({
             slot_number: th.slotNumber, full_name: th.fullName, cpf: th.cpf,
-            email: th.email, birth_date: th.birthDate,
+            email: th.email, birth_date: th.birthDate ? th.birthDate.toISOString().slice(0, 10) : null,
           })),
           tickets: oi.tickets.map((t) => ({
             slot_number: t.slotNumber, qr_token: t.qrToken, status: t.status,

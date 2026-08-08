@@ -245,7 +245,20 @@ export class WebhooksService {
     }
 
     if (Object.keys(atualizacoes).length > 0) {
-      await this.prisma.profile.update({ where: { id: externalId }, data: atualizacoes });
+      try {
+        await this.prisma.profile.update({ where: { id: externalId }, data: atualizacoes });
+      } catch (err) {
+        // Achado real (08/08/2026, varredura): cpf/phone são @unique — se o
+        // valor que a Autosave mandou já pertence a outro profile local, o
+        // update estourava 500 cru sem log nenhum, perdendo aquele evento de
+        // sync silenciosamente a cada retry. Loga pra dar visibilidade
+        // operacional, mas responde 200 (não é um erro que retry resolve).
+        if (isUniqueConstraintError(err)) {
+          this.logger.warn(`[webhooks/autosave] sync ignorada pra ${externalId}: campo já em uso em outro profile (${JSON.stringify(atualizacoes)})`);
+        } else {
+          throw err;
+        }
+      }
     }
 
     return { ok: true };

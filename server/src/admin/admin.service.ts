@@ -1,10 +1,16 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client';
 import { MP_CRED_KEYS, PAGBANK_CRED_KEYS } from '../common/platform-credentials.service';
 import { RateLimitDbService } from '../common/rate-limit-db.service';
 import { PlatformAdminService, type AdminMember } from '../platform-admin/platform-admin.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const CHAVES_CREDENCIAIS_VALIDAS = new Set<string>([...MP_CRED_KEYS, ...PAGBANK_CRED_KEYS]);
+
+// Mesmo padrão de profile.service.ts / webhooks.service.ts.
+function isUniqueConstraintError(err: unknown): err is Prisma.PrismaClientKnownRequestError {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
 
 @Injectable()
 export class AdminService {
@@ -84,10 +90,18 @@ export class AdminService {
         ? ['ver_dashboard', 'gerenciar_promotores', 'gerenciar_eventos', 'gerenciar_financeiro']
         : (body.permissions ?? []);
 
-    const data = await this.prisma.platformTeam.create({
-      data: { userId: targetId, role: body.role, permissions, addedBy: userId },
-      select: { id: true, userId: true, role: true, permissions: true, createdAt: true },
-    });
+    let data;
+    try {
+      data = await this.prisma.platformTeam.create({
+        data: { userId: targetId, role: body.role, permissions, addedBy: userId },
+        select: { id: true, userId: true, role: true, permissions: true, createdAt: true },
+      });
+    } catch (err) {
+      // Achado real (08/08/2026, varredura): userId é @unique em
+      // PlatformTeam — reconvidar/duplo clique estourava 500 cru.
+      if (isUniqueConstraintError(err)) throw new ConflictException('Essa pessoa já faz parte da equipe.');
+      throw err;
+    }
 
     return {
       member: {
@@ -290,6 +304,27 @@ export class AdminService {
 
   // ── fee-rules ──────────────────────────────────────────────────────────────
 
+  // Achado real (08/08/2026, varredura pós-bug do admin/api): listFeeRules e
+  // criarFeeRule devolviam a linha crua do Prisma (camelCase). RulesClient.tsx
+  // espera snake_case — a tela de Regras de Isenção mostrava "desconto de
+  // undefined%" e as badges de quota/bypass nunca apareciam.
+  private mapFeeRule(rule: {
+    id: string; name: string; type: string; discountPct: unknown; quotaLimit: number | null;
+    quotaPeriod: string | null; bypassMinimum: boolean; active: boolean; notes: string | null;
+    createdAt: Date; feeType: string | null; feeValue: unknown;
+    extraFee1Label: string | null; extraFee1Value: unknown; extraFee1Type: string | null;
+    extraFee2Label: string | null; extraFee2Value: unknown; extraFee2Type: string | null;
+  }) {
+    return {
+      id: rule.id, name: rule.name, type: rule.type,
+      discount_pct: rule.discountPct, quota_limit: rule.quotaLimit, quota_period: rule.quotaPeriod,
+      bypass_minimum: rule.bypassMinimum, active: rule.active, notes: rule.notes, created_at: rule.createdAt,
+      fee_type: rule.feeType, fee_value: rule.feeValue,
+      extra_fee_1_label: rule.extraFee1Label, extra_fee_1_value: rule.extraFee1Value, extra_fee_1_type: rule.extraFee1Type,
+      extra_fee_2_label: rule.extraFee2Label, extra_fee_2_value: rule.extraFee2Value, extra_fee_2_type: rule.extraFee2Type,
+    };
+  }
+
   async listFeeRules(userId: string) {
     await this.requirePerm(userId, 'gerenciar_financeiro');
 
@@ -341,7 +376,7 @@ export class AdminService {
           }
         }
 
-        return { ...rule, event_title: eventTitle, promoter_name: promoterName, quota_used: quotaUsed };
+        return { ...this.mapFeeRule(rule), event_title: eventTitle, promoter_name: promoterName, quota_used: quotaUsed };
       }),
     );
 
@@ -389,7 +424,7 @@ export class AdminService {
         extraFee2Type: body.extra_fee_2_type ?? null,
       },
     });
-    return { rule };
+    return { rule: this.mapFeeRule(rule) };
   }
 
   async removerFeeRule(userId: string, id: string) {

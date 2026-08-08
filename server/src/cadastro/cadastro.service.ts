@@ -110,7 +110,11 @@ export class CadastroService {
       cpf: profile.cpf ?? undefined,
       phone: profile.phone ?? undefined,
       rg: profile.rg ?? undefined,
-      birth_date: profile.birthDate?.toISOString() ?? undefined,
+      // birthDate é @db.Date — mesmo bug já corrigido em profile.service.ts:
+      // .toISOString() cru manda timestamp completo pra Autosave, que volta
+      // corrompido no autofill de CPF (auth/page.tsx, ProfileForm.tsx).
+      // Achado real 08/08/2026.
+      birth_date: profile.birthDate?.toISOString().slice(0, 10) ?? undefined,
       zip_code: profile.zipCode ?? undefined,
       street: profile.street ?? undefined,
       street_number: profile.streetNumber ?? undefined,

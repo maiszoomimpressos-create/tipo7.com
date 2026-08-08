@@ -31,22 +31,22 @@ export class PromotorProfileService {
       socios?: Array<{ nome: string; cpf: string; telefone?: string | null; email?: string | null }>;
     },
   ) {
-    const existente = await this.prisma.promotorProfile.findUnique({ where: { userId }, select: { id: true } });
-
-    let promotorId: string;
-    if (existente) {
-      await this.prisma.promotorProfile.update({
-        where: { id: existente.id },
-        data: { tipoPessoa: body.tipoPessoa, tipoEspaco: body.tipoEspaco, numSocios: body.numSocios },
-      });
-      promotorId = existente.id;
+    // Achado real (08/08/2026, varredura): findUnique+create/update na mão
+    // tem uma janela de corrida (dois POSTs concorrentes em /profile/promotor
+    // podiam ambos cair no ramo "não existe" e o segundo create() estourar
+    // 500 cru em userId @unique) — relacionado ao bug já conhecido de
+    // "promotor duplicado". upsert() é atômico (ON CONFLICT do Postgres),
+    // elimina a janela.
+    const existenteAntes = await this.prisma.promotorProfile.findUnique({ where: { userId }, select: { id: true } });
+    const salvo = await this.prisma.promotorProfile.upsert({
+      where: { userId },
+      create: { userId, tipoPessoa: body.tipoPessoa ?? '', tipoEspaco: body.tipoEspaco ?? '', numSocios: body.numSocios ?? '' },
+      update: { tipoPessoa: body.tipoPessoa, tipoEspaco: body.tipoEspaco, numSocios: body.numSocios },
+      select: { id: true },
+    });
+    const promotorId = salvo.id;
+    if (existenteAntes) {
       await this.prisma.promotorSocio.deleteMany({ where: { promotorId } });
-    } else {
-      const criado = await this.prisma.promotorProfile.create({
-        data: { userId, tipoPessoa: body.tipoPessoa ?? '', tipoEspaco: body.tipoEspaco ?? '', numSocios: body.numSocios ?? '' },
-        select: { id: true },
-      });
-      promotorId = criado.id;
     }
 
     const socios = (body.socios ?? []).filter((s) => s.nome?.trim() && s.cpf?.replace(/\D/g, '').length === 11);

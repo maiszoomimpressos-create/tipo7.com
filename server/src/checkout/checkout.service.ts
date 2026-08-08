@@ -358,7 +358,17 @@ export class CheckoutService {
     }
     this.validarItems(items);
 
-    const eventoGateway = await this.prisma.event.findUnique({ where: { id: eventoId }, select: { paymentGateway: true } });
+    // Achado real (08/08/2026, varredura): criarPix/criarPreference/criarPagbankPix
+    // já checavam vendasOnlinePausadas — criarCard (MP) e criarPagbankCard (abaixo)
+    // nunca checavam, então pausar as vendas online não impedia pagamento por
+    // cartão em nenhum dos dois gateways.
+    const eventoGateway = await this.prisma.event.findUnique({
+      where: { id: eventoId },
+      select: { paymentGateway: true, vendasOnlinePausadas: true },
+    });
+    if (eventoGateway?.vendasOnlinePausadas) {
+      throw new ServiceUnavailableException('Vendas temporariamente pausadas. Tente novamente em instantes.');
+    }
     if (eventoGateway?.paymentGateway === 'pagbank') {
       throw new BadRequestException('Use /api/checkout/pagbank-card para este evento');
     }
@@ -658,6 +668,13 @@ export class CheckoutService {
     if (!cleanCpf || cleanCpf.length !== 11) throw new UnprocessableEntityException('CPF inválido.');
 
     this.validarItems(items);
+
+    // Achado real (08/08/2026, varredura): igual criarCard (MP) acima —
+    // essa era a única rota de checkout sem checar vendas pausadas.
+    const eventoFlag = await this.prisma.event.findUnique({ where: { id: eventoId }, select: { vendasOnlinePausadas: true } });
+    if (eventoFlag?.vendasOnlinePausadas) {
+      throw new ServiceUnavailableException('Vendas temporariamente pausadas. Tente novamente em instantes.');
+    }
 
     const [tickets, evento] = await Promise.all([
       this.prisma.eventTicket.findMany({

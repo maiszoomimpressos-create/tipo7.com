@@ -1,10 +1,16 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client';
 import { AuthCoreService } from '../auth-core/auth-core.service';
 import { EventFamilyService } from '../common/event-family.service';
 import { SaldoBilheteriaService } from '../common/saldo-bilheteria.service';
 import { EventPermissionsService } from '../event-permissions/event-permissions.service';
 import { OrgAdminService } from '../org-admin/org-admin.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+// Mesmo padrão de profile.service.ts / webhooks.service.ts.
+function isUniqueConstraintError(err: unknown): err is Prisma.PrismaClientKnownRequestError {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
 
 interface CaixaLote {
   nome: string;
@@ -151,10 +157,21 @@ export class CaixasService {
       }),
     );
 
-    const saldoBilheteria = await this.prisma.saldoBilheteria.findUnique({
+    const saldoBilheteriaRaw = await this.prisma.saldoBilheteria.findUnique({
       where: { eventId: eventoId },
       select: { ativo: true, saldoAtual: true, metaReserva: true, avisoDisparado: true, bloqueioAtivo: true },
     });
+    // Achado real (08/08/2026, varredura): devolvia a linha crua do Prisma
+    // (camelCase). GerenciadorCaixas.tsx espera snake_case — o banner de
+    // "saldo de bilheteria baixo" nunca aparecia porque aviso_disparado
+    // sempre chegava undefined.
+    const saldoBilheteria = saldoBilheteriaRaw && {
+      ativo: saldoBilheteriaRaw.ativo,
+      saldo_atual: saldoBilheteriaRaw.saldoAtual,
+      meta_reserva: saldoBilheteriaRaw.metaReserva,
+      aviso_disparado: saldoBilheteriaRaw.avisoDisparado,
+      bloqueio_ativo: saldoBilheteriaRaw.bloqueioAtivo,
+    };
 
     return {
       caixas: result,
@@ -178,12 +195,17 @@ export class CaixasService {
 
     const saldo = await this.calcularSaldoCaixa(caixaId, caixa.ingressosAlocados);
 
-    const { evento, ...caixaFields } = caixa;
+    // Achado real (08/08/2026, varredura): espalhava a linha crua do Prisma
+    // (camelCase). CaixaSidebar.tsx lê stats.fundo_inicial (snake_case) e
+    // mostrava "R$ NaN" — o resto (evento, saldo) já é objeto próprio, não
+    // precisa remapear.
+    const { evento, fundoInicial, ...caixaFields } = caixa;
     return {
       ...caixaFields,
+      fundo_inicial: fundoInicial,
       evento,
       ...saldo,
-      expectedGaveta: Number(caixa.fundoInicial) + saldo.totalDinheiro,
+      expectedGaveta: Number(fundoInicial) + saldo.totalDinheiro,
     };
   }
 
@@ -427,40 +449,61 @@ export class CaixasService {
       if (!senhaOk) throw new ForbiddenException('Senha do promotor incorreta');
     }
 
-    const transOrigens = await this.prisma.caixaTransferencia.findMany({
-      where: { OR: [{ caixaOrigemId: body.caixaOrigemId }, { caixaDestinoId: body.caixaOrigemId }] },
-      select: { caixaOrigemId: true, caixaDestinoId: true, quantidade: true },
-    });
-    const recebidos = transOrigens.filter((t) => t.caixaDestinoId === body.caixaOrigemId).reduce((s, t) => s + t.quantidade, 0);
-    const enviados = transOrigens.filter((t) => t.caixaOrigemId === body.caixaOrigemId).reduce((s, t) => s + t.quantidade, 0);
+    // Achado real (08/08/2026, varredura): o saldo era calculado em queries
+    // separadas do create() final, sem transação/lock cobrindo o intervalo —
+    // duas transferências simultâneas do mesmo caixa de origem perto do
+    // limite podiam ambas passar o check e deixar o saldo negativo. Isolamento
+    // Serializable força o Postgres a rejeitar uma das duas com erro de
+    // conflito de escrita (P2034), tratado abaixo como "tente de novo".
+    let resultado: { transferencia: unknown; saldoOrigemApos: number };
+    try {
+      resultado = await this.prisma.$transaction(
+        async (tx) => {
+          const transOrigens = await tx.caixaTransferencia.findMany({
+            where: { OR: [{ caixaOrigemId: body.caixaOrigemId }, { caixaDestinoId: body.caixaOrigemId }] },
+            select: { caixaOrigemId: true, caixaDestinoId: true, quantidade: true },
+          });
+          const recebidos = transOrigens.filter((t) => t.caixaDestinoId === body.caixaOrigemId).reduce((s, t) => s + t.quantidade, 0);
+          const enviados = transOrigens.filter((t) => t.caixaOrigemId === body.caixaOrigemId).reduce((s, t) => s + t.quantidade, 0);
 
-    const ordersOrigem = await this.prisma.order.findMany({
-      where: { caixaId: body.caixaOrigemId, status: { notIn: ['rejected', 'cancelled'] } },
-      select: { id: true },
-    });
-    const orderIds = ordersOrigem.map((o) => o.id);
-    let vendidosOrigem = 0;
-    if (orderIds.length > 0) {
-      const itens = await this.prisma.orderItem.findMany({ where: { orderId: { in: orderIds } }, select: { quantity: true } });
-      vendidosOrigem = itens.reduce((s, i) => s + i.quantity, 0);
+          const ordersOrigem = await tx.order.findMany({
+            where: { caixaId: body.caixaOrigemId, status: { notIn: ['rejected', 'cancelled'] } },
+            select: { id: true },
+          });
+          const orderIds = ordersOrigem.map((o) => o.id);
+          let vendidosOrigem = 0;
+          if (orderIds.length > 0) {
+            const itens = await tx.orderItem.findMany({ where: { orderId: { in: orderIds } }, select: { quantity: true } });
+            vendidosOrigem = itens.reduce((s, i) => s + i.quantity, 0);
+          }
+
+          const saldoOrigem = origem.ingressosAlocados + recebidos - enviados - vendidosOrigem;
+          if (body.quantidade > saldoOrigem) {
+            throw new BadRequestException(`Saldo insuficiente. Origem tem ${saldoOrigem} ingresso(s) disponíveis.`);
+          }
+
+          const transferencia = await tx.caixaTransferencia.create({
+            data: {
+              eventoId: origem.eventoId,
+              caixaOrigemId: body.caixaOrigemId,
+              caixaDestinoId: body.caixaDestinoId,
+              quantidade: body.quantidade,
+              autorizadoPor: isOwner ? userId : null,
+            },
+          });
+
+          return { transferencia, saldoOrigemApos: saldoOrigem - body.quantidade };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') {
+        throw new ConflictException('Outra transferência foi feita nesse caixa ao mesmo tempo. Tente de novo.');
+      }
+      throw err;
     }
 
-    const saldoOrigem = origem.ingressosAlocados + recebidos - enviados - vendidosOrigem;
-    if (body.quantidade > saldoOrigem) {
-      throw new BadRequestException(`Saldo insuficiente. Origem tem ${saldoOrigem} ingresso(s) disponíveis.`);
-    }
-
-    const transferencia = await this.prisma.caixaTransferencia.create({
-      data: {
-        eventoId: origem.eventoId,
-        caixaOrigemId: body.caixaOrigemId,
-        caixaDestinoId: body.caixaDestinoId,
-        quantidade: body.quantidade,
-        autorizadoPor: isOwner ? userId : null,
-      },
-    });
-
-    return { transferencia, saldoOrigemApos: saldoOrigem - body.quantidade };
+    return resultado;
   }
 
   // POST /caixas/fechar
@@ -518,18 +561,26 @@ export class CaixasService {
 
     const agora = new Date();
 
-    await this.prisma.caixaFechamento.create({
-      data: {
-        caixaId: body.caixaId,
-        dinheiroContado: body.dinheiro_contado,
-        ingressosDevolvidos: body.ingressos_devolvidos,
-        diferencaDinheiro,
-        diferencaIngressos,
-        observacoes: body.observacoes,
-        fechadoPor: userId,
-        ...(isOwner ? { validadoPor: userId, validadoEm: agora } : {}),
-      },
-    });
+    try {
+      await this.prisma.caixaFechamento.create({
+        data: {
+          caixaId: body.caixaId,
+          dinheiroContado: body.dinheiro_contado,
+          ingressosDevolvidos: body.ingressos_devolvidos,
+          diferencaDinheiro,
+          diferencaIngressos,
+          observacoes: body.observacoes,
+          fechadoPor: userId,
+          ...(isOwner ? { validadoPor: userId, validadoEm: agora } : {}),
+        },
+      });
+    } catch (err) {
+      // Achado real (08/08/2026, varredura): caixaId é @unique em
+      // CaixaFechamento — os guard-clauses de status não cobrem duplo
+      // toque/retry simultâneo. Sem isso, o segundo envio estourava 500 cru.
+      if (isUniqueConstraintError(err)) throw new ConflictException('Este caixa já foi fechado (provavelmente por outro envio simultâneo).');
+      throw err;
+    }
     await this.prisma.caixa.update({
       where: { id: body.caixaId },
       data: isOwner ? { status: 'fechado', fechadoEm: agora } : { status: 'fechamento_pendente' },

@@ -4,6 +4,32 @@ import { calcularValorEstacionamento } from '../common/estacionamento-pricing.ut
 import { EventPermissionsService } from '../event-permissions/event-permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+// Achado real (08/08/2026, varredura pós-bug do admin/api): listEstacionamentos
+// e listSessoes devolviam a linha crua do Prisma (camelCase) pro front, que
+// espera snake_case (GerenciadorEstacionamentos.tsx / AtendenteClient.tsx).
+// Isso deixava a tela de gestão sem mostrar preço/portões e — mais grave —
+// travava a saída de veículo em qualquer estacionamento pago ou com portão
+// (o preview de valor e a seleção de portão de saída dependiam de campos que
+// sempre chegavam undefined). listEstacionamentosAtivos (rota irmã, usada
+// pelo atendente) já remapeia isso manualmente no page.tsx — não mexer nela.
+function mapPortao(p: { id: string; nome: string; tipo: string; ativo: boolean }) {
+  return { id: p.id, nome: p.nome, tipo: p.tipo, ativo: p.ativo };
+}
+
+function mapEstacionamento(e: {
+  id: string; nome: string; cobraModo: string; precoFixo: unknown; precoPrimeiraHora: unknown;
+  precoHoraAdicional: unknown; tetoDiario: unknown; toleranciaMinutos: number; controlaSaida: boolean;
+  vagasTotais: number | null; ativo: boolean; estacionamentoPortoes: Parameters<typeof mapPortao>[0][];
+}) {
+  return {
+    id: e.id, nome: e.nome, cobra_modo: e.cobraModo,
+    preco_fixo: e.precoFixo, preco_primeira_hora: e.precoPrimeiraHora, preco_hora_adicional: e.precoHoraAdicional,
+    teto_diario: e.tetoDiario, tolerancia_minutos: e.toleranciaMinutos, controla_saida: e.controlaSaida,
+    vagas_totais: e.vagasTotais, ativo: e.ativo,
+    estacionamento_portoes: e.estacionamentoPortoes.map(mapPortao),
+  };
+}
+
 @Injectable()
 export class EstacionamentoService {
   constructor(
@@ -22,7 +48,7 @@ export class EstacionamentoService {
       orderBy: { createdAt: 'asc' },
       include: { estacionamentoPortoes: true },
     });
-    return { estacionamentos };
+    return { estacionamentos: estacionamentos.map(mapEstacionamento) };
   }
 
   // GET /eventos/:id/estacionamentos/ativos — porte de
@@ -167,7 +193,19 @@ export class EstacionamentoService {
       orderBy: { entradaEm: 'desc' },
       include: { estacionamento: { select: { nome: true } } },
     });
-    return { sessoes };
+    return {
+      sessoes: sessoes.map((s) => ({
+        id: s.id,
+        estacionamento_id: s.estacionamentoId,
+        placa: s.placa,
+        nome_condutor: s.nomeCondutor,
+        telefone_condutor: s.telefoneCondutor,
+        entrada_em: s.entradaEm,
+        modelo: s.modelo,
+        cor: s.cor,
+        estacionamento: s.estacionamento,
+      })),
+    };
   }
 
   async entrada(userId: string, body: Record<string, any>) {
