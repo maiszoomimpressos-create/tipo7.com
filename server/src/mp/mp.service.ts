@@ -46,24 +46,24 @@ export class MpService {
     return { url: url.toString(), csrfState };
   }
 
-  // Compara o user_id da conta que acabou de autorizar contra as duas
-  // contas MP da PRÓPRIA Tipo7 (Conta 1 e Conta 2, platform_settings) —
-  // achado real (08/08/2026): nada no fluxo de OAuth impede um promotor de
-  // conectar acidentalmente a mesma conta que já é da plataforma (aconteceu
-  // 2x nesta sessão, com contas de teste diferentes). O Mercado Pago só
-  // acusa isso na hora de gerar o pagamento ("You cannot use
-  // application_fee with this payment", código 2059) — mensagem opaca pro
-  // usuário final. Bloqueando aqui, na conexão, com mensagem clara.
+  // Compara o user_id da conta que acabou de autorizar contra a conta MP
+  // ATIVA da própria Tipo7 (mp_conta_ativa, platform_settings — só ela,
+  // não as duas) — achado real (08/08/2026): nada no fluxo de OAuth
+  // impede um promotor de conectar acidentalmente a mesma conta que já é
+  // da plataforma. O Mercado Pago só acusa isso na hora de gerar o
+  // pagamento ("You cannot use application_fee with this payment", código
+  // 2059) — mensagem opaca pro usuário final. Bloqueando aqui, na conexão,
+  // com mensagem clara. Ajustado (08/08/2026, mesmo dia) pra checar só a
+  // conta ATIVA no momento, não as duas fixas: confirmado na prática que
+  // conectar como a conta INATIVA funciona normal (o Mercado Pago só
+  // recusa split quando o vendedor é a mesma conta usada pra autorizar o
+  // app agora) — bloquear as duas sempre impedia sem necessidade.
   private async ehContaDaPropriaPlataforma(mpUserId: string): Promise<boolean> {
-    const rows = await this.prisma.platformSetting.findMany({
-      where: { key: { in: ['mp_access_token', 'mp_access_token_2'] } },
-    });
+    const { accessToken } = await this.platformCredentials.getMpCredentials();
     // Formato do token: APP_USR-{app_id}-{data}-{hash}-{user_id} — o
     // user_id é sempre o último segmento separado por hífen.
-    const idsPlataforma = rows
-      .map((r) => r.value?.split('-').pop())
-      .filter((id): id is string => !!id);
-    return idsPlataforma.includes(mpUserId);
+    const idAtivo = accessToken?.split('-').pop();
+    return !!idAtivo && idAtivo === mpUserId;
   }
 
   private async buscarNomeConta(accessToken: string): Promise<string | null> {
