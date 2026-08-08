@@ -16,6 +16,26 @@ function isUniqueConstraintError(err: unknown): err is Prisma.PrismaClientKnownR
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
+// Achado real (08/08/2026, follow-up): `err.meta.target` vem vazio com o
+// driver adapter pg deste projeto — ver explicação completa em
+// profile.service.ts (camposUnicosViolados). Mesma lógica aqui.
+function camposUnicosViolados(err: Prisma.PrismaClientKnownRequestError): string[] {
+  const target = err.meta?.target;
+  if (Array.isArray(target)) return target as string[];
+  if (typeof target === 'string') return [target];
+
+  const viaAdapter = (err.meta as Record<string, unknown> | undefined)?.driverAdapterError as
+    | { cause?: { constraint?: { fields?: string[] } } }
+    | undefined;
+  const camposAdapter = viaAdapter?.cause?.constraint?.fields;
+  if (Array.isArray(camposAdapter)) return camposAdapter;
+
+  const match = err.message.match(/fields:\s*\(([^)]+)\)/);
+  if (match) return match[1].split(',').map((s) => s.trim().replace(/`/g, ''));
+
+  return [];
+}
+
 interface OrgBody {
   documento?: string;
   razaoSocial?: string;
@@ -130,7 +150,7 @@ export class OrganizationsService {
       });
     } catch (err) {
       if (isUniqueConstraintError(err)) {
-        const alvo = (err.meta?.target as string[] | undefined) ?? [];
+        const alvo = camposUnicosViolados(err);
         if (alvo.includes('cnpj')) throw new ConflictException('Este CNPJ já está cadastrado por outra organização.');
         throw new ConflictException('Você já tem uma organização deste tipo cadastrada.');
       }

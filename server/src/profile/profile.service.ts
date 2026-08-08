@@ -8,8 +8,37 @@ function isUniqueConstraintError(err: unknown): err is Prisma.PrismaClientKnownR
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
-// Nome amigável por campo — o `err.meta.target` do Prisma traz o nome da
-// coluna que colidiu (ex: ['phone']), não o nome que o usuário reconhece.
+// Achado real (08/08/2026, follow-up do fix original): `err.meta.target`
+// (o caminho "clássico" do Prisma) vem VAZIO neste projeto, porque o server
+// usa o driver adapter do pg (`@prisma/adapter-pg` — ver log de boot
+// "Conectado ao Postgres via Prisma (driver adapter pg)"), que reporta o
+// nome da coluna em `err.meta.driverAdapterError.cause.constraint.fields`
+// em vez de `err.meta.target`. Sem isso, a mensagem sempre caía no genérico
+// "Um dos dados informados já está em uso" — o usuário salvando telefone+CPF
+// juntos não tinha como saber qual dos dois era o problema de verdade.
+// Tenta os 3 caminhos possíveis, do mais específico ao mais genérico
+// (o 3º usa `err.message`, que o Prisma sempre formata com o nome do campo
+// entre crases — "Unique constraint failed on the fields: (`phone`)" —
+// então funciona mesmo se a forma interna do driver adapter mudar de novo).
+function camposUnicosViolados(err: Prisma.PrismaClientKnownRequestError): string[] {
+  const target = err.meta?.target;
+  if (Array.isArray(target)) return target as string[];
+  if (typeof target === 'string') return [target];
+
+  const viaAdapter = (err.meta as Record<string, unknown> | undefined)?.driverAdapterError as
+    | { cause?: { constraint?: { fields?: string[] } } }
+    | undefined;
+  const camposAdapter = viaAdapter?.cause?.constraint?.fields;
+  if (Array.isArray(camposAdapter)) return camposAdapter;
+
+  const match = err.message.match(/fields:\s*\(([^)]+)\)/);
+  if (match) return match[1].split(',').map((s) => s.trim().replace(/`/g, ''));
+
+  return [];
+}
+
+// Nome amigável por campo — a coluna que colidiu (ex: 'phone') não é o nome
+// que o usuário reconhece.
 const CAMPO_LABEL: Record<string, string> = {
   phone: 'Esse telefone já está cadastrado em outra conta.',
   cpf: 'Esse CPF já está cadastrado em outra conta.',
@@ -96,7 +125,7 @@ export class ProfileService {
       // e o front só sabia mostrar "Erro ao salvar. Tente novamente." sem
       // explicar o motivo. Devolve 409 com mensagem específica do campo.
       if (isUniqueConstraintError(err)) {
-        const alvo = (err.meta?.target as string[] | undefined) ?? [];
+        const alvo = camposUnicosViolados(err);
         const campo = alvo.find((c) => c in CAMPO_LABEL);
         throw new ConflictException(campo ? CAMPO_LABEL[campo] : 'Um dos dados informados já está em uso em outra conta.');
       }
