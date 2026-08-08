@@ -51,7 +51,9 @@ const formatBirthDate = (raw: string) => {
 
 const isoToDisplay = (iso: string) => {
   if (!iso || iso.length < 10) return ''
-  const [y, m, d] = iso.split('-')
+  // Aceita tanto "AAAA-MM-DD" puro quanto timestamp completo
+  // ("AAAA-MM-DDTHH:mm:ss.sssZ") — usa só os 10 primeiros caracteres.
+  const [y, m, d] = iso.slice(0, 10).split('-')
   return `${d}/${m}/${y}`
 }
 
@@ -441,7 +443,13 @@ export function ProfileForm({ userId, secaoAtiva, initial }: Props) {
         }),
       })
 
-      if (!res.ok) { setError('Erro ao salvar. Tente novamente.'); return }
+      if (!res.ok) {
+        // Erros de negócio (ex: telefone/CPF já em uso em outra conta) vêm
+        // com mensagem específica do backend — cai no genérico só se não vier nada.
+        const corpo = await res.json().catch(() => null) as { message?: string } | null
+        setError(corpo?.message || 'Erro ao salvar. Tente novamente.')
+        return
+      }
 
       // Atualiza a URL do avatar no estado para refletir a foto salva
       if (novaAvatarUrl) setAvatarUrl(novaAvatarUrl)

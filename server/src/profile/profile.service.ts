@@ -1,5 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+// Mesmo padrão de webhooks.service.ts (isUniqueConstraintError) — detecta
+// violação de índice único do Postgres (P2002) sem depender do texto do erro.
+function isUniqueConstraintError(err: unknown): err is Prisma.PrismaClientKnownRequestError {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
+
+// Nome amigável por campo — o `err.meta.target` do Prisma traz o nome da
+// coluna que colidiu (ex: ['phone']), não o nome que o usuário reconhece.
+const CAMPO_LABEL: Record<string, string> = {
+  phone: 'Esse telefone já está cadastrado em outra conta.',
+  cpf: 'Esse CPF já está cadastrado em outra conta.',
+  email: 'Esse email já está cadastrado em outra conta.',
+};
 
 // Porte de web/src/app/perfil/ProfileForm.tsx e outros ~9 arquivos que
 // liam/escreviam a tabela profiles direto (Fase 7.2, grupo G2).
@@ -25,7 +40,11 @@ export class ProfileService {
       phone: profile.phone,
       cpf: profile.cpf,
       rg: profile.rg,
-      birth_date: profile.birthDate ? profile.birthDate.toISOString() : null,
+      // birthDate é uma coluna @db.Date (só data, sem hora) — .toISOString()
+      // devolve timestamp completo ("1981-04-02T00:00:00.000Z"), que quebra
+      // o parser ingênuo do front (isoToDisplay faz iso.split('-'), assumindo
+      // "AAAA-MM-DD" puro). Corta pra só os 10 primeiros caracteres.
+      birth_date: profile.birthDate ? profile.birthDate.toISOString().slice(0, 10) : null,
       avatar_url: profile.avatarUrl,
       zip_code: profile.zipCode,
       street: profile.street,
@@ -51,25 +70,38 @@ export class ProfileService {
       addressType?: string | null; complement?: string | null;
     },
   ) {
-    await this.prisma.profile.update({
-      where: { id: userId },
-      data: {
-        ...(body.fullName !== undefined ? { fullName: body.fullName } : {}),
-        ...(body.phone !== undefined ? { phone: body.phone } : {}),
-        ...(body.cpf !== undefined ? { cpf: body.cpf } : {}),
-        ...(body.rg !== undefined ? { rg: body.rg } : {}),
-        ...(body.birthDate !== undefined ? { birthDate: body.birthDate ? new Date(body.birthDate) : null } : {}),
-        ...(body.avatarUrl !== undefined ? { avatarUrl: body.avatarUrl } : {}),
-        ...(body.zipCode !== undefined ? { zipCode: body.zipCode } : {}),
-        ...(body.street !== undefined ? { street: body.street } : {}),
-        ...(body.streetNumber !== undefined ? { streetNumber: body.streetNumber } : {}),
-        ...(body.neighborhood !== undefined ? { neighborhood: body.neighborhood } : {}),
-        ...(body.city !== undefined ? { city: body.city } : {}),
-        ...(body.state !== undefined ? { state: body.state } : {}),
-        ...(body.addressType !== undefined ? { addressType: body.addressType } : {}),
-        ...(body.complement !== undefined ? { complement: body.complement } : {}),
-      },
-    });
+    try {
+      await this.prisma.profile.update({
+        where: { id: userId },
+        data: {
+          ...(body.fullName !== undefined ? { fullName: body.fullName } : {}),
+          ...(body.phone !== undefined ? { phone: body.phone } : {}),
+          ...(body.cpf !== undefined ? { cpf: body.cpf } : {}),
+          ...(body.rg !== undefined ? { rg: body.rg } : {}),
+          ...(body.birthDate !== undefined ? { birthDate: body.birthDate ? new Date(body.birthDate) : null } : {}),
+          ...(body.avatarUrl !== undefined ? { avatarUrl: body.avatarUrl } : {}),
+          ...(body.zipCode !== undefined ? { zipCode: body.zipCode } : {}),
+          ...(body.street !== undefined ? { street: body.street } : {}),
+          ...(body.streetNumber !== undefined ? { streetNumber: body.streetNumber } : {}),
+          ...(body.neighborhood !== undefined ? { neighborhood: body.neighborhood } : {}),
+          ...(body.city !== undefined ? { city: body.city } : {}),
+          ...(body.state !== undefined ? { state: body.state } : {}),
+          ...(body.addressType !== undefined ? { addressType: body.addressType } : {}),
+          ...(body.complement !== undefined ? { complement: body.complement } : {}),
+        },
+      });
+    } catch (err) {
+      // Achado real (08/08/2026): phone/cpf/email são @unique na tabela —
+      // salvar um telefone que já pertence a outra conta estourava 500 cru,
+      // e o front só sabia mostrar "Erro ao salvar. Tente novamente." sem
+      // explicar o motivo. Devolve 409 com mensagem específica do campo.
+      if (isUniqueConstraintError(err)) {
+        const alvo = (err.meta?.target as string[] | undefined) ?? [];
+        const campo = alvo.find((c) => c in CAMPO_LABEL);
+        throw new ConflictException(campo ? CAMPO_LABEL[campo] : 'Um dos dados informados já está em uso em outra conta.');
+      }
+      throw err;
+    }
 
     return { ok: true };
   }
