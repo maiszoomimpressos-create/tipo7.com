@@ -82,13 +82,27 @@ export class WebhooksService {
 
     const ts = xSignature.match(/ts=([^,]+)/)?.[1] ?? '';
     const v1 = xSignature.match(/v1=([^,]+)/)?.[1] ?? '';
-    if (!ts || !v1) return false;
+    if (!ts || !v1) {
+      this.logger.warn(`[webhook] x-signature sem ts/v1 — header cru: "${xSignature}"`);
+      return false;
+    }
 
     const age = Math.abs(Date.now() - parseInt(ts, 10) * 1000);
-    if (age > 5 * 60 * 1000) return false;
+    if (age > 5 * 60 * 1000) {
+      this.logger.warn(`[webhook] ts fora da janela de 5min — ts=${ts} idade=${age}ms`);
+      return false;
+    }
 
     const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
     const expected = createHmac('sha256', secret).update(manifest).digest('hex');
+    if (expected !== v1) {
+      // Diagnóstico temporário (07/08/2026) — remover depois de confirmar a
+      // causa do mismatch de assinatura em produção. Não loga o segredo em
+      // si, só o suficiente pra comparar o hash esperado vs recebido.
+      this.logger.warn(
+        `[webhook] hash nao bate — manifest="${manifest}" secretLen=${secret.length} esperado=${expected} recebido=${v1}`,
+      );
+    }
     return expected === v1;
   }
 
