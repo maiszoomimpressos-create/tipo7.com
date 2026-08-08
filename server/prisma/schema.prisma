@@ -890,6 +890,7 @@ model PromotorMpAccount {
   userId         String    @unique @map("user_id") @db.Uuid
   user           Profile   @relation("PromotorMpAccount_userId", fields: [userId], references: [id], onDelete: Cascade)
   mpUserId       BigInt    @map("mp_user_id")
+  mpAccountName  String?   @map("mp_account_name")
   mpAccessToken  String    @map("mp_access_token")
   mpRefreshToken String?   @map("mp_refresh_token")
   mpPublicKey    String?   @map("mp_public_key")

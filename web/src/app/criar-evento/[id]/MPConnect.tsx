@@ -8,7 +8,7 @@ const ACCENT = '#E8B84B'
 
 type MPStatus =
   | { connected: false }
-  | { connected: true; mpUserId: string; feePct: number; expiresAt: string | null; updatedAt: string }
+  | { connected: true; mpUserId: string; accountName: string | null; feePct: number; expiresAt: string | null; updatedAt: string }
 
 export function MPConnect() {
   const [status,       setStatus]       = useState<MPStatus | null>(null)
@@ -76,7 +76,7 @@ export function MPConnect() {
                   Conta Mercado Pago conectada
                 </p>
                 <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  ID: {status.mpUserId} · Taxa de serviço: {Number(status.feePct).toFixed(0)}%
+                  {status.accountName ? `${status.accountName} · ` : ''}ID: {status.mpUserId} · Taxa de serviço: {Number(status.feePct).toFixed(0)}%
                 </p>
                 {status.expiresAt && (
                   <p className="text-[#444] text-[10px] mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>

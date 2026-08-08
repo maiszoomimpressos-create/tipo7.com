@@ -12,7 +12,7 @@ const ACCENT = '#E8B84B'
 // nota de segurança em ContasPage). connected:false quando não há conta.
 type ContaMP =
   | { connected: false }
-  | { connected: true; mpUserId: string; updatedAt: string }
+  | { connected: true; mpUserId: string; accountName: string | null; updatedAt: string }
 
 type ContaPagBank =
   | { connected: false }
@@ -53,6 +53,7 @@ export function ContasClient({ contaAtual, contaPagBankAtual, tarifas }: Props) 
         state:      'Erro de segurança — tente novamente.',
         token:      'Erro ao obter credenciais do Mercado Pago.',
         banco:      'Credenciais recebidas, mas houve erro ao salvar. Tente novamente.',
+        conta_propria: 'Essa conta Mercado Pago já é usada pela própria Tipo7 — conecte uma conta diferente da sua.',
       }
       setAviso({ tipo: 'erro', msg: msgs[err] ?? 'Erro desconhecido.' })
     }
@@ -148,7 +149,11 @@ export function ContasClient({ contaAtual, contaPagBankAtual, tarifas }: Props) 
           {contaAtual.connected ? (
             <>
               <p className="text-[#555] text-sm mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Conta conectada — ID <span className="text-[#888]">{contaAtual.mpUserId}</span>
+                {contaAtual.accountName ? (
+                  <>Conta conectada — <span className="text-white font-medium">{contaAtual.accountName}</span> <span className="text-[#666]">(ID {contaAtual.mpUserId})</span></>
+                ) : (
+                  <>Conta conectada — ID <span className="text-[#888]">{contaAtual.mpUserId}</span></>
+                )}
               </p>
               <p className="text-[#3a3a3a] text-xs mb-5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 Atualizado em {new Date(contaAtual.updatedAt).toLocaleDateString('pt-BR')}
