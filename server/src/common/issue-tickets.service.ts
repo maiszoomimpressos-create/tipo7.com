@@ -91,6 +91,13 @@ export class IssueTicketsService {
     // ingresso se falhar. A API deles só aceita 1 QR code por mensagem
     // (ver documentação da integração), então manda uma chamada por
     // ingresso do pedido, não uma só pra tudo.
+    //
+    // `details` (08/08/2026): antes só mandava to/type/recipientName/qrData
+    // — a Boot Whats não tinha como montar o texto da mensagem com nome do
+    // evento/data/local, precisava adivinhar ou deixar genérico. Manda
+    // esses campos junto agora; contrato documentado em
+    // docs/boot-whats-details.md (pra combinar com o time deles antes do
+    // texto do template mudar do lado de lá).
     if (profile?.phone) {
       for (const t of ticketEmailList) {
         await this.whatsapp.enviar({
@@ -98,6 +105,14 @@ export class IssueTicketsService {
           recipientName: buyerName,
           type: 'ingresso_emitido',
           qrData: t.qr_token,
+          details: {
+            nome_evento: order.event?.title ?? 'Evento',
+            data: order.event?.dateStart?.toISOString() ?? '',
+            ingresso: t.ticket_name,
+            local: order.event?.venueName ?? '',
+            cidade: order.event?.city ?? '',
+            estado: order.event?.state ?? '',
+          },
         });
       }
     }
