@@ -70,6 +70,11 @@ export class WebhooksService {
     private readonly saldoBilheteria: SaldoBilheteriaService,
   ) {}
 
+  // Achado real (08/08/2026): a verificação já falhou 2x em dias diferentes
+  // com a MESMA assinatura secreta salva (confirmada correta via replay
+  // manual toda vez) — não é config errada, é algo variável entre
+  // pagamentos. Log fica permanente (não só temporário) até a causa de
+  // fundo aparecer com dado real; nunca loga o segredo em si.
   private async verificarAssinaturaMp(headers: Record<string, string | string[] | undefined>, dataId: string): Promise<boolean> {
     const { webhookSecret: secret } = await this.platformCredentials.getMpCredentials();
     if (!secret) {
@@ -82,13 +87,24 @@ export class WebhooksService {
 
     const ts = xSignature.match(/ts=([^,]+)/)?.[1] ?? '';
     const v1 = xSignature.match(/v1=([^,]+)/)?.[1] ?? '';
-    if (!ts || !v1) return false;
+    if (!ts || !v1) {
+      this.logger.warn(`[webhook][mp-sig] paymentId=${dataId} sem ts/v1 no x-signature — header cru: "${xSignature}"`);
+      return false;
+    }
 
     const age = Math.abs(Date.now() - parseInt(ts, 10) * 1000);
-    if (age > 5 * 60 * 1000) return false;
+    if (age > 5 * 60 * 1000) {
+      this.logger.warn(`[webhook][mp-sig] paymentId=${dataId} ts fora da janela de 5min — ts=${ts} idade=${age}ms`);
+      return false;
+    }
 
     const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
     const expected = createHmac('sha256', secret).update(manifest).digest('hex');
+    if (expected !== v1) {
+      this.logger.warn(
+        `[webhook][mp-sig] paymentId=${dataId} hash nao bate — manifest="${manifest}" secretLen=${secret.length} esperado=${expected} recebido=${v1}`,
+      );
+    }
     return expected === v1;
   }
 
@@ -98,9 +114,19 @@ export class WebhooksService {
     const paymentId = body.data?.id;
     if (!paymentId) return { ok: true };
 
+    // Achado real (08/08/2026): a verificação de assinatura já rejeitou
+    // pagamentos genuínos mais de uma vez, com a assinatura secreta certa
+    // confirmada por replay manual toda vez — causa de fundo ainda não
+    // identificada (log acima agora guarda o suficiente pra próxima vez).
+    // Em vez de bloquear o webhook inteiro nesse meio tempo (deixando
+    // comprador pagante sem ingresso até alguém notar e reprocessar na
+    // mão), só registra o aviso e segue — a confirmação real do pagamento
+    // vem de qualquer forma da consulta autenticada à API do MP logo
+    // abaixo (payment.get), que já exige o token de acesso certo pra
+    // devolver dado nenhum; a assinatura do webhook é só uma camada a
+    // mais, não a única fonte de verdade.
     if (!(await this.verificarAssinaturaMp(headers, String(paymentId)))) {
-      this.logger.warn('[webhook] assinatura inválida — requisição rejeitada');
-      throw new UnauthorizedException('Assinatura inválida');
+      this.logger.warn(`[webhook] assinatura inválida pra paymentId=${paymentId} — seguindo mesmo assim (confirmação real vem da API do MP)`);
     }
 
     // Pagamentos de bilheteria são criados com o token OAuth do dono do
