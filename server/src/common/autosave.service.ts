@@ -143,6 +143,33 @@ export class AutosaveService {
     }
   }
 
+  // Achado real (08/08/2026): buscarVeiculoPorPlaca acima só devolve
+  // modelo/cor/telefone — o suficiente pra entrada do estacionamento, mas
+  // o modal de Veículo em /perfil precisa de TODOS os campos pra
+  // pré-preencher o formulário quando o usuário já tem o carro cadastrado
+  // (mesmo padrão de handleBlurCpf em ProfileForm.tsx). Método novo, não
+  // reaproveita o de cima pra não quebrar quem já usa o formato reduzido.
+  async buscarVeiculoCompletoPorPlaca(placa: string): Promise<Record<string, unknown> | null> {
+    const creds = await this.getCredenciais('estacionamento');
+    if (!creds) return null;
+
+    try {
+      const res = await this.fetchComTimeout(`${creds.baseUrl}/vehicles?plate=${encodeURIComponent(placa)}`, {
+        headers: { 'x-api-key': creds.apiKey },
+      });
+      if (!res.ok) return null;
+
+      const data = (await res.json()) as { found?: boolean; vehicles?: Array<Record<string, unknown>> };
+      if (!data.found || !data.vehicles?.length) return null;
+
+      return (
+        data.vehicles.find((v) => String(v.plate ?? '').toUpperCase() === placa.toUpperCase()) ?? data.vehicles[0]
+      );
+    } catch {
+      return null;
+    }
+  }
+
   async buscarClientePorCpf(cpf: string): Promise<AutosaveCustomer | null> {
     const creds = await this.getCredenciais('usuarios');
     if (!creds) return null;

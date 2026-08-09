@@ -10,7 +10,7 @@
 // com o time deles (ver memória project_autosave_veiculo_modal.md).
 // Trocar pra <select> assim que a lista chegar.
 import { useState } from 'react'
-import { Car, ChevronDown, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+import { Car, ChevronDown, Loader2, CheckCircle, AlertCircle, Sparkles } from 'lucide-react'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { cn } from '@/lib/utils'
 
@@ -29,8 +29,8 @@ function Field({ label, optional, children }: { label: string; optional?: boolea
   )
 }
 
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={inp} style={{ fontFamily: 'var(--font-dm-sans)' }} />
+function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} className={className ?? inp} style={{ fontFamily: 'var(--font-dm-sans)' }} />
 }
 
 // Estado do form inteiro — tudo string na tela (inputs numéricos convertem
@@ -81,6 +81,68 @@ export function VeiculoForm() {
   const [saving, setSaving] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [sucesso, setSucesso] = useState<string | null>(null)
+
+  // ── Busca automática ao sair do campo Placa (mesmo padrão de
+  // handleBlurCpf em ProfileForm.tsx) — se o carro já está cadastrado na
+  // Autosave, pré-preenche o resto. Diferente do CPF, não exige
+  // confirmação: placa de carro não é um dado sensível a esse ponto.
+  const [buscandoPlaca, setBuscandoPlaca] = useState(false)
+  const [placaEncontrada, setPlacaEncontrada] = useState(false)
+
+  const preencherSeVazio = (campo: keyof EstadoVeiculo, atual: string, novo: unknown) => {
+    if (atual.trim() || novo == null) return
+    setV(prev => ({ ...prev, [campo]: String(novo) }))
+  }
+
+  const handleBlurPlaca = async (placaDigitada: string) => {
+    setPlacaEncontrada(false)
+    const placa = placaDigitada.trim()
+    if (!placa) return
+
+    setBuscandoPlaca(true)
+    try {
+      const res = await apiFetchAuth(`/api/profile/veiculo/${encodeURIComponent(placa)}`)
+      const data = await res.json() as { found: boolean; vehicle?: Record<string, unknown> }
+      if (!data.found || !data.vehicle) return
+
+      setPlacaEncontrada(true)
+      const veic = data.vehicle
+      preencherSeVazio('name', v.name, veic.name)
+      preencherSeVazio('type', v.type, veic.type)
+      preencherSeVazio('brand', v.brand, veic.brand)
+      preencherSeVazio('model', v.model, veic.model)
+      preencherSeVazio('year', v.year, veic.year)
+      preencherSeVazio('color', v.color, veic.color)
+      preencherSeVazio('status', v.status, veic.status)
+      preencherSeVazio('category', v.category, veic.category)
+      preencherSeVazio('species', v.species, veic.species)
+      preencherSeVazio('body_type', v.body_type, veic.body_type)
+      preencherSeVazio('chassis_number', v.chassis_number, veic.chassis_number)
+      preencherSeVazio('renavam', v.renavam, veic.renavam)
+      preencherSeVazio('engine_number', v.engine_number, veic.engine_number)
+      preencherSeVazio('security_code', v.security_code, veic.security_code)
+      preencherSeVazio('license_expiry', v.license_expiry, veic.license_expiry)
+      preencherSeVazio('licensing_year', v.licensing_year, veic.licensing_year)
+      preencherSeVazio('restrictions', v.restrictions, veic.restrictions)
+      preencherSeVazio('odometer_km', v.odometer_km, veic.odometer_km)
+      preencherSeVazio('fuel_type', v.fuel_type, veic.fuel_type)
+      preencherSeVazio('capacity', v.capacity, veic.capacity)
+      preencherSeVazio('power_cv', v.power_cv, veic.power_cv)
+      preencherSeVazio('displacement', v.displacement, veic.displacement)
+      preencherSeVazio('cmt', v.cmt, veic.cmt)
+      preencherSeVazio('axles', v.axles, veic.axles)
+      preencherSeVazio('owner_name', v.owner_name, veic.owner_name)
+      preencherSeVazio('owner_document', v.owner_document, veic.owner_document)
+      preencherSeVazio('driver_phone', v.driver_phone, veic.driver_phone)
+      preencherSeVazio('city', v.city, veic.city)
+      preencherSeVazio('state', v.state, veic.state)
+      preencherSeVazio('notes', v.notes, veic.notes)
+    } catch {
+      // best-effort — usuário pode preencher manualmente
+    } finally {
+      setBuscandoPlaca(false)
+    }
+  }
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -144,9 +206,22 @@ export function VeiculoForm() {
           </p>
 
           <Field label="Placa">
-            <Input value={v.plate} onChange={set('plate')} placeholder="ABC1D23" maxLength={8}
-              style={{ textTransform: 'uppercase' }} autoComplete="off" />
+            <div className="relative">
+              <Input value={v.plate} onChange={set('plate')} onBlur={e => handleBlurPlaca(e.target.value)}
+                placeholder="ABC1D23" maxLength={8}
+                style={{ textTransform: 'uppercase' }} autoComplete="off" className={inp.replace('px-4', 'pr-10')} />
+              {buscandoPlaca && (
+                <Loader2 size={14} className="animate-spin absolute right-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
+              )}
+            </div>
           </Field>
+
+          {placaEncontrada && (
+            <div className="flex items-center gap-2 -mt-2 text-[#E8B84B] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              <Sparkles size={13} />
+              Esse veículo já estava cadastrado — preenchemos o que faltava.
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Apelido do veículo" optional>

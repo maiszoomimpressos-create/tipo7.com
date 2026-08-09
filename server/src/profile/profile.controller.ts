@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtGuard } from '../auth/guards/supabase-jwt.guard';
 import type { AuthenticatedUser } from '../auth/strategies/supabase-jwt.strategy';
@@ -25,5 +25,14 @@ export class ProfileController {
   @Post('veiculo')
   salvarVeiculo(@CurrentUser() user: AuthenticatedUser, @Body() body: any) {
     return this.profile.salvarVeiculo(user.id, body);
+  }
+
+  // GET /profile/veiculo/:placa — pré-preenche o formulário quando o carro
+  // já está cadastrado na Autosave (busca ao sair do campo Placa, mesmo
+  // padrão de handleBlurCpf em ProfileForm.tsx).
+  @Get('veiculo/:placa')
+  buscarVeiculo(@Param('placa') placa: string) {
+    if (!placa?.trim()) throw new BadRequestException('Placa não informada');
+    return this.profile.buscarVeiculo(placa.trim());
   }
 }

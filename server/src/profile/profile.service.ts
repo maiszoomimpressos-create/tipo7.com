@@ -204,4 +204,15 @@ export class ProfileService {
 
     return { vehicle: resultado.vehicle, created: resultado.created };
   }
+
+  // GET /profile/veiculo/:placa — usado no blur do campo Placa em
+  // VeiculoForm.tsx pra pré-preencher o resto se o carro já existe na
+  // Autosave. O objeto que a Autosave devolve já vem com os mesmos nomes
+  // de campo que a gente manda (snake_case), então passa direto pro front
+  // sem remapear — diferente das rotas que leem Prisma (camelCase).
+  async buscarVeiculo(placa: string) {
+    const veiculo = await this.autosave.buscarVeiculoCompletoPorPlaca(placa);
+    if (!veiculo) return { found: false };
+    return { found: true, vehicle: veiculo };
+  }
 }

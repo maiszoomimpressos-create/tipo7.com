@@ -49,6 +49,7 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/profile',
   '/api/profile/promotor',
   '/api/profile/veiculo',
+  '/api/profile/veiculo/:placa',
   '/api/orders/minhas',
   '/api/stats',
   '/api/check-cpf',
