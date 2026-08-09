@@ -47,16 +47,17 @@ export class BilheteriaController {
 
   // Fase 7.3 — substitui o canal Realtime (`.channel('bilheteria-:eventoId').send()`)
   // que o BilheteiroClient usava pra avisar a Segunda Tela. Sem checagem extra
-  // de permissão no evento: o guard de login já é estritamente mais forte do
+  // de permissão no caixa: o guard de login já é estritamente mais forte do
   // que o esquema anterior (canal aberto pra quem tivesse a anon key pública).
-  @Post(':eventoId/broadcast')
-  broadcast(@Param('eventoId') eventoId: string, @Body() body: { event?: string; payload?: string | object }) {
-    if (body?.event) this.stream.emit(eventoId, body.event, body.payload);
+  // Escopado por CAIXA desde 09/08/2026 (era por evento — ver bilheteria-stream.service.ts).
+  @Post('caixa/:caixaId/broadcast')
+  broadcast(@Param('caixaId') caixaId: string, @Body() body: { event?: string; payload?: string | object }) {
+    if (body?.event) this.stream.emit(caixaId, body.event, body.payload);
     return { ok: true };
   }
 
-  @Sse(':eventoId/stream')
-  sse(@Param('eventoId') eventoId: string): Observable<MessageEvent> {
-    return this.stream.stream(eventoId);
+  @Sse('caixa/:caixaId/stream')
+  sse(@Param('caixaId') caixaId: string): Observable<MessageEvent> {
+    return this.stream.stream(caixaId);
   }
 }

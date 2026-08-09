@@ -220,6 +220,23 @@ export class CaixasService {
     return caixa ?? null;
   }
 
+  // Pedido do usuário (09/08/2026) — entrada da Segunda Tela sem precisar
+  // digitar/saber a URL do evento: loga com a mesma conta que está com o
+  // caixa aberto, o sistema já acha sozinho. Sem filtro de evento (varre
+  // todos), porque o objetivo é achar em qual caixa a pessoa está
+  // trabalhando AGORA, não sabe de antemão em qual evento.
+  async getMeusCaixasAbertos(userId: string) {
+    const caixas = await this.prisma.caixa.findMany({
+      where: { operadorId: userId, status: 'aberto' },
+      select: {
+        id: true, nome: true, eventoId: true,
+        evento: { select: { title: true } },
+      },
+      orderBy: { abertoEm: 'desc' },
+    });
+    return caixas.map((c) => ({ id: c.id, nome: c.nome, evento_id: c.eventoId, evento_title: c.evento.title ?? 'Evento' }));
+  }
+
   // GET /caixas/:caixaId/bootstrap — dados completos pra abrir a tela de
   // venda de um caixa (Fase 7.2, G7). Diferente de getCaixa (só-dono-ou-
   // operador, usado por outros fluxos como fechar/transferir), esta rota

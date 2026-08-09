@@ -41,12 +41,17 @@ interface EventoCarrossel {
 
 interface Props {
   eventoId:        string
+  caixaId:         string
   eventoTitle:     string
   slides:          Slide[]
   eventosProximos: EventoCarrossel[]
 }
 
-export function SegundaTelaClient({ eventoId, eventoTitle, slides, eventosProximos }: Props) {
+// Escopado por CAIXA (não evento) desde 09/08/2026 — ver comentário em
+// bilheteria-stream.service.ts. localStorage (fallback pra 2 abas no mesmo
+// navegador) e o EventSource (SSE entre aparelhos diferentes) usam
+// `caixaId` como chave/rota agora, não mais `eventoId`.
+export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, eventosProximos }: Props) {
   const [estado,          setEstado]          = useState<Estado>('idle')
   const [pixPayload,      setPixPayload]      = useState<PixPayload | null>(null)
   const [aprovadoPayload, setAprovadoPayload] = useState<AprovadoPayload | null>(null)
@@ -79,7 +84,7 @@ export function SegundaTelaClient({ eventoId, eventoTitle, slides, eventosProxim
 
   // Lê localStorage ao montar — restaura estado atual (pix ou aprovado)
   useEffect(() => {
-    const stored = localStorage.getItem(`tipo7-pix-${eventoId}`)
+    const stored = localStorage.getItem(`tipo7-pix-${caixaId}`)
     if (!stored) return
     try {
       const data = JSON.parse(stored)
@@ -94,34 +99,34 @@ export function SegundaTelaClient({ eventoId, eventoTitle, slides, eventosProxim
         const maxValido = agora + 8 * 60 * 1000  // > 8 min = suspeito (prazo normal é 3 min)
         const expMs     = data.expiresAt ? new Date(data.expiresAt).getTime() : 0
         if (expMs < agora || expMs > maxValido) {
-          localStorage.removeItem(`tipo7-pix-${eventoId}`)
+          localStorage.removeItem(`tipo7-pix-${caixaId}`)
         } else {
           setPixPayload(data as PixPayload)
           setEstado('pix')
         }
       }
     } catch {
-      localStorage.removeItem(`tipo7-pix-${eventoId}`)
+      localStorage.removeItem(`tipo7-pix-${caixaId}`)
     }
-  }, [eventoId])
+  }, [caixaId])
 
   // ESC na tela de PIX força retorno ao carrossel (escape de emergência)
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        localStorage.removeItem(`tipo7-pix-${eventoId}`)
+        localStorage.removeItem(`tipo7-pix-${caixaId}`)
         setEstado('idle')
         setPixPayload(null)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [eventoId])
+  }, [caixaId])
 
   // Ouve mudanças no localStorage feitas pela bilheteria (funciona entre janelas)
   useEffect(() => {
     function onStorage(e: StorageEvent) {
-      if (e.key !== `tipo7-pix-${eventoId}`) return
+      if (e.key !== `tipo7-pix-${caixaId}`) return
       if (!e.newValue) {
         setEstado('idle')
         setPixPayload(null)
@@ -134,7 +139,7 @@ export function SegundaTelaClient({ eventoId, eventoTitle, slides, eventosProxim
           // Rejeita PIX já expirado ou com validade suspeita (> 8 min = provável bug)
           const expMs = data.expiresAt ? new Date(data.expiresAt).getTime() : 0
           if (expMs <= Date.now() || expMs > Date.now() + 8 * 60 * 1000) {
-            localStorage.removeItem(`tipo7-pix-${eventoId}`)
+            localStorage.removeItem(`tipo7-pix-${caixaId}`)
             return
           }
           setPixPayload(data as PixPayload)
@@ -148,14 +153,14 @@ export function SegundaTelaClient({ eventoId, eventoTitle, slides, eventosProxim
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
-  }, [eventoId])
+  }, [caixaId])
 
   // Fase 7.3: SSE (NestJS) — escuta em tempo real os broadcasts da
   // bilheteria, substitui o canal Realtime da Supabase. EventSource
   // reconecta sozinho se a conexão cair (comportamento nativo do browser),
   // então não precisa de lógica extra de retry aqui.
   useEffect(() => {
-    const es = new EventSource(`/api/bilheteria/${eventoId}/stream`)
+    const es = new EventSource(`/api/bilheteria/caixa/${caixaId}/stream`)
     es.addEventListener('pix', (e: MessageEvent) => {
       setPixPayload(JSON.parse(e.data) as PixPayload)
       setEstado('pix')
@@ -170,7 +175,7 @@ export function SegundaTelaClient({ eventoId, eventoTitle, slides, eventosProxim
       setPixPayload(null)
     })
     return () => { es.close() }
-  }, [eventoId])
+  }, [caixaId])
 
   // Countdown do PIX — retorna ao idle automaticamente quando expira
   useEffect(() => {
@@ -179,7 +184,7 @@ export function SegundaTelaClient({ eventoId, eventoTitle, slides, eventosProxim
       const diff = Math.floor((new Date(pixPayload.expiresAt!).getTime() - Date.now()) / 1000)
       if (diff <= 0) {
         setTempoRestante(0)
-        localStorage.removeItem(`tipo7-pix-${eventoId}`)
+        localStorage.removeItem(`tipo7-pix-${caixaId}`)
         setEstado('idle')
         setPixPayload(null)
       } else {
@@ -189,7 +194,7 @@ export function SegundaTelaClient({ eventoId, eventoTitle, slides, eventosProxim
     calcular()
     const id = setInterval(calcular, 1000)
     return () => clearInterval(id)
-  }, [estado, pixPayload?.expiresAt, eventoId])
+  }, [estado, pixPayload?.expiresAt, caixaId])
 
   function formatarTempo(s: number) {
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`

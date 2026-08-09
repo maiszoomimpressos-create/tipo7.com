@@ -215,22 +215,30 @@ if exist "%CHROME%" (
 
   // Fase 7.3: avisa a Segunda Tela via SSE (NestJS) em vez do canal Realtime
   // da Supabase — POST dispara, o backend redistribui pra quem estiver
-  // com GET /bilheteria/:eventoId/stream aberto (SegundaTelaClient).
+  // com GET /bilheteria/caixa/:caixaId/stream aberto (SegundaTelaClient).
+  // Escopado por CAIXA (não evento) desde 09/08/2026 — sem caixa aberto não
+  // tem pra quem transmitir, então não faz nada (mesmo padrão de outros
+  // recursos que dependem de caixaId nesse arquivo).
   function broadcast(event: string, payload: unknown) {
-    apiFetchAuth(`/api/bilheteria/${eventoId}/broadcast`, {
+    if (!caixaId) return
+    apiFetchAuth(`/api/bilheteria/caixa/${caixaId}/broadcast`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ event, payload }),
     }).catch(() => {})
   }
 
-  // Abre segunda tela no mesmo browser
+  // Abre segunda tela no mesmo browser — o botão "Segunda tela" na tela de
+  // configurar impressão é justamente pra quem vai ligar um monitor/TV por
+  // cabo no mesmo aparelho: um clique já abre a janela pronta pra arrastar
+  // pra tela extra, sem precisar montar URL na mão.
   function abrirSegundaTela() {
+    if (!caixaId) return
     if (segundaRef.current && !segundaRef.current.closed) {
       segundaRef.current.focus()
       return
     }
-    segundaRef.current = window.open(`/segunda-tela/${eventoId}`, 'tipo7-segunda-tela')
+    segundaRef.current = window.open(`/segunda-tela/${eventoId}/${caixaId}`, 'tipo7-segunda-tela')
   }
 
   // Fecha dropdown ao clicar fora
@@ -292,8 +300,8 @@ if exist "%CHROME%" (
       if (pollingRef.current) clearInterval(pollingRef.current)
       pixBroadcastRef.current = null
       const aprovMsg = { type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length }
-      localStorage.setItem(`tipo7-pix-${eventoId}`, JSON.stringify(aprovMsg))
-      setTimeout(() => localStorage.removeItem(`tipo7-pix-${eventoId}`), 5500)
+      localStorage.setItem(`tipo7-pix-${caixaId}`, JSON.stringify(aprovMsg))
+      setTimeout(() => localStorage.removeItem(`tipo7-pix-${caixaId}`), 5500)
       broadcast('aprovado', aprovMsg)
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao confirmar pagamento')
@@ -387,7 +395,7 @@ if exist "%CHROME%" (
           quantidade,
         }
         pixBroadcastRef.current = pixPayload
-        localStorage.setItem(`tipo7-pix-${eventoId}`, JSON.stringify(pixPayload))
+        localStorage.setItem(`tipo7-pix-${caixaId}`, JSON.stringify(pixPayload))
         broadcast('pix', pixPayload)
       } catch (e: unknown) {
         setErr(e instanceof Error ? e.message : 'Erro ao gerar PIX')
@@ -456,7 +464,7 @@ if exist "%CHROME%" (
     setTempoRestante(null)
     if (pollingRef.current) clearInterval(pollingRef.current)
     pixBroadcastRef.current = null
-    localStorage.removeItem(`tipo7-pix-${eventoId}`)
+    localStorage.removeItem(`tipo7-pix-${caixaId}`)
     broadcast('cancelado', {})
   }
 
@@ -468,7 +476,7 @@ if exist "%CHROME%" (
     setCopiado(false)
     if (pollingRef.current) clearInterval(pollingRef.current)
     pixBroadcastRef.current = null
-    localStorage.removeItem(`tipo7-pix-${eventoId}`)
+    localStorage.removeItem(`tipo7-pix-${caixaId}`)
     broadcast('cancelado', {})
     await handleVender()
   }

@@ -14,6 +14,14 @@ export class CaixasController {
     return this.caixas.listPorEvento(user.id, id);
   }
 
+  // Precisa vir ANTES de 'caixas/:caixaId' abaixo — rota literal tem que
+  // ser registrada primeiro, senão o Express casa ':caixaId' = "meus-abertos"
+  // e nunca chega aqui (achado real testando).
+  @Get('caixas/meus-abertos')
+  meusCaixasAbertos(@CurrentUser() user: AuthenticatedUser) {
+    return this.caixas.getMeusCaixasAbertos(user.id);
+  }
+
   @Get('caixas/:caixaId')
   getCaixa(@CurrentUser() user: AuthenticatedUser, @Param('caixaId') caixaId: string) {
     return this.caixas.getCaixa(user.id, caixaId);
