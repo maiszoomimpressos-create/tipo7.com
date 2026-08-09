@@ -19,6 +19,7 @@ import { EventPermissionsModule } from './event-permissions/event-permissions.mo
 import { EventosModule } from './eventos/eventos.module';
 import { EventsModule } from './events/events.module';
 import { HoldersModule } from './holders/holders.module';
+import { HolderLinksModule } from './holder-links/holder-links.module';
 import { IngressosModule } from './ingressos/ingressos.module';
 import { MpModule } from './mp/mp.module';
 import { OrgAdminModule } from './org-admin/org-admin.module';
@@ -82,6 +83,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     TrabalhosModule,
     UsuariosModule,
     HoldersModule,
+    HolderLinksModule,
     IngressosModule,
     CarrosselModule,
     UploadsModule,

@@ -245,7 +245,7 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
       }
 
       if (data.status === 'approved') {
-        window.location.href = '/checkout/sucesso'
+        window.location.href = `/checkout/sucesso?orderId=${data.orderId ?? ''}`
       } else if (data.status === 'rejected') {
         setError('Pagamento recusado pelo emissor do cartão. Verifique o limite disponível ou tente outro cartão.')
       } else {

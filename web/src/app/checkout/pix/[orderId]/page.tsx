@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 import { Copy, Check, Clock, Loader2, CheckCircle2, XCircle, Ticket, Mail, MessageCircle } from 'lucide-react'
 import { apiFetchAuth } from '@/lib/apiFetch'
+import { HolderWizard } from '../../HolderWizard'
 
 // Mesma formatação DDD+número usada no envio de verdade (whatsapp.service.ts,
 // server) — só pra exibição, não muda o que é realmente enviado.
@@ -106,7 +107,9 @@ function PixPageContent() {
 
       if (d.status === 'approved') {
         if (pollingRef.current) clearInterval(pollingRef.current)
-        setTimeout(() => router.push('/meus-ingressos'), 3500)
+        // Sem redirecionamento automático fixo aqui — quem decide quando ir
+        // pra Meus Ingressos agora é o HolderWizard abaixo (ele mesmo chama
+        // onDone na hora se não tiver nada relevante pra perguntar).
       }
       if (d.status === 'rejected' || d.status === 'cancelled') {
         if (pollingRef.current) clearInterval(pollingRef.current)
@@ -188,7 +191,7 @@ function PixPageContent() {
                 Pagamento confirmado!
               </p>
               <p className="text-[#555] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Redirecionando para seus ingressos…
+                Seus ingressos já estão em Meus Ingressos.
               </p>
             </div>
 
@@ -212,9 +215,7 @@ function PixPageContent() {
               </div>
             )}
 
-            <div className="w-6 h-6">
-              <Loader2 size={20} className="animate-spin text-[#E8B84B]" />
-            </div>
+            <HolderWizard orderId={orderId} onDone={() => router.push('/meus-ingressos')} />
           </div>
         )}
 

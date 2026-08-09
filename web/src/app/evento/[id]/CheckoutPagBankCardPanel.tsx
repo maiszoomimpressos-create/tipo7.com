@@ -187,7 +187,7 @@ export function CheckoutPagBankCardPanel({ eventoId, items, total, onClose }: Pr
       }
 
       if (data.status === 'PAID' || data.status === 'AUTHORIZED') {
-        window.location.href = '/checkout/sucesso'
+        window.location.href = `/checkout/sucesso?orderId=${data.orderId ?? ''}`
       } else if (data.status === 'DECLINED') {
         setError('Pagamento recusado pelo emissor do cartão. Verifique o limite disponível ou tente outro cartão.')
       } else {

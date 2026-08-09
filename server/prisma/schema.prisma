@@ -544,6 +544,7 @@ model Order {
   orderItems                OrderItem[]                @relation("OrderItem_orderId")
   saldoBilheteriaMovimentos SaldoBilheteriaMovimento[] @relation("SaldoBilheteriaMovimento_orderId")
   tickets                   Ticket[]                   @relation("Ticket_orderId")
+  holderInviteLinks         HolderInviteLink[]         @relation("HolderInviteLink_orderId")
 
   @@index([caixaId])
   @@index([eventId])
@@ -569,6 +570,22 @@ model OrderItem {
   @@index([orderId])
   @@index([ticketId])
   @@map("order_items")
+}
+
+// Link compartilhável pra quem NÃO é o comprador preencher o próprio
+// portador de um ingresso restante (pedido do usuário, 09/08/2026 — ver
+// [[project_link_convite_portador]]). Um token por pedido; qualquer slot
+// ainda sem TicketHolder desse pedido pode ser reivindicado por quem abrir
+// o link, em ordem de chegada.
+model HolderInviteLink {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId   String   @map("order_id") @db.Uuid
+  order     Order    @relation("HolderInviteLink_orderId", fields: [orderId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orderId])
+  @@map("holder_invite_links")
 }
 
 model TicketHolder {
