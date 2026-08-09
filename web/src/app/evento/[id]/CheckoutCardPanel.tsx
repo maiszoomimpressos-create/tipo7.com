@@ -234,6 +234,10 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
 
       const data = await res.json() as { orderId?: string; status?: string; error?: string; message?: string }
 
+      if (res.status === 401) {
+        setError('Sua sessão expirou ou você não está logado. Se abriu esse link pelo WhatsApp/Instagram, tente abrir no navegador normal do celular. Entre de novo e tente outra vez.')
+        return
+      }
       if (!res.ok) {
         // mensagem custom do NestJS vem em `message`, não `error` (que é só a frase genérica do status HTTP)
         setError(data.message ?? data.error ?? 'Pagamento recusado. Verifique os dados e tente novamente.')

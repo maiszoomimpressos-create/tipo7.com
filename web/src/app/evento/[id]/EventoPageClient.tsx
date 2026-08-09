@@ -395,6 +395,16 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
       // ("Service Unavailable" etc.), nunca o motivo real. Lendo só
       // `data.error` (padrão herdado das antigas rotas Next.js) escondia
       // qualquer erro específico atrás desse texto inútil.
+      // Achado real (08/08/2026): 401 puro (guard de login rejeitando sem
+      // exceção customizada) também tem message="Unauthorized" — nesse caso
+      // não tem mensagem "real" nenhuma escondida, o texto em si é inútil
+      // pro comprador (geralmente sessão expirada, ou abriu o link dentro
+      // do navegador embutido do WhatsApp/Instagram, que não compartilha
+      // login com o navegador normal). Mensagem própria pra esse caso.
+      if (res.status === 401) {
+        setCheckoutError('Sua sessão expirou ou você não está logado. Se abriu esse link pelo WhatsApp/Instagram, tente abrir no navegador normal do celular. Entre de novo e tente outra vez.')
+        return
+      }
       if (!res.ok) { setCheckoutError(data.message ?? data.error ?? 'Erro ao gerar PIX'); return }
       const suffix = gateway === 'pagbank' ? '?gateway=pagbank' : ''
       window.location.href = `/checkout/pix/${data.orderId}${suffix}`
