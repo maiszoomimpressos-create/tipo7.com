@@ -235,7 +235,7 @@ export function CheckoutCardPanel({ eventoId, items, total, onClose }: Props) {
       const data = await res.json() as { orderId?: string; status?: string; error?: string; message?: string }
 
       if (res.status === 401) {
-        setError('Sua sessão expirou ou você não está logado. Se abriu esse link pelo WhatsApp/Instagram, tente abrir no navegador normal do celular. Entre de novo e tente outra vez.')
+        setError('Sua sessão expirou. Logue novamente.')
         return
       }
       if (!res.ok) {

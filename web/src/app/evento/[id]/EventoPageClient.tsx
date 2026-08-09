@@ -402,7 +402,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
       // do navegador embutido do WhatsApp/Instagram, que não compartilha
       // login com o navegador normal). Mensagem própria pra esse caso.
       if (res.status === 401) {
-        setCheckoutError('Sua sessão expirou ou você não está logado. Se abriu esse link pelo WhatsApp/Instagram, tente abrir no navegador normal do celular. Entre de novo e tente outra vez.')
+        setCheckoutError('Sua sessão expirou. Logue novamente.')
         return
       }
       if (!res.ok) { setCheckoutError(data.message ?? data.error ?? 'Erro ao gerar PIX'); return }
