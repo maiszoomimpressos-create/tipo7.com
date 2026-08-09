@@ -4,6 +4,7 @@ import { Prisma } from '../../generated/prisma/client';
 import { apenasDigitos, validarCPF } from '../common/document-validation.util';
 import { AutosaveService } from '../common/autosave.service';
 import { EmailService } from '../common/email.service';
+import { maskEmail, maskPhone } from '../common/mask.util';
 import { WhatsAppService } from '../common/whatsapp.service';
 import { AuthCoreService } from '../auth-core/auth-core.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -127,6 +128,7 @@ export class HolderLinksService {
         email: profile.email,
         phone: profile.phone,
         birthDate: profile.birthDate,
+        userId, // é o próprio comprador — fica editável só por ele mesmo
       },
     });
 
@@ -170,6 +172,50 @@ export class HolderLinksService {
     };
   }
 
+  // "Puxar os dados dela" (pedido do usuário, 09/08/2026): mesmo padrão de
+  // segurança do cpf-lookup/cpf-confirmar do cadastro (ver
+  // cadastro.service.ts) — nunca revela dado cru só pelo CPF, só uma dica
+  // mascarada até a pessoa confirmar telefone/email completo. A diferença
+  // aqui é a FONTE: contra o próprio banco do Tipo7 (conta já existente),
+  // não a Autosave — o front tenta essa primeiro, cai pra Autosave se não
+  // achar (ver /portador/[token]/page.tsx).
+  async cpfLookupLocal(cpfRaw: string | undefined) {
+    const cpf = apenasDigitos(cpfRaw ?? '');
+    if (!validarCPF(cpf)) return { found: false };
+
+    const profile = await this.prisma.profile.findUnique({ where: { cpf }, select: { phone: true, email: true } });
+    if (!profile || (!profile.phone && !profile.email)) return { found: false };
+
+    return {
+      found: true,
+      telefoneMascarado: profile.phone ? maskPhone(profile.phone) : null,
+      emailMascarado: profile.email ? maskEmail(profile.email) : null,
+    };
+  }
+
+  async cpfConfirmarLocal(cpfRaw: string | undefined, valor: string | undefined) {
+    const cpf = apenasDigitos(cpfRaw ?? '');
+    if (!validarCPF(cpf) || !valor?.trim()) return { ok: false };
+
+    const profile = await this.prisma.profile.findUnique({ where: { cpf } });
+    if (!profile) return { ok: false };
+
+    const valorDigitado = valor.trim();
+    const bateTelefone = !!profile.phone && apenasDigitos(valorDigitado) === apenasDigitos(profile.phone);
+    const bateEmail = !!profile.email && valorDigitado.toLowerCase() === profile.email.toLowerCase();
+    if (!bateTelefone && !bateEmail) return { ok: false };
+
+    return {
+      ok: true,
+      dados: {
+        fullName: profile.fullName,
+        email: profile.email,
+        phone: profile.phone,
+        birthDate: profile.birthDate ? profile.birthDate.toISOString().slice(0, 10) : null,
+      },
+    };
+  }
+
   // Reivindica um dos slots restantes — quem preenche não precisa de conta
   // Tipo7 pra reivindicar, mas ganha uma (senha aleatória, nunca exposta;
   // acesso futuro via "Esqueci minha senha").
@@ -191,6 +237,12 @@ export class HolderLinksService {
     });
     if (!link) throw new NotFoundException('Link inválido.');
 
+    // Checa ANTES de criar o portador se esse CPF já é de uma conta Tipo7 —
+    // se for, o ingresso já nasce vinculado a ela (aparece na Meus Ingressos
+    // dela, e ninguém mais edita esse portador dali pra frente) e a gente
+    // nem tenta criar conta nova.
+    const contaExistente = await this.prisma.profile.findUnique({ where: { cpf }, select: { id: true } });
+
     const birthDate = new Date(birthDateRaw);
     let slot = proximoSlotLivre(link.order);
     if (!slot) throw new ConflictException('Todos os ingressos dessa compra já foram reivindicados.');
@@ -202,7 +254,7 @@ export class HolderLinksService {
     for (let tentativa = 0; tentativa < 5 && slot; tentativa++) {
       try {
         await this.prisma.ticketHolder.create({
-          data: { orderItemId: slot.orderItemId, slotNumber: slot.slotNumber, fullName, cpf, email, phone, birthDate },
+          data: { orderItemId: slot.orderItemId, slotNumber: slot.slotNumber, fullName, cpf, email, phone, birthDate, userId: contaExistente?.id },
         });
         criado = true;
         break;
@@ -256,20 +308,30 @@ export class HolderLinksService {
     // uma conta já existente — nunca sobrescreve/assume uma conta que já
     // é de outra pessoa. Senha aleatória (ninguém sabe, nem nós); quem
     // reivindicou usa "Esqueci minha senha" quando quiser entrar de fato.
-    try {
-      await this.authCore.register({
-        email, cpf, phone, fullName,
-        password: randomBytes(24).toString('base64url'),
-        birthDate: birthDateRaw,
-      });
-      await this.authCore.forgotPassword(email);
-    } catch (err) {
-      // ConflictException é o caso normal (email/cpf/telefone já cadastrados
-      // — a pessoa já tem conta, não mexe nela). Qualquer outro erro aqui é
-      // best-effort mas ainda merece log — o ingresso já está salvo de
-      // qualquer forma, isso nunca deve derrubar a resposta pro usuário.
-      if (!(err instanceof ConflictException)) {
-        this.logger.warn(`[holder-links] falha ao criar pré-cadastro pra ${email}: ${err instanceof Error ? err.message : err}`);
+    // Se já existe conta (contaExistente, checado acima), nem tenta —
+    // o ticket_holder já nasceu com o userId dela.
+    if (!contaExistente) {
+      try {
+        const sessao = await this.authCore.register({
+          email, cpf, phone, fullName,
+          password: randomBytes(24).toString('base64url'),
+          birthDate: birthDateRaw,
+        });
+        await this.authCore.forgotPassword(email);
+        // Vincula o portador recém-criado à conta que acabou de nascer —
+        // sem isso o ingresso não apareceria na Meus Ingressos dela.
+        await this.prisma.ticketHolder.update({
+          where: { orderItemId_slotNumber: { orderItemId: slot.orderItemId, slotNumber: slot.slotNumber } },
+          data: { userId: sessao.user.id },
+        }).catch(() => {});
+      } catch (err) {
+        // ConflictException é o caso normal (email/cpf/telefone já cadastrados
+        // — a pessoa já tem conta, não mexe nela). Qualquer outro erro aqui é
+        // best-effort mas ainda merece log — o ingresso já está salvo de
+        // qualquer forma, isso nunca deve derrubar a resposta pro usuário.
+        if (!(err instanceof ConflictException)) {
+          this.logger.warn(`[holder-links] falha ao criar pré-cadastro pra ${email}: ${err instanceof Error ? err.message : err}`);
+        }
       }
     }
 

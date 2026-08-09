@@ -121,6 +121,7 @@ model Profile {
   platformTeamsUser         PlatformTeam[]           @relation("PlatformTeam_userId")
   promotorMpAccounts        PromotorMpAccount[]      @relation("PromotorMpAccount_userId")
   promotorPagbankAccounts   PromotorPagbankAccount[] @relation("PromotorPagbankAccount_userId")
+  ticketHolders             TicketHolder[]           @relation("TicketHolder_userId")
   ticketValidations         TicketValidation[]       @relation("TicketValidation_scannedBy")
   tickets                   Ticket[]                 @relation("Ticket_validatedBy")
   userPlatformRoles         UserPlatformRole[]       @relation("UserPlatformRole_userId")
@@ -599,8 +600,18 @@ model TicketHolder {
   birthDate   DateTime? @map("birth_date") @db.Date
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   phone       String?
+  // Dono real desse portador quando é uma conta Tipo7 identificada (CPF
+  // bate com profiles.cpf, no self-fill do comprador, ou reivindicado via
+  // link) — pedido do usuário 09/08/2026: uma vez preenchido por alguém
+  // com conta, o ingresso passa a "ser dela" (aparece na Meus Ingressos
+  // dela também, e o comprador não pode mais editar esse portador, só
+  // reenviar/imprimir). Null = portador preenchido manualmente sem conta
+  // conhecida, continua editável por quem comprou.
+  userId      String?   @map("user_id") @db.Uuid
+  profile     Profile?  @relation("TicketHolder_userId", fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([orderItemId, slotNumber])
+  @@index([userId])
   @@map("ticket_holders")
 }
 

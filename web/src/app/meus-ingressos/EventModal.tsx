@@ -2,7 +2,7 @@
 
 // Modal de detalhes do evento + gestão de portadores (edição inline por slot) + QR codes
 import { useEffect, useRef, useState } from 'react'
-import { X, CalendarDays, MapPin, Ticket, Pencil, Check, Loader2, Users, QrCode, MessageCircle, Printer, UserCheck } from 'lucide-react'
+import { X, CalendarDays, MapPin, Ticket, Pencil, Check, Loader2, Users, QrCode, MessageCircle, Printer, UserCheck, Lock } from 'lucide-react'
 import QRCode from 'react-qr-code'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { EventGroup } from './MeusIngressosClient'
@@ -107,6 +107,7 @@ function SlotRow({
   initial,
   qrToken,
   myProfile,
+  locked,
   onSaved,
 }: {
   orderItemId: string
@@ -117,6 +118,10 @@ function SlotRow({
   initial:     SlotData | null
   qrToken:     string | null
   myProfile:   MyProfile | null
+  // Pedido do usuário (09/08/2026): true quando o portador já é uma conta
+  // identificada DIFERENTE de quem está olhando — esconde o lápis de
+  // editar, só sobra reenviar/imprimir.
+  locked:      boolean
   onSaved:     (data: SlotData) => void
 }) {
   const [editing,    setEditing]    = useState(!initial)
@@ -325,13 +330,22 @@ function SlotRow({
               <QrCode size={13} className={showQR ? 'text-[#E8B84B]' : 'text-[#444] hover:text-white'} />
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors hover:bg-[#1a1a1a]"
-          >
-            <Pencil size={13} className="text-[#444] hover:text-white" />
-          </button>
+          {locked ? (
+            <div
+              className="w-7 h-7 flex items-center justify-center rounded-lg"
+              title="Preenchido pela própria pessoa — só ela pode editar"
+            >
+              <Lock size={12} className="text-[#333]" />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors hover:bg-[#1a1a1a]"
+            >
+              <Pencil size={13} className="text-[#444] hover:text-white" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -554,6 +568,7 @@ export function EventModal({ group, onClose, onSaved }: Props) {
                         initial={initial}
                         qrToken={ticketRow?.qr_token ?? null}
                         myProfile={myProfile}
+                        locked={ticketRow?.locked ?? false}
                         onSaved={(data) => {
                           setLocalHolders(prev => ({ ...prev, [key]: data }))
                           onSaved()

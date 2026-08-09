@@ -99,6 +99,10 @@ export default function PortadorLinkPage() {
   const [cpfConfirmado, setCpfConfirmado] = useState(false)
   const [dicaTelefone,  setDicaTelefone]  = useState<string | null>(null)
   const [dicaEmail,     setDicaEmail]     = useState<string | null>(null)
+  // 'local' = já tem conta Tipo7 com esse CPF (pedido do usuário, 09/08/2026
+  // — "puxar os dados dela" em vez de redigitar); 'autosave' = achou no
+  // sistema externo do grupo, sem conta Tipo7 ainda.
+  const [fonteCpf,      setFonteCpf]      = useState<'local' | 'autosave' | null>(null)
   const [valorConfirmacao, setValorConfirmacao] = useState('')
   const [confirmando,   setConfirmando]   = useState(false)
   const [erroConfirmacao, setErroConfirmacao] = useState<string | null>(null)
@@ -108,11 +112,26 @@ export default function PortadorLinkPage() {
   const [resultado, setResultado] = useState<{ ticket_name: string } | null>(null)
 
   async function handleBlurCpf() {
-    setCpfEncontrado(false); setDicaTelefone(null); setDicaEmail(null)
+    setCpfEncontrado(false); setDicaTelefone(null); setDicaEmail(null); setFonteCpf(null)
     setValorConfirmacao(''); setErroConfirmacao(null); setCpfConfirmado(false)
     if (!isValidCPF(cpf)) return
     setCpfBuscando(true)
     try {
+      // Primeiro tenta achar conta Tipo7 já existente com esse CPF — só
+      // cai pra Autosave (sistema externo) se não achar nada aqui.
+      const resLocal = await fetch('/api/public/holder-links/cpf-lookup-local', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cpf }),
+      })
+      const dataLocal = await resLocal.json() as { found: boolean; telefoneMascarado: string | null; emailMascarado: string | null }
+      if (dataLocal.found) {
+        setCpfEncontrado(true)
+        setFonteCpf('local')
+        setDicaTelefone(dataLocal.telefoneMascarado)
+        setDicaEmail(dataLocal.emailMascarado)
+        return
+      }
+
       const res = await fetch('/api/auth/cpf-lookup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cpf }),
@@ -120,6 +139,7 @@ export default function PortadorLinkPage() {
       const data = await res.json() as { found: boolean; telefoneMascarado: string | null; emailMascarado: string | null }
       if (data.found) {
         setCpfEncontrado(true)
+        setFonteCpf('autosave')
         setDicaTelefone(data.telefoneMascarado)
         setDicaEmail(data.emailMascarado)
       }
@@ -134,7 +154,8 @@ export default function PortadorLinkPage() {
     if (!valorConfirmacao.trim()) return
     setConfirmando(true); setErroConfirmacao(null)
     try {
-      const res = await fetch('/api/auth/cpf-confirmar', {
+      const endpoint = fonteCpf === 'local' ? '/api/public/holder-links/cpf-confirmar-local' : '/api/auth/cpf-confirmar'
+      const res = await fetch(endpoint, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cpf, valor: valorConfirmacao }),
       })
@@ -321,7 +342,9 @@ export default function PortadorLinkPage() {
               {cpfEncontrado && !cpfConfirmado && (
                 <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: '#111', border: '1px solid #222' }}>
                   <p className="text-[#999] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Encontramos um cadastro com esse CPF. Pra confirmar que é você, digite seu telefone ou email completo:
+                    {fonteCpf === 'local'
+                      ? 'Você já tem uma conta Tipo7 com esse CPF. Pra confirmar que é você, digite seu telefone ou email completo:'
+                      : 'Encontramos um cadastro com esse CPF. Pra confirmar que é você, digite seu telefone ou email completo:'}
                   </p>
                   <p className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                     {[dicaTelefone, dicaEmail].filter(Boolean).join(' ou ')}
@@ -341,7 +364,7 @@ export default function PortadorLinkPage() {
                     {confirmando ? <Loader2 size={15} className="animate-spin" /> : 'Confirmar'}
                   </button>
                   <button
-                    type="button" onClick={() => { setCpfEncontrado(false); setDicaTelefone(null); setDicaEmail(null) }}
+                    type="button" onClick={() => { setCpfEncontrado(false); setDicaTelefone(null); setDicaEmail(null); setFonteCpf(null) }}
                     className="text-[#555] hover:text-[#888] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}
                   >
                     Prefiro preencher manualmente

@@ -23,6 +23,10 @@ type TicketQR = {
   slot_number: number
   qr_token:    string
   status:      string
+  // Pedido do usuário (09/08/2026): true quando o portador já é uma conta
+  // identificada DIFERENTE de quem está olhando — só dá pra reenviar/
+  // imprimir esse slot, não editar (ver EventModal.tsx/SlotRow).
+  locked:      boolean
 }
 
 type OrderItem = {
@@ -40,6 +44,9 @@ export type Order = {
   total:         number
   created_at:    string
   mp_payment_id: string | null
+  // true = ingresso que a pessoa reivindicou/foi vinculada, mas não
+  // comprou — não conta no total pago dela (ver groupByEvent abaixo).
+  held:          boolean
   events: {
     id:         string
     title:      string | null
@@ -105,7 +112,9 @@ function groupByEvent(orders: Order[]): EventGroup[] {
       // escondia a seção inteira de QR até pros ingressos que JÁ estavam pagos.
       continue
     }
-    group.totalPaid += Number(order.total)
+    // held = ingresso reivindicado, não comprado por essa pessoa — não é
+    // dinheiro dela, não soma no total pago.
+    if (!order.held) group.totalPaid += Number(order.total)
 
     for (const item of order.order_items) {
       group.items.push({ item, orderId: order.id })

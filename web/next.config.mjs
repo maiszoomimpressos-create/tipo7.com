@@ -55,6 +55,8 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/orders/:orderId/holder-resumo',
   '/api/orders/:orderId/holder-preencher-meus-dados',
   '/api/orders/:orderId/holder-link',
+  '/api/public/holder-links/cpf-lookup-local',
+  '/api/public/holder-links/cpf-confirmar-local',
   '/api/public/holder-links/:token',
   '/api/public/holder-links/:token/reivindicar',
   '/api/stats',

@@ -4,6 +4,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtGuard } from '../auth/guards/supabase-jwt.guard';
 import type { AuthenticatedUser } from '../auth/strategies/supabase-jwt.strategy';
 import { getIp, rateLimitLocal, tooManyRequests } from '../common/rate-limit.util';
+import { RateLimitDbService } from '../common/rate-limit-db.service';
 import { HolderLinksService } from './holder-links.service';
 
 // Endpoints do assistente pós-pagamento ("algum desses é seu? preencher ou
@@ -33,7 +34,27 @@ export class HolderLinksController {
 // Tipo7. Só rate-limitadas, sem guard (mesmo critério de cadastro/auth.controller.ts).
 @Controller('public/holder-links')
 export class HolderLinksPublicController {
-  constructor(private readonly holderLinks: HolderLinksService) {}
+  constructor(
+    private readonly holderLinks: HolderLinksService,
+    private readonly rateLimitDb: RateLimitDbService,
+  ) {}
+
+  // Rotas literais ANTES de ':token' abaixo — mesmo achado real de
+  // holder-links não, mas de caixas.controller.ts (rota dinâmica primeiro
+  // casa tudo, nunca chega na literal). "Puxar os dados dela" (pedido do
+  // usuário, 09/08/2026): mesmo padrão de dica mascarada + confirmação do
+  // cadastro normal, só que contra o banco do Tipo7 em vez da Autosave.
+  @Post('cpf-lookup-local')
+  cpfLookupLocal(@Req() req: Request, @Body() body: { cpf?: string }) {
+    if (!rateLimitLocal(getIp(req), 'holder-link-cpf-lookup', 8, 60_000)) tooManyRequests();
+    return this.holderLinks.cpfLookupLocal(body.cpf);
+  }
+
+  @Post('cpf-confirmar-local')
+  async cpfConfirmarLocal(@Req() req: Request, @Body() body: { cpf?: string; valor?: string }) {
+    await this.rateLimitDb.enforce(getIp(req), 'holder-link-cpf-confirmar', 5, 5 * 60_000);
+    return this.holderLinks.cpfConfirmarLocal(body.cpf, body.valor);
+  }
 
   @Get(':token')
   infoPublica(@Req() req: Request, @Param('token') token: string) {
