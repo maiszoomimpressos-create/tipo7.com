@@ -2,7 +2,7 @@
 
 // Modal de detalhes do evento + gestão de portadores (edição inline por slot) + QR codes
 import { useEffect, useRef, useState } from 'react'
-import { X, CalendarDays, MapPin, Ticket, Pencil, Check, Loader2, Users, QrCode, MessageCircle, Printer } from 'lucide-react'
+import { X, CalendarDays, MapPin, Ticket, Pencil, Check, Loader2, Users, QrCode, MessageCircle, Printer, UserCheck } from 'lucide-react'
 import QRCode from 'react-qr-code'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { EventGroup } from './MeusIngressosClient'
@@ -89,6 +89,15 @@ type SlotData = {
   birth_date:  string
 }
 
+// Dados do próprio comprador (GET /api/profile) — usados pra pré-preencher
+// o formulário de portador com um clique, sem redigitar o que o sistema já tem.
+type MyProfile = {
+  full_name:  string | null
+  cpf:        string | null
+  email:      string | null
+  birth_date: string | null // ISO "AAAA-MM-DD"
+}
+
 function SlotRow({
   orderItemId,
   ticketId,
@@ -97,6 +106,7 @@ function SlotRow({
   slotNumber,
   initial,
   qrToken,
+  myProfile,
   onSaved,
 }: {
   orderItemId: string
@@ -106,6 +116,7 @@ function SlotRow({
   slotNumber:  number
   initial:     SlotData | null
   qrToken:     string | null
+  myProfile:   MyProfile | null
   onSaved:     (data: SlotData) => void
 }) {
   const [editing,    setEditing]    = useState(!initial)
@@ -145,6 +156,20 @@ function SlotRow({
     if (field === 'cpf')        v = formatCPF(value)
     if (field === 'birth_date') v = formatBirthDate(value)
     setForm(f => ({ ...f, [field]: v }))
+  }
+
+  // Preenche o formulário com os dados que o próprio comprador já tem
+  // cadastrados — evita redigitar nome/CPF/e-mail/nascimento quando o
+  // ingresso é dele mesmo. Não salva sozinho, só preenche pra revisar.
+  function usarMeusDados() {
+    if (!myProfile) return
+    setForm(f => ({
+      ...f,
+      full_name:  myProfile.full_name ?? f.full_name,
+      cpf:        myProfile.cpf ? formatCPF(myProfile.cpf) : f.cpf,
+      email:      myProfile.email ?? f.email,
+      birth_date: myProfile.birth_date ? isoToDisplay(myProfile.birth_date) : f.birth_date,
+    }))
   }
 
   async function handleSave() {
@@ -190,10 +215,22 @@ function SlotRow({
   if (editing) {
     return (
       <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(232,184,75,0.2)', background: '#0d0d0d' }}>
-        <div className="px-3 py-2 border-b border-[#1a1a1a]">
+        <div className="px-3 py-2 border-b border-[#1a1a1a] flex items-center justify-between gap-2">
           <p className="text-[#E8B84B] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
             {ticketName} · Portador {slotNumber}
           </p>
+          {myProfile && (
+            <button
+              type="button"
+              onClick={usarMeusDados}
+              className="flex items-center gap-1 text-[10px] text-[#666] hover:text-[#E8B84B] transition-colors shrink-0"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+              title="Preencher com os dados do seu cadastro"
+            >
+              <UserCheck size={11} />
+              Usar meus dados
+            </button>
+          )}
         </div>
         <div className="px-3 py-3 space-y-2.5">
           <input
@@ -379,6 +416,18 @@ export function EventModal({ group, onClose, onSaved }: Props) {
     return h
   })
 
+  // Dados do próprio comprador — busca uma vez ao abrir o modal, pra
+  // alimentar o botão "Usar meus dados" em cada portador.
+  const [myProfile, setMyProfile] = useState<MyProfile | null>(null)
+  useEffect(() => {
+    let cancelado = false
+    apiFetchAuth('/api/profile')
+      .then(res => res.ok ? res.json() : null)
+      .then((data: MyProfile | null) => { if (!cancelado) setMyProfile(data) })
+      .catch(() => {})
+    return () => { cancelado = true }
+  }, [])
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -504,6 +553,7 @@ export function EventModal({ group, onClose, onSaved }: Props) {
                         slotNumber={i + 1}
                         initial={initial}
                         qrToken={ticketRow?.qr_token ?? null}
+                        myProfile={myProfile}
                         onSaved={(data) => {
                           setLocalHolders(prev => ({ ...prev, [key]: data }))
                           onSaved()
