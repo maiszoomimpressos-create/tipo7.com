@@ -98,6 +98,7 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/admin/banners-sistema',
   '/api/admin/banners-sistema/:id',
   '/api/admin/gateway-logo',
+  '/api/admin/ingressos/buscar',
   '/api/admin/area-restrita/senha',
   '/api/admin/area-restrita/desbloquear',
   '/api/admin/area-restrita/bloquear',

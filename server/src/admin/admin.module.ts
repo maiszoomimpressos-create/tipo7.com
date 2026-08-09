@@ -9,6 +9,8 @@ import { AdminContentController } from './admin-content.controller';
 import { AdminFeeRulesController } from './admin-fee-rules.controller';
 import { AdminFuncoesController } from './admin-funcoes.controller';
 import { AdminGatewayLogoController } from './admin-gateway-logo.controller';
+import { AdminIngressosController } from './admin-ingressos.controller';
+import { AdminIngressosService } from './admin-ingressos.service';
 import { AdminIntegracoesController } from './admin-integracoes.controller';
 import { AdminMiscController } from './admin-misc.controller';
 import { AdminPaymentCredentialsController } from './admin-payment-credentials.controller';
@@ -31,7 +33,8 @@ import { AdminService } from './admin.service';
     AdminPaymentCredentialsController,
     AdminAtributosController,
     AdminFuncoesController,
+    AdminIngressosController,
   ],
-  providers: [AdminService],
+  providers: [AdminService, AdminIngressosService],
 })
 export class AdminModule {}

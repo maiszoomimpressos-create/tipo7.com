@@ -28,6 +28,7 @@ const PLAYERS_SUB = [
   { href: '/admin/usuarios',        label: 'Usuários',        icon: Users     },
   { href: '/admin/promotores',      label: 'Promotores',      icon: UserCheck },
   { href: '/admin/estabelecimentos',label: 'Estabelecimentos',icon: Building2 },
+  { href: '/admin/ingressos',       label: 'Ingressos',       icon: Ticket    },
 ]
 
 const FIN_SUB = [
@@ -55,7 +56,7 @@ export function AdminSidebar({ role, permissions, acessoRestrito, userName }: Pr
   // mais, precisa ser super_admin ou ter o acesso concedido explicitamente.
   const podeAcessarRestrito = role === 'super_admin' || acessoRestrito
 
-  const playersOpen = pathname.startsWith('/admin/usuarios') || pathname.startsWith('/admin/promotores') || pathname.startsWith('/admin/estabelecimentos')
+  const playersOpen = pathname.startsWith('/admin/usuarios') || pathname.startsWith('/admin/promotores') || pathname.startsWith('/admin/estabelecimentos') || pathname.startsWith('/admin/ingressos')
   const entOpen     = pathname.startsWith('/admin/eventos') || pathname.startsWith('/admin/atributos') || pathname.startsWith('/admin/funcoes')
   const finOpen     = pathname.startsWith('/admin/financeiro')
   const tarifasOpen = TARIFAS_SUB.some(item => pathname.startsWith(item.href)) || pathname === '/admin/financeiro'
