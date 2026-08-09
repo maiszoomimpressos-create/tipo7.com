@@ -19,6 +19,7 @@ type TicketHolder = {
 }
 
 type TicketQR = {
+  id:          string
   slot_number: number
   qr_token:    string
   status:      string

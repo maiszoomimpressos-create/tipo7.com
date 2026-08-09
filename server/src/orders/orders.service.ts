@@ -1,11 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { WhatsAppService } from '../common/whatsapp.service';
 
 // Porte de web/src/app/meus-ingressos/page.tsx (Fase 7.2, G10) — resposta em
 // snake_case pra bater 1:1 com o tipo Order já definido em MeusIngressosClient.tsx.
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly whatsapp: WhatsAppService,
+  ) {}
 
   async minhas(userId: string) {
     const orders = await this.prisma.order.findMany({
@@ -21,7 +25,7 @@ export class OrdersService {
             id: true, quantity: true, unitPrice: true,
             ticket: { select: { id: true, name: true } },
             ticketHolders: { select: { slotNumber: true, fullName: true, cpf: true, email: true, birthDate: true } },
-            tickets: { select: { slotNumber: true, qrToken: true, status: true } },
+            tickets: { select: { id: true, slotNumber: true, qrToken: true, status: true } },
           },
         },
       },
@@ -54,10 +58,53 @@ export class OrdersService {
             email: th.email, birth_date: th.birthDate ? th.birthDate.toISOString().slice(0, 10) : null,
           })),
           tickets: oi.tickets.map((t) => ({
-            slot_number: t.slotNumber, qr_token: t.qrToken, status: t.status,
+            id: t.id, slot_number: t.slotNumber, qr_token: t.qrToken, status: t.status,
           })),
         })),
       })),
     };
+  }
+
+  // "Reenviar" — pedido lançado junto com a integração WhatsApp (08/08/2026):
+  // hoje o ingresso só é mandado automaticamente uma vez, na aprovação do
+  // pagamento (issue-tickets.service.ts) — se a mensagem não chegar por
+  // qualquer motivo (número errado na hora, app do WhatsApp fora do ar,
+  // etc.), a única forma de recuperar era eu reprocessar na mão. Reusa o
+  // mesmo WhatsAppService e o mesmo formato de `details`.
+  async reenviarWhatsapp(userId: string, ticketId: string) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: {
+        qrToken: true,
+        orderItem: { select: { ticket: { select: { name: true } } } },
+        order: {
+          select: {
+            userId: true,
+            event: { select: { title: true, dateStart: true, venueName: true, city: true, state: true } },
+          },
+        },
+      },
+    });
+    if (!ticket || ticket.order.userId !== userId) throw new NotFoundException('Ingresso não encontrado');
+
+    const profile = await this.prisma.profile.findUnique({ where: { id: userId }, select: { fullName: true, phone: true } });
+    if (!profile?.phone) throw new BadRequestException('Cadastre um telefone no seu perfil pra receber o ingresso por WhatsApp.');
+
+    await this.whatsapp.enviar({
+      to: profile.phone,
+      recipientName: profile.fullName ?? 'Cliente',
+      type: 'ingresso_emitido',
+      qrData: ticket.qrToken,
+      details: {
+        nome_evento: ticket.order.event?.title ?? 'Evento',
+        data: ticket.order.event?.dateStart?.toISOString() ?? '',
+        ingresso: ticket.orderItem?.ticket?.name ?? 'Ingresso',
+        local: ticket.order.event?.venueName ?? '',
+        cidade: ticket.order.event?.city ?? '',
+        estado: ticket.order.event?.state ?? '',
+      },
+    });
+
+    return { ok: true };
   }
 }

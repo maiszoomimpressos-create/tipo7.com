@@ -51,6 +51,7 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/profile/veiculo',
   '/api/profile/veiculo/:placa',
   '/api/orders/minhas',
+  '/api/orders/tickets/:ticketId/reenviar-whatsapp',
   '/api/stats',
   '/api/check-cpf',
   '/api/check-cnpj',

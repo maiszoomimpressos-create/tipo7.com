@@ -2,10 +2,38 @@
 
 // Modal de detalhes do evento + gestão de portadores (edição inline por slot) + QR codes
 import { useEffect, useRef, useState } from 'react'
-import { X, CalendarDays, MapPin, Ticket, Pencil, Check, Loader2, Users, QrCode } from 'lucide-react'
+import { X, CalendarDays, MapPin, Ticket, Pencil, Check, Loader2, Users, QrCode, MessageCircle, Printer } from 'lucide-react'
 import QRCode from 'react-qr-code'
+import { renderToStaticMarkup } from 'react-dom/server'
 import type { EventGroup } from './MeusIngressosClient'
 import { apiFetchAuth } from '@/lib/apiFetch'
+
+// Abre uma aba só com o ingresso (QR grande + dados essenciais) e já chama
+// o print do navegador — não tenta imprimir a página inteira do site.
+function imprimirIngresso(params: { eventTitle: string; ticketName: string; holderName: string; qrToken: string }) {
+  const qrSvg = renderToStaticMarkup(
+    <QRCode value={params.qrToken} size={220} fgColor="#000000" bgColor="#ffffff" level="M" />
+  )
+  const win = window.open('', '_blank', 'width=420,height=640')
+  if (!win) return
+  win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+    <title>Ingresso — ${params.eventTitle}</title>
+    <style>
+      body { font-family: Arial, sans-serif; text-align: center; padding: 32px 16px; color: #000; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p { font-size: 13px; color: #444; margin: 2px 0; }
+      .qr { margin: 24px auto; }
+    </style>
+  </head><body>
+    <h1>${params.eventTitle}</h1>
+    <p>${params.ticketName} · ${params.holderName}</p>
+    <div class="qr">${qrSvg}</div>
+    <p style="font-size:10px;color:#888;word-break:break-all;">${params.qrToken}</p>
+  </body></html>`)
+  win.document.close()
+  win.focus()
+  setTimeout(() => win.print(), 300)
+}
 
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
 
@@ -63,6 +91,8 @@ type SlotData = {
 
 function SlotRow({
   orderItemId,
+  ticketId,
+  eventTitle,
   ticketName,
   slotNumber,
   initial,
@@ -70,6 +100,8 @@ function SlotRow({
   onSaved,
 }: {
   orderItemId: string
+  ticketId:    string | null
+  eventTitle:  string
   ticketName:  string
   slotNumber:  number
   initial:     SlotData | null
@@ -80,6 +112,28 @@ function SlotRow({
   const [saving,     setSaving]     = useState(false)
   const [err,        setErr]        = useState<string | null>(null)
   const [showQR,     setShowQR]     = useState(false)
+  const [enviando,   setEnviando]   = useState(false)
+  const [enviado,    setEnviado]    = useState(false)
+  const [erroEnvio,  setErroEnvio]  = useState<string | null>(null)
+
+  async function reenviarWhatsapp() {
+    if (!ticketId) return
+    setEnviando(true); setErroEnvio(null)
+    try {
+      const res = await apiFetchAuth(`/api/orders/tickets/${ticketId}/reenviar-whatsapp`, { method: 'POST' })
+      if (!res.ok) {
+        const d = await res.json().catch(() => null) as { message?: string } | null
+        setErroEnvio(d?.message ?? 'Erro ao reenviar')
+        return
+      }
+      setEnviado(true)
+      setTimeout(() => setEnviado(false), 3000)
+    } catch {
+      setErroEnvio('Erro de conexão')
+    } finally {
+      setEnviando(false)
+    }
+  }
   const [form, setForm] = useState<SlotData>(
     initial
       ? { ...initial, birth_date: isoToDisplay(initial.birth_date) }
@@ -247,21 +301,53 @@ function SlotRow({
       {/* QR code expandido */}
       {showQR && qrToken && (
         <div
-          className="px-3 pb-4 pt-1 flex flex-col items-center gap-3"
-          style={{ borderTop: '1px solid #1a1a1a' }}
+          className="px-4 pb-4 pt-3 flex flex-col items-center gap-3"
+          style={{ borderTop: '1px solid #1a1a1a', background: '#0a0a0a' }}
         >
-          <div className="bg-white p-3 rounded-xl">
+          <div className="bg-white p-4 rounded-2xl shadow-lg shadow-black/30">
             <QRCode
               value={qrToken}
-              size={160}
+              size={172}
               fgColor="#070707"
               bgColor="#ffffff"
               level="M"
             />
           </div>
-          <p className="text-[#333] text-[10px] text-center break-all" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          <p className="text-[#333] text-[10px] text-center break-all max-w-[220px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
             {qrToken}
           </p>
+
+          <div className="flex items-center gap-2 w-full max-w-[260px]">
+            {ticketId && (
+              <button
+                type="button"
+                onClick={reenviarWhatsapp}
+                disabled={enviando}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold disabled:opacity-60 transition-all"
+                style={{
+                  background:  enviado ? 'rgba(37,211,102,0.12)' : 'rgba(37,211,102,0.08)',
+                  color:       '#25D366',
+                  border:      '1px solid rgba(37,211,102,0.25)',
+                  fontFamily:  'var(--font-dm-sans)',
+                }}
+              >
+                {enviando ? <Loader2 size={13} className="animate-spin" /> : <MessageCircle size={13} />}
+                {enviado ? 'Enviado!' : 'WhatsApp'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => imprimirIngresso({ eventTitle, ticketName, holderName: form.full_name || `Portador ${slotNumber}`, qrToken })}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all"
+              style={{ background: '#151515', color: '#999', border: '1px solid #222', fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <Printer size={13} />
+              Imprimir
+            </button>
+          </div>
+          {erroEnvio && (
+            <p className="text-red-400 text-[11px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erroEnvio}</p>
+          )}
         </div>
       )}
     </div>
@@ -405,16 +491,18 @@ export function EventModal({ group, onClose, onSaved }: Props) {
                   Array.from({ length: item.quantity }, (_, i) => {
                     const key     = `${item.id}-${i + 1}`
                     const initial = localHolders[key] ?? null
-                    // Encontra o qr_token do slot correspondente
-                    const qrToken = item.tickets?.find(t => t.slot_number === i + 1)?.qr_token ?? null
+                    // Encontra o ticket (id + qr_token) do slot correspondente
+                    const ticketRow = item.tickets?.find(t => t.slot_number === i + 1) ?? null
                     return (
                       <SlotRow
                         key={key}
                         orderItemId={item.id}
+                        ticketId={ticketRow?.id ?? null}
+                        eventTitle={ev?.title ?? 'Evento'}
                         ticketName={item.event_tickets?.name ?? 'Ingresso'}
                         slotNumber={i + 1}
                         initial={initial}
-                        qrToken={qrToken}
+                        qrToken={ticketRow?.qr_token ?? null}
                         onSaved={(data) => {
                           setLocalHolders(prev => ({ ...prev, [key]: data }))
                           onSaved()
