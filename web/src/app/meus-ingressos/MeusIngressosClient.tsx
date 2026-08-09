@@ -96,7 +96,15 @@ function groupByEvent(orders: Order[]): EventGroup[] {
     }
     const group = map.get(eventId)!
     group.orders.push(order)
-    if (order.status !== 'approved') group.allApproved = false
+    if (order.status !== 'approved') {
+      group.allApproved = false
+      // Pedido não aprovado (pending/cancelled/in_process) não conta como
+      // ingresso do usuário — não entra na contagem nem tem portador/QR pra
+      // preencher. Achado real 08/08/2026: um evento com histórico de testes
+      // (várias tentativas pending/cancelled misturadas com compras pagas)
+      // escondia a seção inteira de QR até pros ingressos que JÁ estavam pagos.
+      continue
+    }
     group.totalPaid += Number(order.total)
 
     for (const item of order.order_items) {
@@ -106,7 +114,8 @@ function groupByEvent(orders: Order[]): EventGroup[] {
     }
   }
 
-  return Array.from(map.values())
+  // Evento sem nenhum pedido aprovado não tem ingresso nenhum pra mostrar
+  return Array.from(map.values()).filter(g => g.items.length > 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +125,9 @@ function groupByEvent(orders: Order[]): EventGroup[] {
 function EventCard({ group, onClick }: { group: EventGroup; onClick: () => void }) {
   const ev          = group.event
   const allFilled   = group.holdersFilled >= group.totalTickets
-  const needHolders = group.allApproved && !allFilled
+  // group.items só tem itens de pedidos aprovados (ver groupByEvent) — não
+  // precisa mais checar allApproved aqui, só se falta preencher portador
+  const needHolders = !allFilled
 
   return (
     <button type="button" onClick={onClick} className="w-full text-left group cursor-pointer">

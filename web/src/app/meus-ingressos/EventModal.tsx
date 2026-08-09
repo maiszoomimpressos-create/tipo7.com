@@ -468,8 +468,9 @@ export function EventModal({ group, onClose, onSaved }: Props) {
             </span>
           </div>
 
-          {/* Portadores + QR codes */}
-          {group.allApproved && (
+          {/* Portadores + QR codes — group.items já só tem itens de pedidos
+              aprovados (ver groupByEvent em MeusIngressosClient.tsx) */}
+          {group.items.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
