@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, CalendarRange, Settings2, Landmark, ReceiptText,
   ChevronDown, Megaphone, GalleryHorizontal, Building2, Users, Briefcase,
+  ShoppingBag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const MARKETING_SUB = [
   { label: 'Carrossel', href: '/minha-area/marketing/carrossel', icon: GalleryHorizontal },
@@ -41,6 +43,21 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
 
   const dashActive = pathname === '/minha-area'
 
+  // Botão "Bilheteria" no sidebar (pedido do usuário, 10/08/2026 — fica
+  // nos dois lugares: aqui E ao lado do "Novo evento" em Minha Área).
+  // PromoterLayout não recebe a lista de eventos como prop (é usado em
+  // várias páginas diferentes), então busca sozinho, uma vez, ao montar.
+  const [eventosBilheteria, setEventosBilheteria] = useState<{ id: string; title: string }[]>([])
+  const [bilheteriaAberta,  setBilheteriaAberta]  = useState(false)
+  const [eventoSel,         setEventoSel]         = useState('')
+
+  useEffect(() => {
+    apiFetchAuth('/api/eventos/meus')
+      .then(res => res.ok ? res.json() : null)
+      .then((d: { eventos?: { id: string; title: string }[] } | null) => setEventosBilheteria(d?.eventos ?? []))
+      .catch(() => {})
+  }, [])
+
   return (
     <div className="flex flex-1">
 
@@ -69,6 +86,60 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
             />
             Dashboard
           </a>
+
+          {/* Bilheteria — abre popover pra escolher o evento (não é link
+              direto, já que não tem um evento "atual" fixo aqui) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setBilheteriaAberta(v => !v)}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all w-full text-left text-[#555] hover:text-[#bbb] hover:bg-white/5"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <ShoppingBag size={15} strokeWidth={2} className="text-[#3a3a3a]" />
+              <span className="flex-1">Bilheteria</span>
+            </button>
+            {bilheteriaAberta && (
+              <div
+                className="absolute left-0 top-full mt-1 w-64 rounded-2xl p-4 flex flex-col gap-3 z-30"
+                style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}
+              >
+                <p className="text-[#666] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Escolha o evento
+                </p>
+                {eventosBilheteria.length === 0 ? (
+                  <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Nenhum evento ainda.
+                  </p>
+                ) : (
+                  <>
+                    <select
+                      value={eventoSel}
+                      onChange={e => setEventoSel(e.target.value)}
+                      className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}
+                    >
+                      <option value="">Selecione o evento</option>
+                      {eventosBilheteria.map(e => (
+                        <option key={e.id} value={e.id}>{e.title}</option>
+                      ))}
+                    </select>
+                    <a
+                      href={eventoSel ? `/bilheteria/${eventoSel}` : undefined}
+                      className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-[#070707] transition-opacity"
+                      style={{
+                        background: '#E8B84B', fontFamily: 'var(--font-dm-sans)',
+                        opacity: eventoSel ? 1 : 0.4,
+                        pointerEvents: eventoSel ? 'auto' : 'none',
+                      }}
+                    >
+                      Ir pra bilheteria
+                    </a>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Eventos — expansível */}
           <button
