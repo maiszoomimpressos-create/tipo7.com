@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import QRCode from 'react-qr-code'
-import { CheckCircle2, Clock, MapPin, Calendar, Ticket as TicketIcon } from 'lucide-react'
+import { CheckCircle2, Clock, MapPin, Calendar, Ticket as TicketIcon, Banknote, CreditCard, Loader2 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
 
-type Estado = 'idle' | 'pix' | 'aprovado'
+type Estado = 'idle' | 'pix' | 'aguardando' | 'aprovado'
 
 interface PixPayload {
   type:         'pix'
@@ -18,13 +18,27 @@ interface PixPayload {
   expiresAt:    string | null
 }
 
+// Dinheiro / Cartão — mesmo tratamento do PIX (mostra valor na segunda tela
+// e espera o operador confirmar o recebimento antes de imprimir), só que
+// sem QR nem polling: quem "aprova" aqui é o clique do operador, não um
+// gateway. `criadoEm` serve só pra descartar payload velho no localStorage
+// (aba recarregada horas depois etc.), igual à checagem de expiresAt do PIX.
+interface AguardandoPayload {
+  type:       'aguardando'
+  metodo:     'dinheiro' | 'cartao'
+  total:      number
+  ticketName: string
+  quantidade: number
+  criadoEm:   number
+}
+
 interface AprovadoPayload {
   type:       'aprovado'
   ticketName: string
   quantidade: number
 }
 
-type Payload = PixPayload | AprovadoPayload | { type: 'cancelado' }
+type Payload = PixPayload | AguardandoPayload | AprovadoPayload | { type: 'cancelado' }
 
 interface Slide {
   id:        string
@@ -52,9 +66,10 @@ interface Props {
 // navegador) e o EventSource (SSE entre aparelhos diferentes) usam
 // `caixaId` como chave/rota agora, não mais `eventoId`.
 export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, eventosProximos }: Props) {
-  const [estado,          setEstado]          = useState<Estado>('idle')
-  const [pixPayload,      setPixPayload]      = useState<PixPayload | null>(null)
-  const [aprovadoPayload, setAprovadoPayload] = useState<AprovadoPayload | null>(null)
+  const [estado,           setEstado]           = useState<Estado>('idle')
+  const [pixPayload,       setPixPayload]       = useState<PixPayload | null>(null)
+  const [aguardandoPayload, setAguardandoPayload] = useState<AguardandoPayload | null>(null)
+  const [aprovadoPayload,  setAprovadoPayload]  = useState<AprovadoPayload | null>(null)
   const [idx,             setIdx]             = useState(0)
   const [horaAtual,       setHoraAtual]       = useState('')
   const [tempoRestante,   setTempoRestante]   = useState<number | null>(null)
@@ -105,6 +120,15 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
           setEstado('pix')
         }
       }
+      if (data.type === 'aguardando') {
+        // Sem expiresAt (não é PIX) — usa criadoEm pra descartar payload velho.
+        if (!data.criadoEm || Date.now() - data.criadoEm > 8 * 60 * 1000) {
+          localStorage.removeItem(`tipo7-pix-${caixaId}`)
+        } else {
+          setAguardandoPayload(data as AguardandoPayload)
+          setEstado('aguardando')
+        }
+      }
     } catch {
       localStorage.removeItem(`tipo7-pix-${caixaId}`)
     }
@@ -117,6 +141,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
         localStorage.removeItem(`tipo7-pix-${caixaId}`)
         setEstado('idle')
         setPixPayload(null)
+        setAguardandoPayload(null)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -130,6 +155,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       if (!e.newValue) {
         setEstado('idle')
         setPixPayload(null)
+        setAguardandoPayload(null)
         setAprovadoPayload(null)
         return
       }
@@ -144,6 +170,13 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
           }
           setPixPayload(data as PixPayload)
           setEstado('pix')
+        } else if (data.type === 'aguardando') {
+          if (!data.criadoEm || Date.now() - data.criadoEm > 8 * 60 * 1000) {
+            localStorage.removeItem(`tipo7-pix-${caixaId}`)
+            return
+          }
+          setAguardandoPayload(data as AguardandoPayload)
+          setEstado('aguardando')
         } else if (data.type === 'aprovado') {
           setAprovadoPayload(data as AprovadoPayload)
           setEstado('aprovado')
@@ -164,6 +197,10 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     es.addEventListener('pix', (e: MessageEvent) => {
       setPixPayload(JSON.parse(e.data) as PixPayload)
       setEstado('pix')
+    })
+    es.addEventListener('aguardando', (e: MessageEvent) => {
+      setAguardandoPayload(JSON.parse(e.data) as AguardandoPayload)
+      setEstado('aguardando')
     })
     es.addEventListener('aprovado', (e: MessageEvent) => {
       setAprovadoPayload(JSON.parse(e.data) as AprovadoPayload)
@@ -245,6 +282,50 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
         <p className="text-[#282828] text-xs uppercase tracking-[0.25em]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
           PIX • Pagamento instantâneo
         </p>
+      </div>
+    )
+  }
+
+  // ── Tela aguardando (dinheiro/cartão) ───────────────────────────────────────
+  // Sem gateway integrado pra nenhum dos dois métodos — quem confirma o
+  // recebimento é o operador na tela dele; aqui só exibe o valor pro
+  // cliente conferir enquanto isso.
+  if (estado === 'aguardando' && aguardandoPayload) {
+    const Icone = aguardandoPayload.metodo === 'dinheiro' ? Banknote : CreditCard
+    return (
+      <div className="h-screen w-screen bg-[#070707] flex flex-col items-center justify-center gap-8 overflow-hidden select-none">
+
+        <div className="flex flex-col items-center gap-1">
+          <p className="text-xs font-bold uppercase tracking-[0.35em]" style={{ color: ACCENT, fontFamily: 'var(--font-syne)' }}>
+            Tipo7.com
+          </p>
+          <p className="text-[#555] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            {aguardandoPayload.metodo === 'dinheiro' ? 'Pagamento em dinheiro' : 'Pagamento no cartão'}
+          </p>
+        </div>
+
+        <div
+          className="w-44 h-44 rounded-full flex items-center justify-center"
+          style={{ background: `${ACCENT}10`, border: `2px solid ${ACCENT}30` }}
+        >
+          <Icone size={72} style={{ color: ACCENT }} />
+        </div>
+
+        <div className="text-center flex flex-col gap-1">
+          <p className="text-[#555] text-base" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            {aguardandoPayload.quantidade}× {aguardandoPayload.ticketName}
+          </p>
+          <p className="text-6xl font-bold" style={{ color: ACCENT, fontFamily: 'var(--font-outfit)' }}>
+            R$ {aguardandoPayload.total.toFixed(2).replace('.', ',')}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Loader2 size={14} className="animate-spin text-[#555]" />
+          <span className="text-[#555] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Aguardando confirmação do operador...
+          </span>
+        </div>
       </div>
     )
   }

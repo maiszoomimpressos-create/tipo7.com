@@ -7,22 +7,24 @@ import {
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
   Clock, Monitor, Settings, Download, FileText, Thermometer, MonitorOff,
-  ArrowRightLeft, X, Calculator,
+  ArrowRightLeft, X, Calculator, Zap,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { CaixaSidebar }       from './CaixaSidebar'
 import { apiFetchAuth } from '@/lib/apiFetch'
+import { gerarComandosMultiplos, imprimirViaRawBT, type IngressoParaImprimir } from '@/lib/rawbtPrint'
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
 
 type MetodoPagamento = 'dinheiro' | 'pix' | 'cartao'
-type Etapa = 'venda' | 'pix' | 'dados' | 'impressao'
-type PrintFormat = 'a4' | 'termica80' | 'nenhuma'
+type Etapa = 'venda' | 'pix' | 'confirmar' | 'dados' | 'impressao'
+type PrintFormat = 'a4' | 'termica80' | 'rawbt' | 'nenhuma'
 
 const PRINT_FORMATS: { value: PrintFormat; label: string; sub: string; Icon: React.ElementType }[] = [
   { value: 'a4',       label: 'A4',          sub: 'Impressora comum',    Icon: FileText    },
   { value: 'termica80', label: 'Térmica 80mm', sub: 'Impressora de cupom', Icon: Thermometer },
+  { value: 'rawbt',    label: 'Térmica direta (RawBT)', sub: 'Celular Android + app RawBT — sem diálogo', Icon: Zap },
   { value: 'nenhuma',  label: 'Sem impressão', sub: 'Somente tela',       Icon: MonitorOff  },
 ]
 
@@ -120,7 +122,9 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   useEffect(() => {
     const prev = document.getElementById('tipo7-print-css')
     if (prev) prev.remove()
-    if (!formato || formato === 'nenhuma') return
+    // 'rawbt' nunca passa por window.print() (imprime direto via intent),
+    // então o CSS de impressão do navegador não se aplica a ele.
+    if (!formato || formato === 'nenhuma' || formato === 'rawbt') return
     const s = document.createElement('style')
     s.id = 'tipo7-print-css'
     if (formato === 'termica80') {
@@ -205,7 +209,7 @@ if exist "%CHROME%" (
     if (etapa !== 'impressao' || !resultado || !formato || formato === 'nenhuma') return
 
     const t = setTimeout(() => {
-      window.print()
+      imprimirTickets()
       handleNovaVenda()
     }, 600)
 
@@ -405,7 +409,31 @@ if exist "%CHROME%" (
       return
     }
 
-    // Fluxo dinheiro / cartão — registra direto
+    // Fluxo dinheiro / cartão — sem gateway integrado, ninguém além do
+    // operador sabe se o pagamento realmente aconteceu. Em vez de registrar
+    // a venda direto, vai pra uma tela de confirmação (mesma ideia do PIX):
+    // mostra o valor pro cliente na segunda tela e só processa/imprime
+    // quando o operador confirmar que recebeu.
+    setSalvando(false)
+    setEtapa('confirmar')
+    const aguardandoMsg = {
+      type:       'aguardando' as const,
+      metodo,
+      total,
+      ticketName: ingressoSelecionado?.name ?? 'Ingresso',
+      quantidade,
+      criadoEm:   Date.now(),
+    }
+    localStorage.setItem(`tipo7-pix-${caixaId}`, JSON.stringify(aguardandoMsg))
+    broadcast('aguardando', aguardandoMsg)
+  }
+
+  // Chamada pelo botão "Confirmar pagamento recebido" da tela de confirmação
+  // (dinheiro/cartão) — só agora a venda é de fato registrada.
+  async function confirmarPagamentoManual() {
+    if (confirmando) return
+    setConfirmando(true)
+    setErr(null)
     try {
       const res = await apiFetchAuth('/api/bilheteria/vender', {
         method:  'POST',
@@ -429,10 +457,14 @@ if exist "%CHROME%" (
       setSaldoAtual(s => Math.max(0, s - quantidade))
       setResultado({ tickets: data.tickets, ticketName: data.ticketName })
       setEtapa('impressao')
+      const aprovMsg = { type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length }
+      localStorage.setItem(`tipo7-pix-${caixaId}`, JSON.stringify(aprovMsg))
+      setTimeout(() => localStorage.removeItem(`tipo7-pix-${caixaId}`), 5500)
+      broadcast('aprovado', aprovMsg)
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao processar venda')
     } finally {
-      setSalvando(false)
+      setConfirmando(false)
     }
   }
 
@@ -524,6 +556,30 @@ if exist "%CHROME%" (
   const dataFormatada = eventoDate
     ? new Date(eventoDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : null
+
+  // Único ponto de disparo de impressão — decide entre o diálogo nativo do
+  // navegador (window.print(), formatos a4/termica80) ou o disparo direto
+  // via RawBT (formato 'rawbt', sem diálogo nenhum). Usado tanto no
+  // auto-print ao chegar na tela de impressão quanto no botão manual.
+  function imprimirTickets() {
+    if (!resultado) return
+    if (formato === 'rawbt') {
+      const tickets: IngressoParaImprimir[] = resultado.tickets.map(t => ({
+        slotNumber:    t.slot_number,
+        totalSlots:    resultado.tickets.length,
+        qrToken:       t.qr_token,
+        eventoTitle,
+        dataFormatada,
+        eventoLocal,
+        ticketName:    resultado.ticketName,
+        portador:      nome,
+        cpf:           cpf || undefined,
+      }))
+      imprimirViaRawBT(gerarComandosMultiplos(tickets))
+    } else {
+      window.print()
+    }
+  }
 
   // ── Tela de aguardo do PIX ─────────────────────────────────────────────────
   if (etapa === 'pix' && pixData) {
@@ -688,6 +744,77 @@ if exist "%CHROME%" (
     )
   }
 
+  // ── Tela de confirmação (dinheiro/cartão) ───────────────────────────────────
+  // Sem gateway integrado — o valor aparece na segunda tela pro cliente
+  // conferir, e só o clique do operador aqui registra a venda e libera
+  // a impressão.
+  if (etapa === 'confirmar') {
+    const MetodoIcon = metodo === 'dinheiro' ? Banknote : CardIcon
+    return (
+      <div className="min-h-dvh bg-[#070707]">
+        <div className="px-6 py-5 border-b border-[#111] flex items-center gap-3">
+          <button
+            onClick={handleNovaVenda}
+            className="flex items-center gap-2 text-sm text-[#666] hover:text-white transition-colors"
+            style={{ fontFamily: 'var(--font-dm-sans)' }}
+          >
+            <ArrowLeft size={14} />
+            Cancelar
+          </button>
+        </div>
+
+        <div className="max-w-md mx-auto px-5 py-8 flex flex-col items-center gap-6">
+          <div className="text-center">
+            <p className="text-[#555] text-xs uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {metodo === 'dinheiro' ? 'Pagamento em dinheiro' : 'Pagamento no cartão'}
+            </p>
+            <h2 className="text-white text-2xl font-bold" style={{ fontFamily: 'var(--font-syne)' }}>
+              R$ {total.toFixed(2).replace('.', ',')}
+            </h2>
+          </div>
+
+          <div
+            className="w-44 h-44 rounded-full flex items-center justify-center"
+            style={{ background: `${ACCENT}10`, border: `2px solid ${ACCENT}30` }}
+          >
+            <MetodoIcon size={72} style={{ color: ACCENT }} />
+          </div>
+
+          <p className="text-[#555] text-sm text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            {quantidade}× {ingressoSelecionado?.name ?? 'Ingresso'}
+          </p>
+
+          {err && (
+            <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10 w-full">
+              <AlertTriangle size={14} className="shrink-0" />
+              {err}
+            </div>
+          )}
+
+          <div className="w-full flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={confirmarPagamentoManual}
+              disabled={confirmando}
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-base font-bold text-[#070707] disabled:opacity-50 transition-all hover:brightness-110 active:scale-[0.98]"
+              style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+            >
+              {confirmando
+                ? <><Loader2 size={18} className="animate-spin" /> Registrando...</>
+                : <><CheckCircle2 size={18} /> Confirmar pagamento recebido</>
+              }
+            </button>
+            <p className="text-[#2a2a2a] text-[11px] text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {metodo === 'dinheiro'
+                ? 'Confirme só depois de conferir o valor em mãos.'
+                : 'Confirme só depois que a maquininha aprovar o pagamento.'}
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // ── Tela de dados do comprador ────────────────────────────────────────────
   if (etapa === 'dados' && pendingTickets) {
     return (
@@ -821,7 +948,7 @@ if exist "%CHROME%" (
             Nova venda
           </button>
           <button
-            onClick={() => window.print()}
+            onClick={imprimirTickets}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-[#070707]"
             style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
           >
