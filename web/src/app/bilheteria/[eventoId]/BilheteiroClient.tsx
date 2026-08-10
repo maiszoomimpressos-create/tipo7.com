@@ -199,10 +199,13 @@ if exist "%CHROME%" (
     URL.revokeObjectURL(a.href)
   }
 
-  // Abre dados do comprador automaticamente ao selecionar PIX (CPF obrigatório)
-  useEffect(() => {
-    if (metodo === 'pix') setDadosAbertos(true)
-  }, [metodo])
+  // CPF NÃO é exigido pra gerar o PIX — o Mercado Pago aceita o pagamento
+  // sem identification (ver criarPix() no backend, campo é opcional no
+  // payload). Selecionar PIX já gera o QR direto, sem pedir dados do
+  // comprador antes — o próprio QR carrega a info de conta pagadora/
+  // recebedora, nenhum dado extra é necessário do lado do Tipo7 (achado
+  // real, pedido do usuário 10/08/2026 — a trava aqui era só uma validação
+  // de frontend, nunca foi exigência de fato).
 
   // Imprime automaticamente ao chegar na tela de impressão
   useEffect(() => {
@@ -362,12 +365,6 @@ if exist "%CHROME%" (
     if (metodo === 'pix' && total <= 0) {
       setErr('PIX não disponível para ingressos gratuitos.'); return
     }
-    if (metodo === 'pix' && cpf.replace(/\D/g, '').length !== 11) {
-      setErr('CPF do comprador é obrigatório para pagamento via PIX (exigência do Banco Central).')
-      setDadosAbertos(true)
-      return
-    }
-
     setSalvando(true)
     setErr(null)
 
@@ -1454,10 +1451,7 @@ if exist "%CHROME%" (
               <span className="text-[#555] text-xs uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 Dados do comprador
               </span>
-              {metodo === 'pix'
-                ? <span className="text-red-400 text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>(CPF obrigatório para PIX)</span>
-                : <span className="text-[#333] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>(opcional)</span>
-              }
+              <span className="text-[#333] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>(opcional)</span>
             </div>
             {dadosAbertos
               ? <ChevronUp size={13} className="text-[#444]" />
@@ -1485,14 +1479,9 @@ if exist "%CHROME%" (
                   type="text"
                   value={cpf}
                   onChange={e => setCpf(formatarCPF(e.target.value))}
-                  placeholder={metodo === 'pix' ? 'CPF (obrigatório para PIX)' : 'CPF'}
-                  className="w-full bg-[#0d0d0d] rounded-xl pl-9 pr-4 py-3 text-white text-sm outline-none placeholder:text-[#383838]"
-                  style={{
-                    fontFamily: 'var(--font-dm-sans)',
-                    border: metodo === 'pix' && cpf.replace(/\D/g, '').length !== 11
-                      ? '1px solid rgba(248,113,113,0.4)'
-                      : '1px solid #1e1e1e',
-                  }}
+                  placeholder="CPF"
+                  className="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl pl-9 pr-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}
                 />
               </div>
 
