@@ -45,15 +45,15 @@ export class HolderLinksPublicController {
   // usuário, 09/08/2026): mesmo padrão de dica mascarada + confirmação do
   // cadastro normal, só que contra o banco do Tipo7 em vez da Autosave.
   @Post('cpf-lookup-local')
-  cpfLookupLocal(@Req() req: Request, @Body() body: { cpf?: string }) {
+  cpfLookupLocal(@Req() req: Request, @Body() body: { cpf?: string; codigo?: string }) {
     if (!rateLimitLocal(getIp(req), 'holder-link-cpf-lookup', 8, 60_000)) tooManyRequests();
-    return this.holderLinks.cpfLookupLocal(body.cpf);
+    return this.holderLinks.cpfLookupLocal(body.cpf, body.codigo);
   }
 
   @Post('cpf-confirmar-local')
-  async cpfConfirmarLocal(@Req() req: Request, @Body() body: { cpf?: string; valor?: string }) {
+  async cpfConfirmarLocal(@Req() req: Request, @Body() body: { cpf?: string; valor?: string; codigo?: string }) {
     await this.rateLimitDb.enforce(getIp(req), 'holder-link-cpf-confirmar', 5, 5 * 60_000);
-    return this.holderLinks.cpfConfirmarLocal(body.cpf, body.valor);
+    return this.holderLinks.cpfConfirmarLocal(body.cpf, body.valor, body.codigo);
   }
 
   @Get(':token')

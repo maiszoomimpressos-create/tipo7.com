@@ -179,11 +179,20 @@ export class HolderLinksService {
   // aqui é a FONTE: contra o próprio banco do Tipo7 (conta já existente),
   // não a Autosave — o front tenta essa primeiro, cai pra Autosave se não
   // achar (ver /portador/[token]/page.tsx).
-  async cpfLookupLocal(cpfRaw: string | undefined) {
+  // Acha o profile por CPF OU por código Tipo7 (pedido do usuário,
+  // 10/08/2026 — "código Tipo7 também puxa automático"). Código vem
+  // primeiro se os dois vierem preenchidos.
+  private async acharProfilePorCpfOuCodigo(cpfRaw: string | undefined, codigoRaw: string | undefined) {
+    if (codigoRaw?.trim()) {
+      return this.prisma.profile.findUnique({ where: { userCode: codigoRaw.trim().toUpperCase() } });
+    }
     const cpf = apenasDigitos(cpfRaw ?? '');
-    if (!validarCPF(cpf)) return { found: false };
+    if (!validarCPF(cpf)) return null;
+    return this.prisma.profile.findUnique({ where: { cpf } });
+  }
 
-    const profile = await this.prisma.profile.findUnique({ where: { cpf }, select: { phone: true, email: true } });
+  async cpfLookupLocal(cpfRaw: string | undefined, codigoRaw?: string) {
+    const profile = await this.acharProfilePorCpfOuCodigo(cpfRaw, codigoRaw);
     if (!profile || (!profile.phone && !profile.email)) return { found: false };
 
     return {
@@ -193,11 +202,9 @@ export class HolderLinksService {
     };
   }
 
-  async cpfConfirmarLocal(cpfRaw: string | undefined, valor: string | undefined) {
-    const cpf = apenasDigitos(cpfRaw ?? '');
-    if (!validarCPF(cpf) || !valor?.trim()) return { ok: false };
-
-    const profile = await this.prisma.profile.findUnique({ where: { cpf } });
+  async cpfConfirmarLocal(cpfRaw: string | undefined, valor: string | undefined, codigoRaw?: string) {
+    if (!valor?.trim()) return { ok: false };
+    const profile = await this.acharProfilePorCpfOuCodigo(cpfRaw, codigoRaw);
     if (!profile) return { ok: false };
 
     const valorDigitado = valor.trim();
@@ -211,6 +218,7 @@ export class HolderLinksService {
         fullName: profile.fullName,
         email: profile.email,
         phone: profile.phone,
+        cpf: profile.cpf, // resolve o CPF real quando a busca foi por código
         birthDate: profile.birthDate ? profile.birthDate.toISOString().slice(0, 10) : null,
       },
     };

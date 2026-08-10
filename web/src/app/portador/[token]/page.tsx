@@ -21,6 +21,12 @@ const formatCPF = (v: string) => {
   if (d.length <= 9)  return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`
   return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`
 }
+// Pedido do usuário (10/08/2026): o mesmo campo aceita CPF OU o código
+// Tipo7 (ex: "T7-BR-U-XXXXXXX") — detecta pelo prefixo "T7" e troca a
+// máscara/validação sozinho, sem precisar de um campo separado.
+const ehCodigoT7 = (v: string) => v.trim().toUpperCase().startsWith('T7')
+const formatCpfOuCodigo = (v: string) => (ehCodigoT7(v) ? v.toUpperCase().slice(0, 20) : formatCPF(v))
+
 const formatPhone = (v: string) => {
   const d = v.replace(/\D/g, '').slice(0, 11)
   if (d.length <= 2)  return d.length ? `(${d}` : ''
@@ -114,14 +120,17 @@ export default function PortadorLinkPage() {
   async function handleBlurCpf() {
     setCpfEncontrado(false); setDicaTelefone(null); setDicaEmail(null); setFonteCpf(null)
     setValorConfirmacao(''); setErroConfirmacao(null); setCpfConfirmado(false)
-    if (!isValidCPF(cpf)) return
+
+    const comoCodigo = ehCodigoT7(cpf)
+    if (!comoCodigo && !isValidCPF(cpf)) return
     setCpfBuscando(true)
     try {
-      // Primeiro tenta achar conta Tipo7 já existente com esse CPF — só
-      // cai pra Autosave (sistema externo) se não achar nada aqui.
+      // Primeiro tenta achar conta Tipo7 já existente (por CPF ou código) —
+      // só cai pra Autosave (sistema externo) se não achar nada aqui, e só
+      // faz sentido tentar Autosave quando é CPF (ela não conhece código T7).
       const resLocal = await fetch('/api/public/holder-links/cpf-lookup-local', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cpf }),
+        body: JSON.stringify(comoCodigo ? { codigo: cpf } : { cpf }),
       })
       const dataLocal = await resLocal.json() as { found: boolean; telefoneMascarado: string | null; emailMascarado: string | null }
       if (dataLocal.found) {
@@ -131,6 +140,7 @@ export default function PortadorLinkPage() {
         setDicaEmail(dataLocal.emailMascarado)
         return
       }
+      if (comoCodigo) return // código não achado — não tem pra onde cair, segue manual
 
       const res = await fetch('/api/auth/cpf-lookup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -154,14 +164,15 @@ export default function PortadorLinkPage() {
     if (!valorConfirmacao.trim()) return
     setConfirmando(true); setErroConfirmacao(null)
     try {
+      const comoCodigo = fonteCpf === 'local' && ehCodigoT7(cpf)
       const endpoint = fonteCpf === 'local' ? '/api/public/holder-links/cpf-confirmar-local' : '/api/auth/cpf-confirmar'
       const res = await fetch(endpoint, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cpf, valor: valorConfirmacao }),
+        body: JSON.stringify(comoCodigo ? { codigo: cpf, valor: valorConfirmacao } : { cpf, valor: valorConfirmacao }),
       })
       const data = await res.json() as {
         ok: boolean
-        dados?: { fullName: string | null; email: string | null; phone: string | null; birthDate: string | null }
+        dados?: { fullName: string | null; email: string | null; phone: string | null; birthDate: string | null; cpf?: string | null }
       }
       if (!data.ok || !data.dados) {
         setErroConfirmacao('Não conseguimos confirmar com esse dado. Confira e tente de novo, ou preencha manualmente.')
@@ -172,6 +183,9 @@ export default function PortadorLinkPage() {
       if (d.email)     setEmail(d.email)
       if (d.phone)     setPhone(formatPhone(d.phone))
       if (d.birthDate) setBirthDate(formatBirthDate(d.birthDate.split('-').reverse().join('')))
+      // Buscou por código T7 — troca o campo pelo CPF de verdade agora que
+      // já sabemos qual é (o envio final sempre precisa do CPF real).
+      if (d.cpf) setCpf(formatCPF(d.cpf))
       setCpfConfirmado(true)
     } catch {
       setErroConfirmacao('Erro ao confirmar. Tente de novo.')
@@ -319,15 +333,15 @@ export default function PortadorLinkPage() {
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
 
-              {/* CPF primeiro — igual ao cadastro, tenta pré-preencher o resto */}
+              {/* CPF ou código Tipo7 — igual ao cadastro, tenta pré-preencher o resto */}
               <div className="flex flex-col gap-1.5">
-                <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>CPF</label>
+                <label className={labelCls} style={{ fontFamily: 'var(--font-dm-sans)' }}>CPF ou código Tipo7</label>
                 <div className="relative">
                   <input
-                    type="text" inputMode="numeric" value={cpf} disabled={cpfConfirmado}
-                    onChange={e => setCpf(formatCPF(e.target.value))}
+                    type="text" value={cpf} disabled={cpfConfirmado}
+                    onChange={e => setCpf(formatCpfOuCodigo(e.target.value))}
                     onBlur={handleBlurCpf}
-                    placeholder="000.000.000-00" maxLength={14} autoComplete="off"
+                    placeholder="000.000.000-00 ou T7-BR-U-XXXXXXX" maxLength={20} autoComplete="off"
                     className={`${inputCls} disabled:opacity-60`} style={{ fontFamily: 'var(--font-dm-sans)' }}
                   />
                   {cpfBuscando && <Loader2 size={14} className="animate-spin absolute right-3.5 top-1/2 -translate-y-1/2 text-[#555]" />}
