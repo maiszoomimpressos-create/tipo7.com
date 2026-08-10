@@ -14,13 +14,20 @@ function formatBRL(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+// Pedido do usuário (10/08/2026): as 3 permissões operacionais "do dia do
+// evento" (vender no caixa, escanear na entrada, registrar entrada de
+// carro) ficam agrupadas visualmente dentro de "Bilheteria" — que virou o
+// nome do MENU (expande/recolhe), não mais o rótulo de uma permissão
+// única. As outras continuam soltas na grade de sempre.
+const GRUPO_BILHETERIA = ['vender_ingresso', 'validar_ingresso', 'estacionamento_entrada']
+
 const PERMISSOES = [
-  { value: 'validar_ingresso',        label: 'Validar ingresso',     desc: 'Escanear QR na entrada'         },
-  { value: 'vender_ingresso',         label: 'Bilheteria',           desc: 'Vender ingressos presencial'    },
+  { value: 'validar_ingresso',        label: 'Scanner',              desc: 'Escanear QR na entrada'         },
+  { value: 'vender_ingresso',         label: 'Caixa',                desc: 'Vender ingressos presencial'    },
+  { value: 'estacionamento_entrada',  label: 'Estacionamento entrada', desc: 'Registrar entrada de veículos' },
   { value: 'ver_lista_convidados',    label: 'Ver lista',            desc: 'Lista de compradores'           },
   { value: 'ver_relatorios',          label: 'Ver relatórios',       desc: 'Vendas e presença'              },
   { value: 'gerenciar_checkin',       label: 'Gerenciar check-in',   desc: 'Controlar entrada/saída'        },
-  { value: 'estacionamento_entrada',  label: 'Estacionamento — Entrada', desc: 'Registrar entrada de veículos' },
   { value: 'estacionamento_saida',    label: 'Estacionamento — Saída',   desc: 'Registrar saída e cobrar'      },
 ]
 
@@ -68,6 +75,38 @@ const PERMISSOES_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_sai
 
 // ── Seletor de permissões reutilizável ────────────────────────────────────────
 
+function BotaoPermissao({ p, marcada, onClick }: { p: typeof PERMISSOES[number]; marcada: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-start gap-2 p-2.5 rounded-xl text-left transition-colors"
+      style={{
+        background: marcada ? `${ACCENT}15` : '#111',
+        border: `1px solid ${marcada ? ACCENT + '40' : '#1e1e1e'}`,
+      }}
+    >
+      <div
+        className="w-4 h-4 rounded flex items-center justify-center shrink-0 mt-0.5"
+        style={{
+          background: marcada ? ACCENT : '#1a1a1a',
+          border: `1px solid ${marcada ? ACCENT : '#333'}`,
+        }}
+      >
+        {marcada && <Check size={10} className="text-[#070707]" />}
+      </div>
+      <div>
+        <p className="text-white text-[11px] font-medium leading-tight" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          {p.label}
+        </p>
+        <p className="text-[#444] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          {p.desc}
+        </p>
+      </div>
+    </button>
+  )
+}
+
 function SeletorPermissoes({
   selecionadas,
   onChange,
@@ -77,6 +116,12 @@ function SeletorPermissoes({
   onChange: (p: string[]) => void
   temEstacionamento: boolean
 }) {
+  // Aberto de cara se já tiver algo do grupo marcado (ex: editando uma
+  // função que já usa Caixa/Scanner) — senão começa fechado.
+  const [bilheteriaAberta, setBilheteriaAberta] = useState(
+    () => GRUPO_BILHETERIA.some(v => selecionadas.includes(v))
+  )
+
   function toggle(value: string) {
     onChange(
       selecionadas.includes(value)
@@ -88,42 +133,51 @@ function SeletorPermissoes({
   // Permissões de estacionamento só aparecem se o evento tiver estacionamento
   // configurado — é um produto à parte. Sem pátio cadastrado, nem faz sentido
   // atribuir. (Futuro: trocar o gatilho por "contratou o plano de estacionamento".)
-  const permissoesVisiveis = PERMISSOES.filter(
-    p => temEstacionamento || !PERMISSOES_ESTACIONAMENTO.includes(p.value)
-  )
+  const visivel = (v: string) => temEstacionamento || !PERMISSOES_ESTACIONAMENTO.includes(v)
+
+  const permissoesBilheteria = PERMISSOES.filter(p => GRUPO_BILHETERIA.includes(p.value) && visivel(p.value))
+  const permissoesSoltas     = PERMISSOES.filter(p => !GRUPO_BILHETERIA.includes(p.value) && visivel(p.value))
+  const qtdMarcadasBilheteria = permissoesBilheteria.filter(p => selecionadas.includes(p.value)).length
 
   return (
-    <div className="grid grid-cols-2 gap-1.5">
-      {permissoesVisiveis.map(p => (
+    <div className="flex flex-col gap-1.5">
+      {/* Menu "Bilheteria" — expande/recolhe as permissões operacionais do dia do evento */}
+      <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #1e1e1e' }}>
         <button
-          key={p.value}
           type="button"
-          onClick={() => toggle(p.value)}
-          className="flex items-start gap-2 p-2.5 rounded-xl text-left transition-colors"
-          style={{
-            background: selecionadas.includes(p.value) ? `${ACCENT}15` : '#111',
-            border: `1px solid ${selecionadas.includes(p.value) ? ACCENT + '40' : '#1e1e1e'}`,
-          }}
+          onClick={() => setBilheteriaAberta(v => !v)}
+          className="w-full flex items-center justify-between px-2.5 py-2 transition-colors"
+          style={{ background: '#0d0d0d' }}
         >
-          <div
-            className="w-4 h-4 rounded flex items-center justify-center shrink-0 mt-0.5"
-            style={{
-              background: selecionadas.includes(p.value) ? ACCENT : '#1a1a1a',
-              border: `1px solid ${selecionadas.includes(p.value) ? ACCENT : '#333'}`,
-            }}
-          >
-            {selecionadas.includes(p.value) && <Check size={10} className="text-[#070707]" />}
+          <div className="flex items-center gap-1.5">
+            <span className="text-white text-[11px] font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Bilheteria
+            </span>
+            {qtdMarcadasBilheteria > 0 && (
+              <span
+                className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                style={{ background: `${ACCENT}20`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+              >
+                {qtdMarcadasBilheteria}
+              </span>
+            )}
           </div>
-          <div>
-            <p className="text-white text-[11px] font-medium leading-tight" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              {p.label}
-            </p>
-            <p className="text-[#444] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              {p.desc}
-            </p>
-          </div>
+          {bilheteriaAberta ? <ChevronUp size={13} className="text-[#555]" /> : <ChevronDown size={13} className="text-[#555]" />}
         </button>
-      ))}
+        {bilheteriaAberta && (
+          <div className="grid grid-cols-2 gap-1.5 p-2 pt-0" style={{ background: '#0a0a0a' }}>
+            {permissoesBilheteria.map(p => (
+              <BotaoPermissao key={p.value} p={p} marcada={selecionadas.includes(p.value)} onClick={() => toggle(p.value)} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-1.5">
+        {permissoesSoltas.map(p => (
+          <BotaoPermissao key={p.value} p={p} marcada={selecionadas.includes(p.value)} onClick={() => toggle(p.value)} />
+        ))}
+      </div>
     </div>
   )
 }
@@ -384,8 +438,8 @@ export function PainelEquipe({ eventoId }: Props) {
   }
 
   const permLabel: Record<string, string> = {
-    validar_ingresso:        'Validar',
-    vender_ingresso:         'Bilheteria',
+    validar_ingresso:        'Scanner',
+    vender_ingresso:         'Caixa',
     ver_lista_convidados:    'Ver lista',
     ver_relatorios:          'Relatórios',
     gerenciar_checkin:       'Check-in',
