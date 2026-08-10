@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import {
   DollarSign, Ticket, Users, CalendarCheck,
   ChevronDown, ScanLine, Plus, ArrowUpRight, ImageIcon,
-  Copy, Check, MapPin, Car,
+  Copy, Check, MapPin, Car, ShoppingBag,
 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
@@ -187,6 +187,12 @@ function Select({ value, onChange, options, placeholder }: {
 export function DashboardClient({ orgName, orgCodigo, orgTipo, eventos, kpis, tiposIngresso, compradores }: Props) {
   const [filtroEvento, setFiltroEvento] = useState('')
   const [filtroTipo,   setFiltroTipo]   = useState('')
+  // Botão "Bilheteria" (pedido do usuário, 10/08/2026) — antes só quem
+  // sabia a URL /bilheteria/[eventoId] direto conseguia abrir caixa; agora
+  // tem um caminho descoberto a partir de Minha Área. Solto por enquanto
+  // (não dentro de um menu) — pode mudar quando tiver mais atalhos assim.
+  const [bilheteriaAberta,  setBilheteriaAberta]  = useState(false)
+  const [eventoBilheteria,  setEventoBilheteria]  = useState('')
 
   // Opções dos filtros
   const eventoOpts = eventos.map(e => ({ value: e.id, label: e.title }))
@@ -237,14 +243,62 @@ export function DashboardClient({ orgName, orgCodigo, orgTipo, eventos, kpis, ti
             </div>
           )}
         </div>
-        <a
-          href="/criar-evento"
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-[#070707]"
-          style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-        >
-          <Plus size={14} strokeWidth={2.5} />
-          Novo evento
-        </a>
+        <div className="flex items-center gap-2.5">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setBilheteriaAberta(v => !v)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <ShoppingBag size={14} />
+              Bilheteria
+            </button>
+            {bilheteriaAberta && (
+              <div
+                className="absolute right-0 mt-2 w-72 rounded-2xl p-4 flex flex-col gap-3 z-20"
+                style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}
+              >
+                <p className="text-[#666] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Escolha o evento pra abrir/gerenciar os caixas
+                </p>
+                {eventos.length === 0 ? (
+                  <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Você ainda não tem eventos.
+                  </p>
+                ) : (
+                  <>
+                    <Select
+                      value={eventoBilheteria}
+                      onChange={setEventoBilheteria}
+                      options={eventoOpts}
+                      placeholder="Selecione o evento"
+                    />
+                    <a
+                      href={eventoBilheteria ? `/bilheteria/${eventoBilheteria}` : undefined}
+                      className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-[#070707] transition-opacity"
+                      style={{
+                        background: ACCENT, fontFamily: 'var(--font-dm-sans)',
+                        opacity: eventoBilheteria ? 1 : 0.4,
+                        pointerEvents: eventoBilheteria ? 'auto' : 'none',
+                      }}
+                    >
+                      Ir pra bilheteria
+                    </a>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          <a
+            href="/criar-evento"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-[#070707]"
+            style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+          >
+            <Plus size={14} strokeWidth={2.5} />
+            Novo evento
+          </a>
+        </div>
       </div>
 
       {/* KPIs */}

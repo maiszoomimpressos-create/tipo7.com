@@ -763,6 +763,12 @@ model Caixa {
   createdBy                       String                 @map("created_by") @db.Uuid
   createdAt                       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   nomeOperador                    String?                @map("nome_operador")
+  // Puramente informativo (pedido do usuário, 10/08/2026) — "esse caixa vai
+  // abrir tal dia às tal hora", pra planejamento da equipe. NÃO abre o caixa
+  // sozinho: quem abre de verdade continua sendo uma pessoa clicando no
+  // botão no dia (motivo: abrir caixa também significa "alguém está com o
+  // fundo de troco em mãos" — não faz sentido abrir sem alguém presente).
+  horarioPrevisto                 DateTime?              @map("horario_previsto") @db.Timestamptz(6)
   estacionamentoId                String?                @map("estacionamento_id") @db.Uuid
   estacionamento                  Estacionamento?        @relation("Caixa_estacionamentoId", fields: [estacionamentoId], references: [id], onDelete: SetNull)
   caixaFechamentos                CaixaFechamento[]      @relation("CaixaFechamento_caixaId")

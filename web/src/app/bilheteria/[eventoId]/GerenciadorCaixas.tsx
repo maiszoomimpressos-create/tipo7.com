@@ -6,8 +6,13 @@ import {
   Plus, Trash2, ArrowLeft, Loader2, AlertTriangle, CheckCircle2,
   ShoppingBag, Lock, Unlock, Users, TrendingUp,
   Banknote, Smartphone, CreditCard, RefreshCw, ChevronRight,
-  Calculator, Pencil, PiggyBank,
+  Calculator, Pencil, PiggyBank, Clock,
 } from 'lucide-react'
+
+function formatarHorarioPrevisto(iso: string) {
+  const d = new Date(iso)
+  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { apiFetchAuth } from '@/lib/apiFetch'
 
@@ -21,6 +26,12 @@ interface CaixaConfig {
   operadorId:         string | null
   operadorNome:       string | null
   nomeOperadorLivre:  string
+  // Só informativo (pedido do usuário, 10/08/2026) — "esse caixa vai abrir
+  // tal dia/hora", pra planejamento da equipe. Não abre sozinho — quem abre
+  // de verdade continua sendo uma pessoa clicando no botão no dia (motivo:
+  // abrir caixa também significa "alguém está com o fundo de troco em mãos").
+  // Valor de <input type="datetime-local"> — string vazia = não informado.
+  horarioPrevisto:    string
 }
 
 interface MembroEquipe {
@@ -39,6 +50,7 @@ interface CaixaAberto {
   operadorName:       string | null
   operadorEmail:      string | null
   operadorCode:       string | null
+  horarioPrevisto:    string | null
   fundo_inicial:      number
   ingressos_alocados: number
   saldoIngressos:     number
@@ -65,7 +77,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
     ativo: boolean; saldo_atual: number; meta_reserva: number; aviso_disparado: boolean
   } | null>(null)
   const [configs, setConfigs]     = useState<CaixaConfig[]>([
-    { nome: 'Caixa A', fundo_inicial: 0, ingressos_alocados: 0, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '' },
+    { nome: 'Caixa A', fundo_inicial: 0, ingressos_alocados: 0, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '' },
   ])
   const [equipe, setEquipe]             = useState<MembroEquipe[]>([])
   const [salvando, setSalvando]         = useState(false)
@@ -151,14 +163,14 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
     const existentes = [...caixas.map(c => c.nome), ...configs.map(c => c.nome)]
     setConfigs(c => [...c, {
       nome: nomeCaixaUnico(existentes), fundo_inicial: 0, ingressos_alocados: 0,
-      tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '',
+      tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '',
     }])
   }
 
   function iniciarNovoCaixa() {
     const nome = nomeCaixaUnico(caixas.map(c => c.nome))
     setFase('configurando')
-    setConfigs([{ nome, fundo_inicial: 0, ingressos_alocados: 0, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '' }])
+    setConfigs([{ nome, fundo_inicial: 0, ingressos_alocados: 0, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '' }])
   }
 
   function removeCaixa(i: number) {
@@ -211,6 +223,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
       ...(c.tipoOperador === 'sem_cadastro' && c.nomeOperadorLivre.trim()
         ? { nomeOperador: c.nomeOperadorLivre.trim() }
         : {}),
+      ...(c.horarioPrevisto ? { horario_previsto: new Date(c.horarioPrevisto).toISOString() } : {}),
     }))
     const res = await apiFetchAuth('/api/caixas/abrir', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -505,6 +518,24 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
                       style={{ fontFamily: 'var(--font-dm-sans)' }}
                     />
                   )}
+
+                  {/* Só informativo — não abre o caixa sozinho, é pra
+                      planejamento da equipe (pedido do usuário, 10/08/2026) */}
+                  <div className="mt-2.5">
+                    <label className="text-[#555] text-[11px] mb-1 block" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Previsão de abertura (opcional)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={cfg.horarioPrevisto}
+                      onChange={e => updateConfig(i, 'horarioPrevisto', e.target.value)}
+                      className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+                      style={{ fontFamily: 'var(--font-dm-sans)', colorScheme: 'dark' }}
+                    />
+                    <p className="text-[#444] text-[10px] mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Só pra organização — o caixa não abre sozinho, alguém precisa clicar em &quot;abrir&quot; no dia.
+                    </p>
+                  </div>
                 </div>
               </div>
             ))}
@@ -733,6 +764,14 @@ function CaixaCard({ caixa, eventoId, fechado = false }: { caixa: CaixaAberto; e
                   {caixa.operadorCode}
                 </span>
               )}
+            </div>
+          )}
+          {caixa.horarioPrevisto && (
+            <div className="ml-[18px] flex items-center gap-1.5">
+              <Clock size={10} className="text-[#444]" />
+              <span className="text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Previsto {formatarHorarioPrevisto(caixa.horarioPrevisto)}
+              </span>
             </div>
           )}
         </div>

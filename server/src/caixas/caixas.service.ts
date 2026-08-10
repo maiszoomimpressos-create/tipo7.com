@@ -19,6 +19,10 @@ interface CaixaLote {
   operadorId?: string;
   funcaoId?: string | null;
   nomeOperador?: string;
+  // Só informativo (pedido do usuário, 10/08/2026) — não abre o caixa
+  // sozinho, é só pra registrar "esse caixa vai abrir tal dia/hora" pra
+  // planejamento da equipe. ISO datetime.
+  horario_previsto?: string;
 }
 
 @Injectable()
@@ -386,6 +390,7 @@ export class CaixasService {
             fundoInicial: c.fundo_inicial,
             ingressosAlocados: c.ingressos_alocados,
             createdBy: userId,
+            horarioPrevisto: c.horario_previsto ? new Date(c.horario_previsto) : null,
           },
         }),
       ),
