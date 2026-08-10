@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   DollarSign, Ticket, Users, CalendarCheck,
   ChevronDown, ScanLine, Plus, ArrowUpRight, ImageIcon,
@@ -193,6 +193,18 @@ export function DashboardClient({ orgName, orgCodigo, orgTipo, eventos, kpis, ti
   // (não dentro de um menu) — pode mudar quando tiver mais atalhos assim.
   const [bilheteriaAberta,  setBilheteriaAberta]  = useState(false)
   const [eventoBilheteria,  setEventoBilheteria]  = useState('')
+  const bilheteriaRef = useRef<HTMLDivElement>(null)
+
+  // Fecha o popover ao clicar fora (mesmo padrão de BilheteiroClient.tsx)
+  useEffect(() => {
+    function fecharFora(e: MouseEvent) {
+      if (bilheteriaRef.current && !bilheteriaRef.current.contains(e.target as Node)) {
+        setBilheteriaAberta(false)
+      }
+    }
+    document.addEventListener('mousedown', fecharFora)
+    return () => document.removeEventListener('mousedown', fecharFora)
+  }, [])
 
   // Opções dos filtros
   const eventoOpts = eventos.map(e => ({ value: e.id, label: e.title }))
@@ -244,7 +256,7 @@ export function DashboardClient({ orgName, orgCodigo, orgTipo, eventos, kpis, ti
           )}
         </div>
         <div className="flex items-center gap-2.5">
-          <div className="relative">
+          <div className="relative" ref={bilheteriaRef}>
             <button
               type="button"
               onClick={() => setBilheteriaAberta(v => !v)}

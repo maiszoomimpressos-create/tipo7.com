@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, CalendarRange, Settings2, Landmark, ReceiptText,
@@ -50,12 +50,24 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
   const [eventosBilheteria, setEventosBilheteria] = useState<{ id: string; title: string }[]>([])
   const [bilheteriaAberta,  setBilheteriaAberta]  = useState(false)
   const [eventoSel,         setEventoSel]         = useState('')
+  const bilheteriaRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     apiFetchAuth('/api/eventos/meus')
       .then(res => res.ok ? res.json() : null)
       .then((d: { eventos?: { id: string; title: string }[] } | null) => setEventosBilheteria(d?.eventos ?? []))
       .catch(() => {})
+  }, [])
+
+  // Fecha o popover ao clicar fora (mesmo padrão de BilheteiroClient.tsx)
+  useEffect(() => {
+    function fecharFora(e: MouseEvent) {
+      if (bilheteriaRef.current && !bilheteriaRef.current.contains(e.target as Node)) {
+        setBilheteriaAberta(false)
+      }
+    }
+    document.addEventListener('mousedown', fecharFora)
+    return () => document.removeEventListener('mousedown', fecharFora)
   }, [])
 
   return (
@@ -89,7 +101,7 @@ export function PromoterLayout({ children }: { children: React.ReactNode }) {
 
           {/* Bilheteria — abre popover pra escolher o evento (não é link
               direto, já que não tem um evento "atual" fixo aqui) */}
-          <div className="relative">
+          <div className="relative" ref={bilheteriaRef}>
             <button
               type="button"
               onClick={() => setBilheteriaAberta(v => !v)}
