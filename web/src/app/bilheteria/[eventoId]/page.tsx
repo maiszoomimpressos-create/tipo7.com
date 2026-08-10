@@ -9,7 +9,10 @@ interface Props {
 }
 
 interface MeuAcesso {
-  evento: { id: string; title: string | null } | null
+  evento: {
+    id: string; title: string | null; dateStart: string | null
+    venueName: string | null; city: string | null; state: string | null
+  } | null
   isOwner: boolean
   staff: { permissions: string[] } | null
 }
@@ -33,6 +36,8 @@ export default async function BilheteriaPage({ params }: Props) {
       <GerenciadorCaixas
         eventoId={eventoId}
         eventoTitle={acesso.evento.title ?? 'Evento'}
+        eventoDate={acesso.evento.dateStart}
+        eventoLocal={[acesso.evento.venueName, acesso.evento.city, acesso.evento.state].filter(Boolean).join(' — ')}
         userId={user.id}
       />
     )

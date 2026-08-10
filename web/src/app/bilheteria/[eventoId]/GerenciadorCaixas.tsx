@@ -6,12 +6,22 @@ import {
   Plus, Trash2, ArrowLeft, Loader2, AlertTriangle, CheckCircle2,
   ShoppingBag, Lock, Unlock, Users, TrendingUp,
   Banknote, Smartphone, CreditCard, RefreshCw, ChevronRight,
-  Calculator, Pencil, PiggyBank, Clock,
+  Calculator, Pencil, PiggyBank, Clock, Calendar, MapPin,
 } from 'lucide-react'
 
 function formatarHorarioPrevisto(iso: string) {
   const d = new Date(iso)
   return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+// Pedido do usuário (10/08/2026): mostrar nome/local/data/horário do
+// evento na tela de abrir caixa, pra confirmar visualmente que está
+// configurando o caixa do evento certo.
+function formatarDataHoraEvento(iso: string) {
+  const d = new Date(iso)
+  const data = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  return `${data} às ${hora}`
 }
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { apiFetchAuth } from '@/lib/apiFetch'
@@ -64,10 +74,12 @@ interface CaixaAberto {
 interface Props {
   eventoId:    string
   eventoTitle: string
+  eventoDate:  string | null
+  eventoLocal: string
   userId:      string
 }
 
-export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
+export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLocal, userId }: Props) {
   const [fase, setFase] = useState<'carregando' | 'semCaixas' | 'configurando' | 'abertos'>('carregando')
   const [pausado, setPausado]     = useState(false)
   const [requerSenha, setRequerSenha] = useState(false)
@@ -262,7 +274,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
   if (fase === 'semCaixas') {
     return (
       <div className="min-h-dvh bg-[#070707] flex flex-col">
-        <Header eventoTitle={eventoTitle} eventoId={eventoId} />
+        <Header eventoTitle={eventoTitle} eventoId={eventoId} eventoDate={eventoDate} eventoLocal={eventoLocal} />
 
         {/* Achado real (07/08/2026): quando alguém pausa as vendas ao
              começar "Configurar e abrir caixas" e abandona no meio (sem
@@ -316,7 +328,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
     return (
       <>
       <div className="min-h-dvh bg-[#070707] flex flex-col">
-        <Header eventoTitle={eventoTitle} eventoId={eventoId} />
+        <Header eventoTitle={eventoTitle} eventoId={eventoId} eventoDate={eventoDate} eventoLocal={eventoLocal} />
 
         {/* Banner de pausa */}
         <div className="px-6 py-3 flex items-center gap-3"
@@ -593,7 +605,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, userId }: Props) {
 
   return (
     <div className="min-h-dvh bg-[#070707] flex flex-col">
-      <Header eventoTitle={eventoTitle} eventoId={eventoId} onRefresh={carregarCaixas} />
+      <Header eventoTitle={eventoTitle} eventoId={eventoId} eventoDate={eventoDate} eventoLocal={eventoLocal} onRefresh={carregarCaixas} />
 
       {saldoBilheteria?.ativo && saldoBilheteria.aviso_disparado && (
         <div className="px-6 py-3 flex items-center gap-3"
@@ -798,18 +810,40 @@ function Stat({ label, value, muted, accent, alert }: { label: string; value: st
   )
 }
 
-function Header({ eventoTitle, eventoId, onRefresh }: { eventoTitle: string; eventoId: string; onRefresh?: () => void }) {
+function Header({
+  eventoTitle, eventoId, eventoDate, eventoLocal, onRefresh,
+}: {
+  eventoTitle: string
+  eventoId:    string
+  eventoDate?:  string | null
+  eventoLocal?: string
+  onRefresh?:  () => void
+}) {
   return (
     <div className="px-6 py-5 border-b border-[#111] flex items-center gap-3">
       <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
            style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}30` }}>
         <Users size={16} style={{ color: ACCENT }} />
       </div>
-      <div className="flex-1">
+      <div className="flex-1 min-w-0">
         <h1 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
           Caixas
         </h1>
         <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{eventoTitle}</p>
+        {(eventoDate || eventoLocal) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
+            {eventoDate && (
+              <span className="flex items-center gap-1 text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <Calendar size={10} /> {formatarDataHoraEvento(eventoDate)}
+              </span>
+            )}
+            {eventoLocal && (
+              <span className="flex items-center gap-1 text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <MapPin size={10} /> {eventoLocal}
+              </span>
+            )}
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-2">
         {onRefresh && (
