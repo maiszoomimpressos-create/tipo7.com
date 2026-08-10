@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Ticket, Users, Settings, ExternalLink, BarChart2, Layers, Car, Loader2 } from 'lucide-react'
+import { Ticket, Users, Settings, ExternalLink, BarChart2, Layers, Car, Loader2, ShoppingBag } from 'lucide-react'
 import { PainelIngressos, type IngressoEditavel } from './PainelIngressos'
 import { PainelEquipe } from './PainelEquipe'
 import { PainelAtributos } from './PainelAtributos'
@@ -60,6 +60,14 @@ export function PainelOrganizador({ eventoId, ingressos, capacity, dias, diaSele
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <a
+              href={`/bilheteria/${eventoId}`}
+              className="flex items-center gap-1 text-[#555] text-xs hover:text-white transition-colors"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <ShoppingBag size={11} /> Bilheteria
+            </a>
+            <span className="text-[#222]">·</span>
             <a
               href={`/dashboard/${eventoId}`}
               className="flex items-center gap-1 text-[#555] text-xs hover:text-white transition-colors"
