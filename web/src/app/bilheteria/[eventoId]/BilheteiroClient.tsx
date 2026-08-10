@@ -306,7 +306,15 @@ if exist "%CHROME%" (
       setEtapa('impressao')
       if (pollingRef.current) clearInterval(pollingRef.current)
       pixBroadcastRef.current = null
-      const aprovMsg = { type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length }
+      const aprovMsg = {
+        type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length,
+        // Dados completos pro caso da Segunda Tela ser quem tem a impressora
+        // conectada (ex: caixa no PC, impressora Bluetooth só alcançável
+        // pelo celular da Segunda Tela) — ver rawbtPrint.ts.
+        tickets:       data.tickets.map((t: TicketGerado) => ({ slotNumber: t.slot_number, qrToken: t.qr_token })),
+        eventoTitle, dataFormatada, eventoLocal,
+        portador: nome, cpf: cpf || undefined,
+      }
       localStorage.setItem(`tipo7-pix-${caixaId}`, JSON.stringify(aprovMsg))
       setTimeout(() => localStorage.removeItem(`tipo7-pix-${caixaId}`), 5500)
       broadcast('aprovado', aprovMsg)
@@ -454,7 +462,12 @@ if exist "%CHROME%" (
       setSaldoAtual(s => Math.max(0, s - quantidade))
       setResultado({ tickets: data.tickets, ticketName: data.ticketName })
       setEtapa('impressao')
-      const aprovMsg = { type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length }
+      const aprovMsg = {
+        type: 'aprovado', ticketName: data.ticketName, quantidade: data.tickets.length,
+        tickets:       data.tickets.map((t: TicketGerado) => ({ slotNumber: t.slot_number, qrToken: t.qr_token })),
+        eventoTitle, dataFormatada, eventoLocal,
+        portador: nome, cpf: cpf || undefined,
+      }
       localStorage.setItem(`tipo7-pix-${caixaId}`, JSON.stringify(aprovMsg))
       setTimeout(() => localStorage.removeItem(`tipo7-pix-${caixaId}`), 5500)
       broadcast('aprovado', aprovMsg)

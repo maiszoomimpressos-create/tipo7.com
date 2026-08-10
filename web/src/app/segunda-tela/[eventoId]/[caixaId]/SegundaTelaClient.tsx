@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import QRCode from 'react-qr-code'
-import { CheckCircle2, Clock, MapPin, Calendar, Ticket as TicketIcon, Banknote, CreditCard, Loader2, Maximize2, Minimize2 } from 'lucide-react'
+import { CheckCircle2, Clock, MapPin, Calendar, Ticket as TicketIcon, Banknote, CreditCard, Loader2, Maximize2, Minimize2, Printer } from 'lucide-react'
+import { gerarComandosMultiplos, imprimirViaRawBT, type IngressoParaImprimir } from '@/lib/rawbtPrint'
 
 const ACCENT = '#E8B84B'
 
@@ -36,6 +37,17 @@ interface AprovadoPayload {
   type:       'aprovado'
   ticketName: string
   quantidade: number
+  // Campos abaixo só vêm preenchidos a partir de 10/08/2026 — payload antigo
+  // no localStorage (de antes desse deploy) não vai ter, então tudo opcional.
+  // Pra quando a Segunda Tela é quem tem a impressora conectada (ex: caixa
+  // roda no PC, impressora Bluetooth só alcançável pelo celular da Segunda
+  // Tela — RawBT não atravessa aparelhos, ver lib/rawbtPrint.ts).
+  tickets?:      { slotNumber: number; qrToken: string }[]
+  eventoTitle?:  string
+  dataFormatada?: string | null
+  eventoLocal?:  string
+  portador?:     string
+  cpf?:          string
 }
 
 type Payload = PixPayload | AguardandoPayload | AprovadoPayload | { type: 'cancelado' }
@@ -75,6 +87,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
   const [tempoRestante,   setTempoRestante]   = useState<number | null>(null)
   const [fadeKey,         setFadeKey]         = useState(0)
   const [emTelaCheia,     setEmTelaCheia]     = useState(false)
+  const [impressoraLigada, setImpressoraLigada] = useState(false)
 
   const usarSlides = slides.length > 0
   const total      = usarSlides ? slides.length : eventosProximos.length
@@ -107,6 +120,43 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       style={{ background: '#0d0d0d', border: '1px solid #1e1e1e' }}
     >
       {emTelaCheia ? <Minimize2 size={16} className="text-[#888]" /> : <Maximize2 size={16} className="text-[#888]" />}
+    </button>
+  )
+
+  // "Esta tela tem a impressora conectada" — opt-in, persistido por caixa.
+  // Padrão desligado porque a maioria das Segunda Tela é só vitrine pro
+  // cliente, sem impressora Bluetooth nenhuma pareada nela.
+  useEffect(() => {
+    setImpressoraLigada(localStorage.getItem(`tipo7-segunda-tela-imprime-${caixaId}`) === '1')
+  }, [caixaId])
+
+  function alternarImpressora() {
+    setImpressoraLigada(v => {
+      const novo = !v
+      localStorage.setItem(`tipo7-segunda-tela-imprime-${caixaId}`, novo ? '1' : '0')
+      return novo
+    })
+  }
+
+  // Ref pra o listener SSE (montado uma vez, ver [caixaId] abaixo) sempre
+  // enxergar o valor atual do toggle sem precisar recriar a conexão a cada
+  // clique.
+  const impressoraLigadaRef = useRef(impressoraLigada)
+  useEffect(() => { impressoraLigadaRef.current = impressoraLigada }, [impressoraLigada])
+
+  const botaoImpressora = (
+    <button
+      type="button"
+      onClick={alternarImpressora}
+      title={impressoraLigada ? 'Impressora ligada nesta tela (toque pra desligar)' : 'Ligar impressão nesta tela'}
+      className="fixed bottom-4 right-16 z-50 w-10 h-10 rounded-full flex items-center justify-center transition-opacity"
+      style={{
+        background: impressoraLigada ? `${ACCENT}15` : '#0d0d0d',
+        border: `1px solid ${impressoraLigada ? ACCENT + '50' : '#1e1e1e'}`,
+        opacity: impressoraLigada ? 0.85 : 0.2,
+      }}
+    >
+      <Printer size={16} style={{ color: impressoraLigada ? ACCENT : '#888' }} />
     </button>
   )
 
@@ -235,9 +285,29 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       setEstado('aguardando')
     })
     es.addEventListener('aprovado', (e: MessageEvent) => {
-      setAprovadoPayload(JSON.parse(e.data) as AprovadoPayload)
+      const payload = JSON.parse(e.data) as AprovadoPayload
+      setAprovadoPayload(payload)
       setEstado('aprovado')
       setTimeout(() => { setEstado('idle'); setAprovadoPayload(null) }, 8000)
+
+      // Essa tela é quem tem a impressora conectada (caixa roda noutro
+      // aparelho, ex: PC) — dispara o RawBT com os dados que vieram no
+      // próprio evento. payload.tickets só existe a partir de 10/08/2026;
+      // sem ele (versão antiga do caixa em cache) não tem como imprimir.
+      if (impressoraLigadaRef.current && payload.tickets?.length) {
+        const tickets: IngressoParaImprimir[] = payload.tickets.map(t => ({
+          slotNumber:    t.slotNumber,
+          totalSlots:    payload.tickets!.length,
+          qrToken:       t.qrToken,
+          eventoTitle:   payload.eventoTitle ?? eventoTitle,
+          dataFormatada: payload.dataFormatada ?? null,
+          eventoLocal:   payload.eventoLocal ?? '',
+          ticketName:    payload.ticketName,
+          portador:      payload.portador ?? '',
+          cpf:           payload.cpf,
+        }))
+        imprimirViaRawBT(gerarComandosMultiplos(tickets))
+      }
     })
     es.addEventListener('cancelado', () => {
       setEstado('idle')
@@ -274,6 +344,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     return (
       <div className="h-screen w-screen bg-[#070707] flex flex-col items-center justify-center gap-8 overflow-hidden select-none">
         {botaoTelaCheia}
+        {botaoImpressora}
 
         <div className="flex flex-col items-center gap-1">
           <p className="text-xs font-bold uppercase tracking-[0.35em]" style={{ color: ACCENT, fontFamily: 'var(--font-syne)' }}>
@@ -328,6 +399,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     return (
       <div className="h-screen w-screen bg-[#070707] flex flex-col items-center justify-center gap-8 overflow-hidden select-none">
         {botaoTelaCheia}
+        {botaoImpressora}
 
         <div className="flex flex-col items-center gap-1">
           <p className="text-xs font-bold uppercase tracking-[0.35em]" style={{ color: ACCENT, fontFamily: 'var(--font-syne)' }}>
@@ -372,6 +444,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
         style={{ background: 'radial-gradient(ellipse at center, #0a1f0a 0%, #070707 70%)' }}
       >
         {botaoTelaCheia}
+        {botaoImpressora}
         {/* Anel pulsante */}
         <div className="relative flex items-center justify-center">
           <div
@@ -417,6 +490,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     return (
       <div className="h-screen w-screen bg-[#070707] flex flex-col overflow-hidden select-none relative">
         {botaoTelaCheia}
+        {botaoImpressora}
 
         {/* Imagem de fundo full-screen */}
         <img
@@ -480,6 +554,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
   return (
     <div className="h-screen w-screen bg-[#070707] flex flex-col overflow-hidden select-none">
       {botaoTelaCheia}
+      {botaoImpressora}
 
       {/* Top bar */}
       <div className="flex items-center justify-between px-12 py-6 shrink-0">
