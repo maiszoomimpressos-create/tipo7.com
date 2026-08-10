@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtGuard } from '../auth/guards/supabase-jwt.guard';
 import type { AuthenticatedUser } from '../auth/strategies/supabase-jwt.strategy';
@@ -25,6 +25,11 @@ export class CaixasController {
   @Get('caixas/:caixaId')
   getCaixa(@CurrentUser() user: AuthenticatedUser, @Param('caixaId') caixaId: string) {
     return this.caixas.getCaixa(user.id, caixaId);
+  }
+
+  @Patch('caixas/:caixaId')
+  atualizar(@CurrentUser() user: AuthenticatedUser, @Param('caixaId') caixaId: string, @Body() body: { nome?: string; fundo_inicial?: number }) {
+    return this.caixas.atualizar(user.id, caixaId, body);
   }
 
   // Fase 7.2, G7 — bootstrap da tela de venda (permissão mais ampla que

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Plus, Trash2, ArrowLeft, Loader2, AlertTriangle, CheckCircle2,
   ShoppingBag, Lock, Unlock, Users, TrendingUp,
@@ -61,8 +62,12 @@ interface CaixaAberto {
   operadorEmail:      string | null
   operadorCode:       string | null
   horarioPrevisto:    string | null
-  fundo_inicial:      number
-  ingressos_alocados: number
+  // Achado real (10/08/2026): a resposta de GET /eventos/:id/caixas espalha
+  // o objeto Prisma inteiro (camelCase) — esses 2 campos estavam declarados
+  // em snake_case aqui, nunca batendo com o runtime de verdade. Corrigido
+  // ao precisar ler o fundo_inicial real pra edição inline (abaixo).
+  fundoInicial:       number
+  ingressosAlocados:  number
   saldoIngressos:     number
   vendidos:           number
   totalDinheiro:      number
@@ -691,7 +696,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
               </button>
             </div>
             {abertos.map(c => (
-              <CaixaCard key={c.id} caixa={c} eventoId={eventoId} />
+              <CaixaCard key={c.id} caixa={c} eventoId={eventoId} onSalvo={carregarCaixas} />
             ))}
           </div>
         )}
@@ -747,54 +752,158 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
   )
 }
 
-function CaixaCard({ caixa, eventoId, fechado = false }: { caixa: CaixaAberto; eventoId: string; fechado?: boolean }) {
+// Pedido do usuário (10/08/2026): editar nome e troco inicial de um caixa
+// já aberto, direto nesse card — sem fechar e abrir de novo. Só pra caixas
+// abertos (fechado é histórico financeiro, não mexe).
+function CaixaCard({ caixa, eventoId, fechado = false, onSalvo }: { caixa: CaixaAberto; eventoId: string; fechado?: boolean; onSalvo?: () => void }) {
+  const router = useRouter()
+  const [editando,  setEditando]  = useState(false)
+  const [nomeEdit,  setNomeEdit]  = useState(caixa.nome)
+  const [fundoEdit, setFundoEdit] = useState(caixa.fundoInicial)
+  const [calcAberta, setCalcAberta] = useState(false)
+  const [salvando,  setSalvando]  = useState(false)
+  const [erro,      setErro]      = useState<string | null>(null)
+
+  function abrirEdicao(e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation()
+    setNomeEdit(caixa.nome); setFundoEdit(caixa.fundoInicial); setErro(null)
+    setEditando(true)
+  }
+
+  function cancelarEdicao(e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation()
+    setEditando(false)
+  }
+
+  async function salvarEdicao(e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation()
+    if (!nomeEdit.trim()) { setErro('Nome não pode ficar vazio.'); return }
+    setSalvando(true); setErro(null)
+    try {
+      const res = await apiFetchAuth(`/api/caixas/${caixa.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ nome: nomeEdit.trim(), fundo_inicial: fundoEdit }),
+      })
+      const data = await res.json().catch(() => null) as { message?: string } | null
+      if (!res.ok) { setErro(data?.message ?? 'Erro ao salvar'); return }
+      setEditando(false)
+      onSalvo?.()
+    } finally {
+      setSalvando(false)
+    }
+  }
+
   return (
-    <Link href={`/bilheteria/${eventoId}/caixa/${caixa.id}`}
-      className="rounded-2xl p-4 flex flex-col gap-3 transition-all hover:border-[#2a2a2a]"
+    <div
+      onClick={() => { if (!editando) router.push(`/bilheteria/${eventoId}/caixa/${caixa.id}`) }}
+      className="rounded-2xl p-4 flex flex-col gap-3 transition-all hover:border-[#2a2a2a] cursor-pointer"
       style={{ background: fechado ? '#0a0a0a' : '#0d0d0d', border: `1px solid ${fechado ? '#141414' : '#1a1a1a'}` }}>
       <div className="flex items-start justify-between">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2.5">
-            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: fechado ? '#333' : '#4ade80' }} />
-            <span className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)', opacity: fechado ? 0.5 : 1 }}>
-              {caixa.nome}
-            </span>
-          </div>
-          {caixa.operadorName && (
-            <div className="ml-[18px] flex flex-col gap-0.5">
-              <span className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                {caixa.operadorName}
-              </span>
-              {caixa.operadorEmail && (
+        <div className="flex flex-col gap-1 flex-1 min-w-0">
+
+          {editando ? (
+            <div className="flex flex-col gap-2" onClick={e => e.stopPropagation()}>
+              <input
+                value={nomeEdit}
+                onChange={e => setNomeEdit(e.target.value)}
+                placeholder="Nome do caixa"
+                className="w-full bg-[#111] border border-[#1e1e1e] rounded-lg px-2.5 py-1.5 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              />
+              <button
+                type="button" onClick={e => { e.stopPropagation(); setCalcAberta(true) }}
+                className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-left"
+                style={{ background: '#111', border: '1px solid #1e1e1e' }}
+              >
+                <span className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>Troco inicial</span>
+                <span className="flex items-center gap-1.5 text-white text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  <Calculator size={11} style={{ color: ACCENT }} />
+                  {`R$ ${fundoEdit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+                </span>
+              </button>
+              {erro && <p className="text-red-400 text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erro}</p>}
+              <div className="flex gap-2">
+                <button type="button" onClick={cancelarEdicao}
+                  className="flex-1 py-1.5 rounded-lg text-xs text-[#555] hover:text-white transition-colors"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)' }}>
+                  Cancelar
+                </button>
+                <button type="button" onClick={salvarEdicao} disabled={salvando}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold text-[#070707] disabled:opacity-60"
+                  style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                  {salvando ? <Loader2 size={12} className="animate-spin" /> : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2.5">
+                <div className="w-2 h-2 rounded-full shrink-0" style={{ background: fechado ? '#333' : '#4ade80' }} />
+                <span className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)', opacity: fechado ? 0.5 : 1 }}>
+                  {caixa.nome}
+                </span>
+              </div>
+              {caixa.operadorName && (
+                <div className="ml-[18px] flex flex-col gap-0.5">
+                  <span className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    {caixa.operadorName}
+                  </span>
+                  {caixa.operadorEmail && (
+                    <span className="text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {caixa.operadorEmail}
+                    </span>
+                  )}
+                  {caixa.operadorCode && (
+                    <span className="inline-block text-[10px] font-mono w-fit px-1.5 py-0.5 rounded"
+                          style={{ background: '#161616', color: '#444' }}>
+                      {caixa.operadorCode}
+                    </span>
+                  )}
+                </div>
+              )}
+              {caixa.horarioPrevisto && (
+                <div className="ml-[18px] flex items-center gap-1.5">
+                  <Clock size={10} className="text-[#444]" />
+                  <span className="text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Previsto {formatarHorarioPrevisto(caixa.horarioPrevisto)}
+                  </span>
+                </div>
+              )}
+              <div className="ml-[18px] flex items-center gap-1.5">
+                <PiggyBank size={10} className="text-[#444]" />
                 <span className="text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  {caixa.operadorEmail}
+                  Troco: R$ {caixa.fundoInicial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </span>
-              )}
-              {caixa.operadorCode && (
-                <span className="inline-block text-[10px] font-mono w-fit px-1.5 py-0.5 rounded"
-                      style={{ background: '#161616', color: '#444' }}>
-                  {caixa.operadorCode}
-                </span>
-              )}
-            </div>
-          )}
-          {caixa.horarioPrevisto && (
-            <div className="ml-[18px] flex items-center gap-1.5">
-              <Clock size={10} className="text-[#444]" />
-              <span className="text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Previsto {formatarHorarioPrevisto(caixa.horarioPrevisto)}
-              </span>
-            </div>
+              </div>
+            </>
           )}
         </div>
-        <ChevronRight size={14} className="text-[#333] shrink-0 mt-0.5" />
+        {!editando && !fechado && (
+          <button type="button" onClick={abrirEdicao}
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-[#444] hover:text-white hover:bg-white/5 transition-colors shrink-0">
+            <Pencil size={12} />
+          </button>
+        )}
+        {!editando && <ChevronRight size={14} className="text-[#333] shrink-0 mt-0.5" />}
       </div>
       <div className="grid grid-cols-3 gap-2">
         <Stat label="Vendidos" value={String(caixa.vendidos)} muted={fechado} />
         <Stat label="Saldo físico" value={String(caixa.saldoIngressos)} muted={fechado} alert={!fechado && caixa.saldoIngressos <= 5} />
         <Stat label="Total vendas" value={`R$ ${caixa.totalVendas.toFixed(2).replace('.', ',')}`} muted={fechado} accent={!fechado} />
       </div>
-    </Link>
+
+      {calcAberta && (
+        <div onClick={e => e.stopPropagation()}>
+          <CalculadoraDinheiro
+            label={`Troco inicial — ${caixa.nome}`}
+            valor={fundoEdit}
+            onChange={setFundoEdit}
+            onClose={() => setCalcAberta(false)}
+          />
+        </div>
+      )}
+    </div>
   )
 }
 

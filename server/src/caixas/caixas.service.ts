@@ -339,6 +339,47 @@ export class CaixasService {
     };
   }
 
+  // PATCH /caixas/:caixaId — pedido do usuário (10/08/2026): editar nome e
+  // fundo inicial (troco) de um caixa já aberto, sem precisar fechar e abrir
+  // de novo. Só funciona com o caixa aberto (fechado é histórico financeiro,
+  // não mexe pra não bagunçar reconciliação de um caixa já encerrado).
+  async atualizar(userId: string, caixaId: string, body: { nome?: string; fundo_inicial?: number }) {
+    const caixa = await this.prisma.caixa.findUnique({
+      where: { id: caixaId },
+      select: { id: true, eventoId: true, status: true, nome: true },
+    });
+    if (!caixa) throw new NotFoundException('Caixa não encontrado');
+
+    const evento = await this.prisma.event.findUnique({ where: { id: caixa.eventoId }, select: { organizationId: true } });
+    if (!evento || !(await this.orgAdmin.isOrgAdmin(evento.organizationId, userId))) throw new ForbiddenException('Sem permissão');
+    if (caixa.status !== 'aberto') throw new BadRequestException('Só é possível editar um caixa aberto.');
+
+    const data: { nome?: string; fundoInicial?: number } = {};
+
+    if (body.nome !== undefined) {
+      const nome = body.nome.trim();
+      if (!nome) throw new BadRequestException('Nome não pode ficar vazio.');
+      if (nome !== caixa.nome) {
+        const existe = await this.prisma.caixa.findFirst({
+          where: { eventoId: caixa.eventoId, status: 'aberto', nome, id: { not: caixaId } },
+          select: { id: true },
+        });
+        if (existe) throw new BadRequestException(`Já existe um caixa aberto chamado "${nome}".`);
+      }
+      data.nome = nome;
+    }
+
+    if (body.fundo_inicial !== undefined) {
+      if (body.fundo_inicial < 0) throw new BadRequestException('Fundo inicial não pode ser negativo.');
+      data.fundoInicial = body.fundo_inicial;
+    }
+
+    if (Object.keys(data).length === 0) throw new BadRequestException('Nada pra atualizar.');
+
+    await this.prisma.caixa.update({ where: { id: caixaId }, data });
+    return { ok: true };
+  }
+
   // POST /caixas/abrir
   async abrir(
     userId: string,
