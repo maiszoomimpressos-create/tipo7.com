@@ -4,8 +4,9 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   DollarSign, Ticket, Users, CalendarCheck,
   ChevronDown, ScanLine, Plus, ArrowUpRight, ImageIcon,
-  Copy, Check, MapPin, Car, ShoppingBag,
+  Copy, Check, MapPin, Car, ShoppingBag, CircleDot, Loader2,
 } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
 
@@ -20,6 +21,17 @@ export interface EventoResumo {
   category:              string | null
   modulo_ingressos:      boolean
   modulo_estacionamento: boolean
+}
+
+// Só os campos que o popover de Bilheteria usa — a API devolve bem mais
+// (ver listPorEvento em caixas.service.ts), o resto a gente ignora aqui.
+interface CaixaResumo {
+  id:             string
+  nome:           string
+  status:         string
+  operadorName:   string | null
+  totalVendas:    number
+  saldoIngressos: number
 }
 
 export interface TipoIngresso {
@@ -195,6 +207,22 @@ export function DashboardClient({ orgName, orgCodigo, orgTipo, eventos, kpis, ti
   const [eventoBilheteria,  setEventoBilheteria]  = useState('')
   const bilheteriaRef = useRef<HTMLDivElement>(null)
 
+  // Caixas abertos do evento selecionado no popover (pedido do usuário,
+  // 10/08/2026) — mostra direto ali quem já tá vendendo, com atalho pra
+  // entrar direto no caixa em vez de sempre passar pela tela de escolher.
+  const [caixasAbertos,     setCaixasAbertos]     = useState<CaixaResumo[] | null>(null)
+  const [carregandoCaixas,  setCarregandoCaixas]  = useState(false)
+
+  useEffect(() => {
+    if (!eventoBilheteria) { setCaixasAbertos(null); return }
+    setCarregandoCaixas(true)
+    apiFetchAuth(`/api/eventos/${eventoBilheteria}/caixas`)
+      .then(res => res.ok ? res.json() : [])
+      .then((lista: CaixaResumo[]) => setCaixasAbertos(lista.filter(c => c.status === 'aberto')))
+      .catch(() => setCaixasAbertos([]))
+      .finally(() => setCarregandoCaixas(false))
+  }, [eventoBilheteria])
+
   // Fecha o popover ao clicar fora (mesmo padrão de BilheteiroClient.tsx)
   useEffect(() => {
     function fecharFora(e: MouseEvent) {
@@ -286,6 +314,43 @@ export function DashboardClient({ orgName, orgCodigo, orgTipo, eventos, kpis, ti
                       options={eventoOpts}
                       placeholder="Selecione o evento"
                     />
+
+                    {eventoBilheteria && (
+                      <div className="flex flex-col gap-1.5">
+                        {carregandoCaixas ? (
+                          <div className="flex items-center gap-2 py-1 text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                            <Loader2 size={12} className="animate-spin" /> Carregando caixas...
+                          </div>
+                        ) : caixasAbertos && caixasAbertos.length > 0 ? (
+                          <>
+                            <p className="text-[#444] text-[10px] uppercase tracking-wider mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                              Caixas abertos
+                            </p>
+                            {caixasAbertos.map(c => (
+                              <a
+                                key={c.id}
+                                href={`/bilheteria/${eventoBilheteria}/caixa/${c.id}`}
+                                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
+                                style={{ background: '#111', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)' }}
+                              >
+                                <span className="flex items-center gap-1.5 text-white font-medium truncate">
+                                  <CircleDot size={9} className="text-green-400 shrink-0" />
+                                  {c.nome}
+                                </span>
+                                <span className="text-[#666] shrink-0">
+                                  R$ {c.totalVendas.toFixed(2).replace('.', ',')}
+                                </span>
+                              </a>
+                            ))}
+                          </>
+                        ) : (
+                          <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                            Nenhum caixa aberto nesse evento.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     <a
                       href={eventoBilheteria ? `/bilheteria/${eventoBilheteria}` : undefined}
                       className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-[#070707] transition-opacity"
