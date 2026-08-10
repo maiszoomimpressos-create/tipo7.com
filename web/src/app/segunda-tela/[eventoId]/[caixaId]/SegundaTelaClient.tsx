@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import QRCode from 'react-qr-code'
-import { CheckCircle2, Clock, MapPin, Calendar, Ticket as TicketIcon, Banknote, CreditCard, Loader2 } from 'lucide-react'
+import { CheckCircle2, Clock, MapPin, Calendar, Ticket as TicketIcon, Banknote, CreditCard, Loader2, Maximize2, Minimize2 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
 
@@ -74,9 +74,41 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
   const [horaAtual,       setHoraAtual]       = useState('')
   const [tempoRestante,   setTempoRestante]   = useState<number | null>(null)
   const [fadeKey,         setFadeKey]         = useState(0)
+  const [emTelaCheia,     setEmTelaCheia]     = useState(false)
 
   const usarSlides = slides.length > 0
   const total      = usarSlides ? slides.length : eventosProximos.length
+
+  // Tela cheia de verdade (sem barra de endereço/abas do navegador) — pedido
+  // do usuário pra parecer um painel dedicado num segundo aparelho. A
+  // Fullscreen API só funciona a partir de um gesto do usuário (não dá pra
+  // entrar sozinho ao montar), então fica um botão discreto — o operador
+  // toca uma vez ao configurar o aparelho e esquece.
+  useEffect(() => {
+    function onFsChange() { setEmTelaCheia(!!document.fullscreenElement) }
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
+
+  function alternarTelaCheia() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {})
+    } else {
+      document.documentElement.requestFullscreen?.().catch(() => {})
+    }
+  }
+
+  const botaoTelaCheia = (
+    <button
+      type="button"
+      onClick={alternarTelaCheia}
+      title={emTelaCheia ? 'Sair da tela cheia' : 'Tela cheia'}
+      className="fixed bottom-4 right-4 z-50 w-10 h-10 rounded-full flex items-center justify-center transition-opacity opacity-20 hover:opacity-100"
+      style={{ background: '#0d0d0d', border: '1px solid #1e1e1e' }}
+    >
+      {emTelaCheia ? <Minimize2 size={16} className="text-[#888]" /> : <Maximize2 size={16} className="text-[#888]" />}
+    </button>
+  )
 
   // Relógio
   useEffect(() => {
@@ -241,6 +273,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
   if (estado === 'pix' && pixPayload) {
     return (
       <div className="h-screen w-screen bg-[#070707] flex flex-col items-center justify-center gap-8 overflow-hidden select-none">
+        {botaoTelaCheia}
 
         <div className="flex flex-col items-center gap-1">
           <p className="text-xs font-bold uppercase tracking-[0.35em]" style={{ color: ACCENT, fontFamily: 'var(--font-syne)' }}>
@@ -294,6 +327,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     const Icone = aguardandoPayload.metodo === 'dinheiro' ? Banknote : CreditCard
     return (
       <div className="h-screen w-screen bg-[#070707] flex flex-col items-center justify-center gap-8 overflow-hidden select-none">
+        {botaoTelaCheia}
 
         <div className="flex flex-col items-center gap-1">
           <p className="text-xs font-bold uppercase tracking-[0.35em]" style={{ color: ACCENT, fontFamily: 'var(--font-syne)' }}>
@@ -337,6 +371,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
         className="h-screen w-screen flex flex-col items-center justify-center gap-8 overflow-hidden select-none"
         style={{ background: 'radial-gradient(ellipse at center, #0a1f0a 0%, #070707 70%)' }}
       >
+        {botaoTelaCheia}
         {/* Anel pulsante */}
         <div className="relative flex items-center justify-center">
           <div
@@ -381,6 +416,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     const slide = slides[idx]
     return (
       <div className="h-screen w-screen bg-[#070707] flex flex-col overflow-hidden select-none relative">
+        {botaoTelaCheia}
 
         {/* Imagem de fundo full-screen */}
         <img
@@ -443,6 +479,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
   const eventoAtual = eventosProximos[idx]
   return (
     <div className="h-screen w-screen bg-[#070707] flex flex-col overflow-hidden select-none">
+      {botaoTelaCheia}
 
       {/* Top bar */}
       <div className="flex items-center justify-between px-12 py-6 shrink-0">
