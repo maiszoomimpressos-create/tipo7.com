@@ -20,6 +20,11 @@ export class BilheteriaController {
     return this.bilheteria.vender(user.id, req.ip ?? '0.0.0.0', body);
   }
 
+  @Get('caixa/:caixaId/vendas-recentes')
+  vendasRecentes(@CurrentUser() user: AuthenticatedUser, @Param('caixaId') caixaId: string) {
+    return this.bilheteria.vendasRecentes(user.id, caixaId);
+  }
+
   @Post('holders')
   holders(@CurrentUser() user: AuthenticatedUser, @Body() body: any) {
     return this.bilheteria.salvarHolders(user.id, body);

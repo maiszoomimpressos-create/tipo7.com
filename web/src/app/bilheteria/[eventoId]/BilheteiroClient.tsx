@@ -7,7 +7,7 @@ import {
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
   Clock, Monitor, Settings, Download, FileText, Thermometer, MonitorOff,
-  ArrowRightLeft, X, Calculator, Zap, Eye,
+  ArrowRightLeft, X, Calculator, Zap, Eye, RotateCcw,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { CaixaSidebar }       from './CaixaSidebar'
@@ -128,6 +128,7 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   const [modalCalculadora,   setModalCalculadora]   = useState(false)
   const [modalSegundaTela,   setModalSegundaTela]   = useState(false)
   const [modalMonitor,       setModalMonitor]       = useState(false)
+  const [modalReimprimir,    setModalReimprimir]    = useState(false)
 
   const [formato,      setFormato]      = useState<PrintFormat | null>(null)
   const [setupAberto,  setSetupAberto]  = useState(false)
@@ -566,6 +567,17 @@ if exist "%CHROME%" (
     pixBroadcastRef.current = null
     localStorage.removeItem(`tipo7-pix-${caixaId}`)
     broadcast('cancelado', {})
+  }
+
+  // Reimprimir uma venda já feita (ver ModalReimprimir) — não cria pedido
+  // novo nem mexe em estoque, só recarrega os tickets já existentes na
+  // mesma tela de impressão (mesma lógica de lote/RawBT/Serial de sempre).
+  function carregarVendaParaReimprimir(venda: { tickets: TicketGerado[]; ticketName: string; portador: string | null; cpf: string | null }) {
+    setResultado({ tickets: venda.tickets, ticketName: venda.ticketName })
+    setNome(venda.portador ?? '')
+    setCpf(venda.cpf ?? '')
+    setEtapa('impressao')
+    setModalReimprimir(false)
   }
 
   async function gerarNovoPix() {
@@ -1390,6 +1402,14 @@ if exist "%CHROME%" (
             style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
             <Eye size={13} />
           </button>
+          {caixaId && (
+            <button type="button" onClick={() => setModalReimprimir(true)}
+              title="Reimprimir venda já feita"
+              className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
+              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
+              <RotateCcw size={13} />
+            </button>
+          )}
           <button type="button" onClick={() => { setSetupAberto(true); setFormatoSel(formato ?? 'a4') }}
             title="Configurar impressora"
             className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
@@ -1452,6 +1472,13 @@ if exist "%CHROME%" (
           eventoId={eventoId}
           caixaId={caixaId}
           onFechar={() => setModalMonitor(false)}
+        />
+      )}
+      {modalReimprimir && caixaId && (
+        <ModalReimprimir
+          caixaId={caixaId}
+          onFechar={() => setModalReimprimir(false)}
+          onSelecionar={carregarVendaParaReimprimir}
         />
       )}
 
@@ -2053,6 +2080,98 @@ function ModalMonitorSegundaTela({ eventoId, caixaId, onFechar }: {
         >
           Abrir em nova aba
         </a>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal de Reimprimir venda já feita ────────────────────────────────────────
+// Pedido do usuário (11/08/2026): impressora falhou numa venda de 4
+// ingressos e não saiu nada — sem isso não tinha como recuperar o
+// comprovante sem vender de novo (duplicaria o pedido e o débito de
+// estoque). Lista as últimas vendas aprovadas deste caixa; selecionar uma
+// recarrega os tickets JÁ EXISTENTES na tela de impressão normal (mesma
+// lógica de lote/RawBT/Serial de sempre) — não cria nada novo.
+interface VendaRecente {
+  orderId: string
+  criadoEm: string
+  ticketName: string
+  quantidade: number
+  portador: string | null
+  cpf: string | null
+  tickets: TicketGerado[]
+}
+
+function ModalReimprimir({ caixaId, onFechar, onSelecionar }: {
+  caixaId: string
+  onFechar: () => void
+  onSelecionar: (venda: { tickets: TicketGerado[]; ticketName: string; portador: string | null; cpf: string | null }) => void
+}) {
+  const [vendas, setVendas]         = useState<VendaRecente[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [err, setErr]               = useState<string | null>(null)
+
+  useEffect(() => {
+    apiFetchAuth(`/api/bilheteria/caixa/${caixaId}/vendas-recentes`)
+      .then(async r => {
+        if (!r.ok) throw new Error('Erro ao buscar vendas recentes')
+        setVendas(await r.json())
+      })
+      .catch(() => setErr('Erro ao buscar vendas recentes'))
+      .finally(() => setCarregando(false))
+  }, [caixaId])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm" onClick={onFechar}>
+      <div
+        className="w-full max-w-md rounded-t-3xl flex flex-col gap-4 p-6 max-h-[85dvh]"
+        style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>
+            Reimprimir venda
+          </h3>
+          <button type="button" onClick={onFechar} className="text-[#444] hover:text-white"><X size={18} /></button>
+        </div>
+        <p className="text-[#555] text-xs -mt-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          Não cria pedido novo — só reabre os ingressos já vendidos pra imprimir de novo.
+        </p>
+
+        <div className="flex flex-col gap-2 overflow-y-auto">
+          {carregando ? (
+            <div className="flex justify-center py-6"><Loader2 size={24} className="animate-spin text-[#444]" /></div>
+          ) : err ? (
+            <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10">
+              <AlertTriangle size={14} className="shrink-0" /> {err}
+            </div>
+          ) : vendas.length === 0 ? (
+            <p className="text-[#555] text-sm text-center py-4" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Nenhuma venda registrada ainda neste caixa.
+            </p>
+          ) : (
+            vendas.map(v => (
+              <button
+                key={v.orderId}
+                type="button"
+                onClick={() => onSelecionar({ tickets: v.tickets, ticketName: v.ticketName, portador: v.portador, cpf: v.cpf })}
+                disabled={v.tickets.length === 0}
+                className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl text-left transition-colors hover:border-[#333] disabled:opacity-40"
+                style={{ background: '#111', border: '1px solid #1e1e1e' }}
+              >
+                <div className="min-w-0">
+                  <p className="text-white text-sm font-semibold truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    {v.quantidade}× {v.ticketName} — {v.portador || 'Consumidor'}
+                  </p>
+                  <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    {new Date(v.criadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                <RotateCcw size={16} className="text-[#444] shrink-0" />
+              </button>
+            ))
+          )}
+        </div>
       </div>
     </div>
   )

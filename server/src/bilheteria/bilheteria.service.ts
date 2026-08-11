@@ -50,6 +50,59 @@ export class BilheteriaService {
     return { ok: temPerm, ownerId: org?.ownerId ?? null };
   }
 
+  // GET /bilheteria/caixa/:caixaId/vendas-recentes — pedido do usuário
+  // (11/08/2026): impressora falhou numa venda de 4 ingressos e não saiu
+  // nada, sem essa lista não tinha como reimprimir sem vender de novo (o
+  // que duplicaria o pedido e o débito de estoque). Devolve os últimos 20
+  // pedidos aprovados desse caixa, com os dados que a tela de impressão já
+  // sabe renderizar (mesmo formato de tickets que vender()/confirmarPix()
+  // devolvem) — reimprimir é só recarregar isso na tela, não cria nada novo.
+  async vendasRecentes(userId: string, caixaId: string) {
+    const caixa = await this.prisma.caixa.findUnique({
+      where: { id: caixaId },
+      select: { operadorId: true, eventoId: true },
+    });
+    if (!caixa) throw new NotFoundException('Caixa não encontrado');
+
+    const isOperador = caixa.operadorId === userId;
+    if (!isOperador) {
+      const { ok } = await this.checkPermissaoBilheteria(userId, caixa.eventoId);
+      if (!ok) throw new ForbiddenException('Sem permissão para este caixa');
+    }
+
+    const orders = await this.prisma.order.findMany({
+      where: { caixaId, status: 'approved' },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        createdAt: true,
+        orderItems: {
+          select: {
+            quantity: true,
+            ticket: { select: { name: true } },
+            tickets: { select: { id: true, slotNumber: true, qrToken: true }, orderBy: { slotNumber: 'asc' } },
+            ticketHolders: { select: { fullName: true, cpf: true }, take: 1 },
+          },
+        },
+      },
+    });
+
+    return orders.map((o) => {
+      const item = o.orderItems[0];
+      const holder = item?.ticketHolders[0];
+      return {
+        orderId:    o.id,
+        criadoEm:   o.createdAt,
+        ticketName: item?.ticket?.name ?? 'Ingresso',
+        quantidade: item?.quantity ?? 0,
+        portador:   holder?.fullName ?? null,
+        cpf:        holder?.cpf ?? null,
+        tickets: (item?.tickets ?? []).map((t) => ({ id: t.id, slot_number: t.slotNumber, qr_token: t.qrToken })),
+      };
+    });
+  }
+
   // POST /bilheteria/vender — venda presencial paga em dinheiro/cartão.
   async vender(
     userId: string,
