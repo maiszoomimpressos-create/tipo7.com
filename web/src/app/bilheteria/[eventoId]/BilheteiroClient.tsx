@@ -79,6 +79,16 @@ const METODOS: { value: MetodoPagamento; label: string; Icon: React.ElementType 
 
 const QTDS_RAPIDAS = [1, 2, 3, 4, 5]
 
+// Achado real (11/08/2026, teste ao vivo): impressora clone barata (KP-1025)
+// trava e não imprime NADA quando manda 4+ ingressos de uma vez só via
+// RawBT (buffer de recepção estourando) — testado 1, 2 e 3 ok, 4 falha
+// completamente. RawBT precisa de gesto real do usuário a cada disparo
+// (ver rawbtPrint.ts), então pra >2 ingressos o operador toca uma vez por
+// lote — mais toques, mas garantido funcionar em vez de arriscar mandar
+// tudo automático e travar de novo. Web Serial não tem essa exigência de
+// gesto (ver imprimirViaSerialEmLotes), então lá o lote roda sozinho.
+const BATCH_SIZE_IMPRESSAO = 2
+
 export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos, controlaIngressosFisicos, isOwner, eventoTitle, eventoDate, eventoLocal, ingressos, operadorName }: Props) {
   const [etapa,             setEtapa]             = useState<Etapa>('venda')
   const [ticketId,          setTicketId]          = useState(ingressos[0]?.id ?? '')
@@ -95,6 +105,10 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   const [confirmando,       setConfirmando]       = useState(false)
   const [err,               setErr]               = useState<string | null>(null)
   const [resultado,         setResultado]         = useState<{ tickets: TicketGerado[]; ticketName: string } | null>(null)
+  // Quantos ingressos já foram disparados via lote manual do RawBT (ver
+  // BATCH_SIZE_IMPRESSAO acima) — zera a cada venda nova.
+  const [loteImpresso, setLoteImpresso] = useState(0)
+  useEffect(() => { setLoteImpresso(0) }, [resultado])
   const [pendingTickets,    setPendingTickets]    = useState<{ tickets: TicketGerado[]; ticketName: string } | null>(null)
   const [pixData,           setPixData]           = useState<PixData | null>(null)
   const [copiado,           setCopiado]           = useState(false)
@@ -247,6 +261,9 @@ if exist "%CHROME%" (
   // Imprime automaticamente ao chegar na tela de impressão
   useEffect(() => {
     if (etapa !== 'impressao' || !resultado || !formato || formato === 'nenhuma') return
+    // RawBT com mais ingressos que um lote — precisa de toque manual por
+    // lote (ver BATCH_SIZE_IMPRESSAO), não dispara sozinho.
+    if (formato === 'rawbt' && resultado.tickets.length > BATCH_SIZE_IMPRESSAO) return
 
     const t = setTimeout(() => {
       imprimirTickets()
@@ -612,36 +629,62 @@ if exist "%CHROME%" (
   // navegador (window.print(), formatos a4/termica80) ou o disparo direto
   // via RawBT (formato 'rawbt', sem diálogo nenhum). Usado tanto no
   // auto-print ao chegar na tela de impressão quanto no botão manual.
+  function montarTicketsParaImprimir(ticketsGerados: TicketGerado[]): IngressoParaImprimir[] {
+    if (!resultado) return []
+    return ticketsGerados.map(t => ({
+      slotNumber:    t.slot_number,
+      totalSlots:    resultado.tickets.length,
+      qrToken:       t.qr_token,
+      eventoTitle,
+      dataFormatada,
+      eventoLocal,
+      ticketName:    resultado.ticketName,
+      portador:      nome,
+      cpf:           cpf || undefined,
+    }))
+  }
+
   function imprimirTickets() {
     if (!resultado) return
-    if (formato === 'rawbt' || formato === 'serial') {
-      const tickets: IngressoParaImprimir[] = resultado.tickets.map(t => ({
-        slotNumber:    t.slot_number,
-        totalSlots:    resultado.tickets.length,
-        qrToken:       t.qr_token,
-        eventoTitle,
-        dataFormatada,
-        eventoLocal,
-        ticketName:    resultado.ticketName,
-        portador:      nome,
-        cpf:           cpf || undefined,
-      }))
-      const bytes = gerarComandosMultiplos(tickets)
-      if (formato === 'rawbt') {
-        imprimirViaRawBT(bytes)
-      } else {
-        // Web Serial não exige gesto do usuário pra escrever numa porta já
-        // autorizada — dá pra chamar daqui (inclusive do auto-print 600ms
-        // depois da venda) sem bloqueio nenhum do navegador, diferente do
-        // RawBT (ver comentário em webSerialPrint.ts).
-        imprimirViaSerial(bytes).catch(e => {
-          console.error(e)
-          setErr(e instanceof Error ? e.message : 'Erro ao imprimir via Bluetooth')
-        })
-      }
+    if (formato === 'rawbt') {
+      // >BATCH_SIZE_IMPRESSAO não chama isso sozinho (ver efeito de
+      // auto-print acima) — só chega aqui pelo clique manual do botão
+      // "Imprimir" com poucos ingressos, ou pelo primeiro lote.
+      const tickets = montarTicketsParaImprimir(resultado.tickets.slice(0, BATCH_SIZE_IMPRESSAO))
+      imprimirViaRawBT(gerarComandosMultiplos(tickets))
+      setLoteImpresso(Math.min(BATCH_SIZE_IMPRESSAO, resultado.tickets.length))
+    } else if (formato === 'serial') {
+      // Web Serial não exige gesto do usuário pra escrever numa porta já
+      // autorizada — dá pra mandar em lotes com pausa real sozinho, sem
+      // toque nenhum (diferente do RawBT). Mesma limitação de buffer da
+      // impressora, resolvida aqui sem precisar de UI de lote manual.
+      const tickets = montarTicketsParaImprimir(resultado.tickets)
+      imprimirViaSerialEmLotes(tickets).catch(e => {
+        console.error(e)
+        setErr(e instanceof Error ? e.message : 'Erro ao imprimir via Bluetooth')
+      })
     } else {
       window.print()
     }
+  }
+
+  async function imprimirViaSerialEmLotes(tickets: IngressoParaImprimir[]) {
+    for (let i = 0; i < tickets.length; i += BATCH_SIZE_IMPRESSAO) {
+      const chunk = tickets.slice(i, i + BATCH_SIZE_IMPRESSAO)
+      await imprimirViaSerial(gerarComandosMultiplos(chunk))
+      if (i + BATCH_SIZE_IMPRESSAO < tickets.length) await new Promise(r => setTimeout(r, 1500))
+    }
+  }
+
+  // Dispara o próximo lote de ingressos via RawBT — usado pelo botão
+  // "Imprimir X-Y de N" quando a venda tem mais ingressos que um lote só
+  // aguenta de uma vez (ver BATCH_SIZE_IMPRESSAO).
+  function imprimirProximoLote() {
+    if (!resultado) return
+    const fim = Math.min(loteImpresso + BATCH_SIZE_IMPRESSAO, resultado.tickets.length)
+    const tickets = montarTicketsParaImprimir(resultado.tickets.slice(loteImpresso, fim))
+    imprimirViaRawBT(gerarComandosMultiplos(tickets))
+    setLoteImpresso(fim)
   }
 
   // ── Tela de aguardo do PIX ─────────────────────────────────────────────────
@@ -999,6 +1042,9 @@ if exist "%CHROME%" (
 
   // ── Tela de impressão ─────────────────────────────────────────────────────
   if (etapa === 'impressao' && resultado) {
+    const precisaLotes = formato === 'rawbt' && resultado.tickets.length > BATCH_SIZE_IMPRESSAO
+    const loteCompleto = loteImpresso >= resultado.tickets.length
+
     return (
       <div className="min-h-dvh bg-[#070707]">
         <div className="no-print flex items-center justify-between px-6 py-4 border-b border-[#111]">
@@ -1010,15 +1056,41 @@ if exist "%CHROME%" (
             <ArrowLeft size={14} />
             Nova venda
           </button>
-          <button
-            onClick={imprimirTickets}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-[#070707]"
-            style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-          >
-            <Printer size={14} />
-            Imprimir
-          </button>
+          {precisaLotes ? (
+            loteCompleto ? (
+              <span className="flex items-center gap-2 text-sm font-semibold text-green-400" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <CheckCircle2 size={14} /> {resultado.tickets.length} ingressos impressos
+              </span>
+            ) : (
+              <button
+                onClick={imprimirProximoLote}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-[#070707]"
+                style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+              >
+                <Printer size={14} />
+                Imprimir {loteImpresso + 1}
+                {Math.min(loteImpresso + BATCH_SIZE_IMPRESSAO, resultado.tickets.length) > loteImpresso + 1
+                  ? `-${Math.min(loteImpresso + BATCH_SIZE_IMPRESSAO, resultado.tickets.length)}`
+                  : ''} de {resultado.tickets.length}
+              </button>
+            )
+          ) : (
+            <button
+              onClick={imprimirTickets}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-[#070707]"
+              style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <Printer size={14} />
+              Imprimir
+            </button>
+          )}
         </div>
+
+        {precisaLotes && !loteCompleto && (
+          <div className="no-print px-6 py-2.5 text-center text-xs" style={{ background: `${ACCENT}08`, color: '#888', fontFamily: 'var(--font-dm-sans)' }}>
+            Impressora não aguenta muitos ingressos de uma vez — toque em &quot;Imprimir&quot; a cada poucos ingressos até terminar.
+          </div>
+        )}
 
         {/* Um card por ingresso — cada um com seu próprio QR */}
         <div ref={printRef} className="p-6 flex flex-col gap-6 max-w-md mx-auto">

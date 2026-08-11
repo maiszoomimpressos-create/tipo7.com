@@ -7,6 +7,13 @@ import { gerarComandosMultiplos, imprimirViaRawBT, type IngressoParaImprimir } f
 
 const ACCENT = '#E8B84B'
 
+// Achado real (11/08/2026, teste ao vivo): impressora clone barata trava e
+// não imprime NADA quando manda 4+ ingressos de uma vez via RawBT (buffer
+// de recepção estourando) — testado 1-3 ok, 4 falha, mesmo achado em
+// BilheteiroClient.tsx. RawBT precisa de gesto real a cada disparo, então
+// pra >2 ingressos precisa de mais de um toque.
+const BATCH_SIZE_IMPRESSAO = 2
+
 type Estado = 'idle' | 'pix' | 'aguardando' | 'aprovado'
 
 interface PixPayload {
@@ -93,6 +100,9 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
   // bloqueado pelo Chrome Android (não é gesto direto do usuário). Precisa
   // de um toque de verdade na tela — ver botão dedicado na tela "aprovado".
   const [jaImprimiu,      setJaImprimiu]      = useState(false)
+  // Quantos ingressos já foram disparados via lote manual (ver
+  // BATCH_SIZE_IMPRESSAO) — zera junto com jaImprimiu a cada payload novo.
+  const [loteImpresso,    setLoteImpresso]    = useState(0)
 
   const usarSlides = slides.length > 0
   const total      = usarSlides ? slides.length : eventosProximos.length
@@ -195,9 +205,13 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     return !!payload?.tickets?.length
   }
 
+  // Dispara só o próximo lote (ver BATCH_SIZE_IMPRESSAO) — a tela continua
+  // pedindo toque até loteImpresso cobrir todos os tickets do payload.
   function imprimirAprovado(payload: AprovadoPayload) {
     if (!payload.tickets?.length || jaImprimiu) return
-    const tickets: IngressoParaImprimir[] = payload.tickets.map(t => ({
+    const fim = Math.min(loteImpresso + BATCH_SIZE_IMPRESSAO, payload.tickets.length)
+    const lote = payload.tickets.slice(loteImpresso, fim)
+    const tickets: IngressoParaImprimir[] = lote.map(t => ({
       slotNumber:    t.slotNumber,
       totalSlots:    payload.tickets!.length,
       qrToken:       t.qrToken,
@@ -209,7 +223,8 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       cpf:           payload.cpf,
     }))
     imprimirViaRawBT(gerarComandosMultiplos(tickets))
-    setJaImprimiu(true)
+    setLoteImpresso(fim)
+    if (fim >= payload.tickets.length) setJaImprimiu(true)
   }
 
   const botaoTestarImpressora = impressoraLigada && (
@@ -257,6 +272,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       const data = JSON.parse(stored)
       if (data.type === 'aprovado') {
         setJaImprimiu(false)
+        setLoteImpresso(0)
         setAprovadoPayload(data as AprovadoPayload)
         setEstado('aprovado')
         // Timeout mais longo quando precisa de toque pra imprimir — 8s é
@@ -335,6 +351,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
           setEstado('aguardando')
         } else if (data.type === 'aprovado') {
           setJaImprimiu(false)
+          setLoteImpresso(0)
           setAprovadoPayload(data as AprovadoPayload)
           setEstado('aprovado')
           const timeout = payloadTemTickets(data) ? 25000 : 8000
@@ -363,6 +380,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     es.addEventListener('aprovado', (e: MessageEvent) => {
       const payload = JSON.parse(e.data) as AprovadoPayload
       setJaImprimiu(false)
+      setLoteImpresso(0)
       setAprovadoPayload(payload)
       setEstado('aprovado')
       // Achado real (11/08/2026): disparo silencioso pro RawBT direto daqui
@@ -555,6 +573,17 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
             <p className="text-white text-2xl font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
               {aprovadoPayload.quantidade}× {aprovadoPayload.ticketName}
             </p>
+            {/* Impressora não aguenta muitos ingressos numa rajada só —
+                ver BATCH_SIZE_IMPRESSAO. Só aparece quando precisa de mais
+                de um toque. */}
+            {(aprovadoPayload.tickets?.length ?? 0) > BATCH_SIZE_IMPRESSAO && (
+              <p className="text-[#888] text-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Ingresso{loteImpresso + 1 < (aprovadoPayload.tickets?.length ?? 0) ? 's' : ''} {loteImpresso + 1}
+                {Math.min(loteImpresso + BATCH_SIZE_IMPRESSAO, aprovadoPayload.tickets?.length ?? 0) > loteImpresso + 1
+                  ? `-${Math.min(loteImpresso + BATCH_SIZE_IMPRESSAO, aprovadoPayload.tickets?.length ?? 0)}`
+                  : ''} de {aprovadoPayload.tickets?.length} — toque de novo depois pros próximos
+              </p>
+            )}
           </div>
 
           <p
