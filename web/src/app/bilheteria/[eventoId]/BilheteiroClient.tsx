@@ -1172,7 +1172,7 @@ if exist "%CHROME%" (
             {caixaNome ?? 'Bilheteria'}
           </h1>
           <p className="text-[#555] text-[11px] truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            {eventoTitle} • {operadorName}
+            {eventoTitle} <span className="text-[#3a3a3a] font-mono">#{eventoId}</span> • {operadorName}
           </p>
         </div>
         {/* Saldo de ingressos físicos */}
