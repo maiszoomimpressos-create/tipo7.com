@@ -13,18 +13,20 @@ import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { CaixaSidebar }       from './CaixaSidebar'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { gerarComandosMultiplos, imprimirViaRawBT, type IngressoParaImprimir } from '@/lib/rawbtPrint'
+import { serialSuportado, conectarImpressoraSerial, reconectarImpressoraSerial, imprimirViaSerial } from '@/lib/webSerialPrint'
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
 
 type MetodoPagamento = 'dinheiro' | 'pix' | 'cartao'
 type Etapa = 'venda' | 'pix' | 'confirmar' | 'dados' | 'impressao'
-type PrintFormat = 'a4' | 'termica80' | 'rawbt' | 'nenhuma'
+type PrintFormat = 'a4' | 'termica80' | 'rawbt' | 'serial' | 'nenhuma'
 
 const PRINT_FORMATS: { value: PrintFormat; label: string; sub: string; Icon: React.ElementType }[] = [
   { value: 'a4',       label: 'A4',          sub: 'Impressora comum',    Icon: FileText    },
   { value: 'termica80', label: 'Térmica 80mm', sub: 'Impressora de cupom', Icon: Thermometer },
   { value: 'rawbt',    label: 'Térmica direta (RawBT)', sub: 'Celular Android + app RawBT — sem diálogo', Icon: Zap },
+  { value: 'serial',   label: 'Bluetooth direto (PC)', sub: 'Impressora pareada no Windows/Mac — sem celular', Icon: Zap },
   { value: 'nenhuma',  label: 'Sem impressão', sub: 'Somente tela',       Icon: MonitorOff  },
 ]
 
@@ -124,6 +126,34 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
     const saved = localStorage.getItem(`tipo7-impressora-${eventoId}`) as PrintFormat | null
     if (saved) { setFormato(saved); setFormatoSel(saved) }
   }, [eventoId])
+
+  // Web Serial: tenta retomar a porta já autorizada antes, sem pedir
+  // permissão de novo (silencioso — getPorts()/open() em porta já concedida
+  // não exige gesto do usuário, ao contrário do requestPort() inicial).
+  // Assim, depois do "Conectar impressora" feito uma vez, toda visita
+  // futura já volta a imprimir sozinha.
+  const [serialOk,        setSerialOk]        = useState(false)
+  const [serialConectado, setSerialConectado] = useState(false)
+  const [conectandoSerial, setConectandoSerial] = useState(false)
+  useEffect(() => {
+    const ok = serialSuportado()
+    setSerialOk(ok)
+    if (!ok) return
+    reconectarImpressoraSerial().then(porta => setSerialConectado(!!porta))
+  }, [])
+
+  async function handleConectarSerial() {
+    setConectandoSerial(true)
+    try {
+      await conectarImpressoraSerial()
+      setSerialConectado(true)
+    } catch (e) {
+      console.error(e)
+      setErr(e instanceof Error ? e.message : 'Erro ao conectar impressora')
+    } finally {
+      setConectandoSerial(false)
+    }
+  }
 
   // Injeta CSS de impressão dinamicamente conforme o formato escolhido
   useEffect(() => {
@@ -584,7 +614,7 @@ if exist "%CHROME%" (
   // auto-print ao chegar na tela de impressão quanto no botão manual.
   function imprimirTickets() {
     if (!resultado) return
-    if (formato === 'rawbt') {
+    if (formato === 'rawbt' || formato === 'serial') {
       const tickets: IngressoParaImprimir[] = resultado.tickets.map(t => ({
         slotNumber:    t.slot_number,
         totalSlots:    resultado.tickets.length,
@@ -596,7 +626,19 @@ if exist "%CHROME%" (
         portador:      nome,
         cpf:           cpf || undefined,
       }))
-      imprimirViaRawBT(gerarComandosMultiplos(tickets))
+      const bytes = gerarComandosMultiplos(tickets)
+      if (formato === 'rawbt') {
+        imprimirViaRawBT(bytes)
+      } else {
+        // Web Serial não exige gesto do usuário pra escrever numa porta já
+        // autorizada — dá pra chamar daqui (inclusive do auto-print 600ms
+        // depois da venda) sem bloqueio nenhum do navegador, diferente do
+        // RawBT (ver comentário em webSerialPrint.ts).
+        imprimirViaSerial(bytes).catch(e => {
+          console.error(e)
+          setErr(e instanceof Error ? e.message : 'Erro ao imprimir via Bluetooth')
+        })
+      }
     } else {
       window.print()
     }
@@ -1130,7 +1172,7 @@ if exist "%CHROME%" (
               Formato do papel
             </p>
             <div className="flex flex-col gap-2">
-              {PRINT_FORMATS.map(f => (
+              {PRINT_FORMATS.filter(f => f.value !== 'serial' || serialOk).map(f => (
                 <button key={f.value} type="button" onClick={() => setFormatoSel(f.value)}
                   className="flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all"
                   style={{
@@ -1157,6 +1199,31 @@ if exist "%CHROME%" (
                 </button>
               ))}
             </div>
+
+            {/* Status/conexão Web Serial — só aparece com esse formato
+                selecionado. Permissão concedida uma vez fica valendo pras
+                próximas visitas (reconectarImpressoraSerial no mount). */}
+            {formatoSel === 'serial' && (
+              <div className="rounded-2xl p-4 flex items-center justify-between gap-3"
+                   style={{ background: serialConectado ? 'rgba(74,222,128,0.06)' : '#0d0d0d', border: `1px solid ${serialConectado ? 'rgba(74,222,128,0.25)' : '#1a1a1a'}` }}>
+                <div className="flex items-center gap-2.5">
+                  <Zap size={16} className={serialConectado ? 'text-green-400' : 'text-[#444]'} />
+                  <span className="text-sm" style={{ color: serialConectado ? '#4ade80' : '#888', fontFamily: 'var(--font-dm-sans)' }}>
+                    {serialConectado ? 'Impressora conectada' : 'Nenhuma impressora conectada ainda'}
+                  </span>
+                </div>
+                {!serialConectado && (
+                  <button type="button" onClick={handleConectarSerial} disabled={conectandoSerial}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold disabled:opacity-50 transition-all hover:brightness-110"
+                    style={{ background: ACCENT, color: '#070707', fontFamily: 'var(--font-dm-sans)' }}>
+                    {conectandoSerial
+                      ? <><Loader2 size={12} className="animate-spin" /> Conectando...</>
+                      : 'Conectar'
+                    }
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <button
