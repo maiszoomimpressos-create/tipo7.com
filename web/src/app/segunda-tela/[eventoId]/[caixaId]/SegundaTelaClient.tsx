@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'react-qr-code'
-import { CheckCircle2, Clock, MapPin, Calendar, Ticket as TicketIcon, Banknote, CreditCard, Loader2, Maximize2, Minimize2, Printer } from 'lucide-react'
+import { CheckCircle2, Clock, MapPin, Calendar, Ticket as TicketIcon, Banknote, CreditCard, Loader2, Maximize2, Minimize2, Printer, Send } from 'lucide-react'
 import { gerarComandosMultiplos, imprimirViaRawBT, type IngressoParaImprimir } from '@/lib/rawbtPrint'
 
 const ACCENT = '#E8B84B'
@@ -157,6 +157,48 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       }}
     >
       <Printer size={16} style={{ color: impressoraLigada ? ACCENT : '#888' }} />
+    </button>
+  )
+
+  // Impressão de teste — mesmo caminho de código de uma venda real
+  // (gerarComandosMultiplos + imprimirViaRawBT), só com dados fake. Serve
+  // pra confirmar que RawBT + Bluetooth + impressora estão realmente
+  // conectados nesta tela sem precisar esperar uma venda de verdade
+  // acontecer. Só aparece com o toggle da impressora ligado (achado real,
+  // 11/08/2026 — pedido do usuário depois de configurar o RawBT no
+  // celular da Segunda Tela).
+  const [testeEnviado, setTesteEnviado] = useState(false)
+  function imprimirTeste() {
+    const ticketTeste: IngressoParaImprimir = {
+      slotNumber:    1,
+      totalSlots:    1,
+      qrToken:       `TESTE-${Date.now()}`,
+      eventoTitle:   'TESTE DE IMPRESSAO',
+      dataFormatada: new Date().toLocaleString('pt-BR'),
+      eventoLocal:   'Tipo7.com',
+      ticketName:    'Impressao de teste',
+      portador:      'Segunda Tela',
+    }
+    imprimirViaRawBT(gerarComandosMultiplos([ticketTeste]))
+    setTesteEnviado(true)
+    setTimeout(() => setTesteEnviado(false), 2500)
+  }
+
+  const botaoTestarImpressora = impressoraLigada && (
+    <button
+      type="button"
+      onClick={imprimirTeste}
+      title="Enviar impressão de teste"
+      className="fixed bottom-4 right-28 z-50 w-10 h-10 rounded-full flex items-center justify-center opacity-85 hover:opacity-100 transition-opacity"
+      style={{
+        background: testeEnviado ? 'rgba(74,222,128,0.12)' : '#0d0d0d',
+        border: `1px solid ${testeEnviado ? 'rgba(74,222,128,0.4)' : '#1e1e1e'}`,
+      }}
+    >
+      {testeEnviado
+        ? <CheckCircle2 size={16} className="text-green-400" />
+        : <Send size={15} className="text-[#888]" />
+      }
     </button>
   )
 
@@ -345,6 +387,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       <div className="h-screen w-screen bg-[#070707] flex flex-col items-center justify-center gap-8 overflow-hidden select-none">
         {botaoTelaCheia}
         {botaoImpressora}
+        {botaoTestarImpressora}
 
         <div className="flex flex-col items-center gap-1">
           <p className="text-xs font-bold uppercase tracking-[0.35em]" style={{ color: ACCENT, fontFamily: 'var(--font-syne)' }}>
@@ -400,6 +443,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       <div className="h-screen w-screen bg-[#070707] flex flex-col items-center justify-center gap-8 overflow-hidden select-none">
         {botaoTelaCheia}
         {botaoImpressora}
+        {botaoTestarImpressora}
 
         <div className="flex flex-col items-center gap-1">
           <p className="text-xs font-bold uppercase tracking-[0.35em]" style={{ color: ACCENT, fontFamily: 'var(--font-syne)' }}>
@@ -445,6 +489,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       >
         {botaoTelaCheia}
         {botaoImpressora}
+        {botaoTestarImpressora}
         {/* Anel pulsante */}
         <div className="relative flex items-center justify-center">
           <div
@@ -491,6 +536,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       <div className="h-screen w-screen bg-[#070707] flex flex-col overflow-hidden select-none relative">
         {botaoTelaCheia}
         {botaoImpressora}
+        {botaoTestarImpressora}
 
         {/* Imagem de fundo full-screen */}
         <img
@@ -555,6 +601,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     <div className="h-screen w-screen bg-[#070707] flex flex-col overflow-hidden select-none">
       {botaoTelaCheia}
       {botaoImpressora}
+      {botaoTestarImpressora}
 
       {/* Top bar */}
       <div className="flex items-center justify-between px-12 py-6 shrink-0">
