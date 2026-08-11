@@ -20,8 +20,17 @@ export class OrdersService {
       tickets: { select: { id: true, slotNumber: true, qrToken: true, status: true } },
     } as const;
 
+    // caixaId: null — achado real (11/08/2026): pedido feito num caixa
+    // presencial tem userId = o OPERADOR que vendeu (não tem como saber o
+    // Tipo7 do cliente que compra no balcão; os dados dele ficam em
+    // TicketHolder, não em Order.userId). Sem esse filtro, todo operador
+    // via "meus ingressos" via como se fossem dele todos os ingressos que
+    // ele já vendeu pra outras pessoas. Cliente real ainda pode ver o
+    // ingresso dele normalmente via reivindicação por link (seção
+    // holdersDeOutros abaixo, baseada em TicketHolder.userId — mecanismo
+    // correto, não mexi nisso).
     const orders = await this.prisma.order.findMany({
-      where: { userId },
+      where: { userId, caixaId: null },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, status: true, total: true, createdAt: true, mpPaymentId: true,
