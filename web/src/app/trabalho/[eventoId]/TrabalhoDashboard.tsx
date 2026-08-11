@@ -16,7 +16,8 @@ interface CaixaData {
   totalPix: number
   totalCartao: number
   totalVendas: number
-  saldoIngressos: number
+  // null quando o caixa não controla ingresso físico (pulseira).
+  saldoIngressos: number | null
   ingressos_alocados: number
 }
 
@@ -270,9 +271,11 @@ export function TrabalhoDashboard({ eventoId }: { eventoId: string }) {
                     <Ticket size={10} />
                     {caixa.vendidos} vendido{caixa.vendidos !== 1 ? 's' : ''}
                   </span>
-                  <span className="text-[#333] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    {caixa.saldoIngressos} em mãos
-                  </span>
+                  {caixa.saldoIngressos !== null && (
+                    <span className="text-[#333] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {caixa.saldoIngressos} em mãos
+                    </span>
+                  )}
                 </div>
               </div>
             )

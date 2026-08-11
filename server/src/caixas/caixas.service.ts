@@ -16,6 +16,11 @@ interface CaixaLote {
   nome: string;
   fundo_inicial: number;
   ingressos_alocados: number;
+  // Chave seletora (pedido do usuário, 11/08/2026) — ingresso físico aqui é
+  // pulseira de controle de acesso, não o ingresso digital. Default false:
+  // sem o promotor ligar isso e informar a quantidade, o caixa não conta
+  // nem exibe saldo de ingresso físico nenhum.
+  controla_ingressos_fisicos?: boolean;
   operadorId?: string;
   funcaoId?: string | null;
   nomeOperador?: string;
@@ -38,7 +43,14 @@ export class CaixasService {
 
   // Extraído de getCaixa (Fase 7.2, G7) pra reuso em getCaixaParaOperador —
   // mesma conta, sem mudar o comportamento de getCaixa em si.
-  private async calcularSaldoCaixa(caixaId: string, ingressosAlocados: number) {
+  //
+  // controlaFisico (pedido do usuário, 11/08/2026): "ingresso físico" aqui
+  // é pulseira de controle de acesso, não o ingresso digital em si — nem
+  // todo evento usa. Sem essa chave ligada (e sem quantidade informada na
+  // criação do caixa), saldoIngressos vem null e o front esconde o painel
+  // inteiro, em vez de mostrar um saldo negativo sem sentido pra quem não
+  // trabalha com pulseira física nenhuma.
+  private async calcularSaldoCaixa(caixaId: string, ingressosAlocados: number, controlaFisico: boolean) {
     const trans = await this.prisma.caixaTransferencia.findMany({
       where: { OR: [{ caixaOrigemId: caixaId }, { caixaDestinoId: caixaId }] },
       select: { caixaOrigemId: true, caixaDestinoId: true, quantidade: true },
@@ -73,7 +85,8 @@ export class CaixasService {
     }
 
     return {
-      saldoIngressos: ingressosAlocados + recebidos - enviados - vendidos,
+      controlaIngressosFisicos: controlaFisico,
+      saldoIngressos: controlaFisico ? ingressosAlocados + recebidos - enviados - vendidos : null,
       vendidos, recebidos, enviados,
       totalDinheiro, totalPix, totalCartao,
       totalVendas: totalDinheiro + totalPix + totalCartao,
@@ -159,7 +172,7 @@ export class CaixasService {
           operadorEmail: c.operadorId ? (emailMap[c.operadorId] ?? null) : null,
           operadorCode: c.operadorId ? (codeMap[c.operadorId] ?? null) : null,
           estacionamentoNome: c.estacionamentoId ? (estacionamentoNomeMap[c.estacionamentoId] ?? null) : null,
-          saldoIngressos: c.ingressosAlocados + recebidos - enviados - vendidos,
+          saldoIngressos: c.controlaIngressosFisicos ? c.ingressosAlocados + recebidos - enviados - vendidos : null,
           vendidos, recebidos, enviados,
           totalDinheiro, totalPix, totalCartao,
           totalVendas: totalDinheiro + totalPix + totalCartao,
@@ -203,7 +216,7 @@ export class CaixasService {
     const isOperador = caixa.operadorId === userId;
     if (!isOwner && !isOperador) throw new ForbiddenException('Sem permissão');
 
-    const saldo = await this.calcularSaldoCaixa(caixaId, caixa.ingressosAlocados);
+    const saldo = await this.calcularSaldoCaixa(caixaId, caixa.ingressosAlocados, caixa.controlaIngressosFisicos);
 
     // Achado real (08/08/2026, varredura): espalhava a linha crua do Prisma
     // (camelCase). CaixaSidebar.tsx lê stats.fundo_inicial (snake_case) e
@@ -279,7 +292,7 @@ export class CaixasService {
       throw new ForbiddenException('Você não tem permissão para acessar este caixa.');
     }
 
-    const saldo = await this.calcularSaldoCaixa(caixaId, caixa.ingressosAlocados);
+    const saldo = await this.calcularSaldoCaixa(caixaId, caixa.ingressosAlocados, caixa.controlaIngressosFisicos);
 
     // Tickets de toda a família vendável (o próprio evento + filhos que
     // optaram por vender no caixa do pai) — mesma lógica de
@@ -436,6 +449,7 @@ export class CaixasService {
             nome: c.nome,
             fundoInicial: c.fundo_inicial,
             ingressosAlocados: c.ingressos_alocados,
+            controlaIngressosFisicos: c.controla_ingressos_fisicos ?? false,
             createdBy: userId,
             horarioPrevisto: c.horario_previsto ? new Date(c.horario_previsto) : null,
           },
@@ -492,7 +506,7 @@ export class CaixasService {
     });
     const destino = await this.prisma.caixa.findUnique({
       where: { id: body.caixaDestinoId },
-      select: { id: true, eventoId: true, status: true, operadorId: true },
+      select: { id: true, eventoId: true, status: true, operadorId: true, controlaIngressosFisicos: true },
     });
     if (!origem || !destino) throw new NotFoundException('Caixa não encontrado');
 
@@ -518,6 +532,13 @@ export class CaixasService {
       if (!senhaOk) throw new ForbiddenException('Senha do promotor incorreta');
     }
 
+    // Transferência é especificamente de ingresso físico (pulseira) — sem
+    // controle físico ligado nos dois lados não tem o que transferir de
+    // verdade (pedido do usuário, 11/08/2026).
+    if (!origem.controlaIngressosFisicos || !destino.controlaIngressosFisicos) {
+      throw new BadRequestException('Transferência de ingressos físicos exige que origem e destino tenham o controle de ingressos físicos ligado.');
+    }
+
     // Achado real (08/08/2026, varredura): o saldo era calculado em queries
     // separadas do create() final, sem transação/lock cobrindo o intervalo —
     // duas transferências simultâneas do mesmo caixa de origem perto do
@@ -535,8 +556,9 @@ export class CaixasService {
           const recebidos = transOrigens.filter((t) => t.caixaDestinoId === body.caixaOrigemId).reduce((s, t) => s + t.quantidade, 0);
           const enviados = transOrigens.filter((t) => t.caixaOrigemId === body.caixaOrigemId).reduce((s, t) => s + t.quantidade, 0);
 
+          // 'approved' apenas — ver nota em calcularSaldoCaixa acima.
           const ordersOrigem = await tx.order.findMany({
-            where: { caixaId: body.caixaOrigemId, status: { notIn: ['rejected', 'cancelled'] } },
+            where: { caixaId: body.caixaOrigemId, status: 'approved' },
             select: { id: true },
           });
           const orderIds = ordersOrigem.map((o) => o.id);
@@ -627,7 +649,12 @@ export class CaixasService {
     const ingressosEntregues = caixa.ingressosAlocados + recebidos - enviados;
     const expectedGaveta = Number(caixa.fundoInicial) + totalDinheiro;
     const diferencaDinheiro = expectedGaveta - body.dinheiro_contado;
-    const diferencaIngressos = ingressosEntregues - vendidos - body.ingressos_devolvidos;
+    // null quando o caixa não controla ingresso físico — sem estoque de
+    // pulseira de verdade, essa conta não tem o que representar (pedido do
+    // usuário, 11/08/2026).
+    const diferencaIngressos = caixa.controlaIngressosFisicos
+      ? ingressosEntregues - vendidos - body.ingressos_devolvidos
+      : null;
 
     const agora = new Date();
 
@@ -667,7 +694,8 @@ export class CaixasService {
         expected_gaveta: expectedGaveta,
         dinheiro_contado: body.dinheiro_contado,
         diferenca_dinheiro: diferencaDinheiro,
-        ingressos_alocados: caixa.ingressosAlocados,
+        controla_ingressos_fisicos: caixa.controlaIngressosFisicos,
+        ingressos_alocados: caixa.controlaIngressosFisicos ? caixa.ingressosAlocados : null,
         recebidos, enviados, vendidos,
         ingressos_devolvidos: body.ingressos_devolvidos,
         diferenca_ingressos: diferencaIngressos,

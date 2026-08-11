@@ -55,7 +55,12 @@ interface Props {
   eventoId:        string
   caixaId?:        string
   caixaNome?:      string
-  saldoIngressos?: number
+  saldoIngressos?: number | null
+  // Chave seletora (pedido do usuário, 11/08/2026) — ingresso físico aqui é
+  // pulseira de controle de acesso, não o ingresso digital. Sem isso ligado,
+  // saldoIngressos vem null e os painéis/badges de "ingresso físico" somem
+  // (não faz sentido mostrar saldo de um estoque que não existe).
+  controlaIngressosFisicos?: boolean
   isOwner?:        boolean
   eventoTitle:     string
   eventoDate:      string | null
@@ -72,7 +77,7 @@ const METODOS: { value: MetodoPagamento; label: string; Icon: React.ElementType 
 
 const QTDS_RAPIDAS = [1, 2, 3, 4, 5]
 
-export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos, isOwner, eventoTitle, eventoDate, eventoLocal, ingressos, operadorName }: Props) {
+export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos, controlaIngressosFisicos, isOwner, eventoTitle, eventoDate, eventoLocal, ingressos, operadorName }: Props) {
   const [etapa,             setEtapa]             = useState<Etapa>('venda')
   const [ticketId,          setTicketId]          = useState(ingressos[0]?.id ?? '')
   const [dropdownAberto,    setDropdownAberto]    = useState(false)
@@ -1189,8 +1194,8 @@ if exist "%CHROME%" (
             {eventoTitle} <span className="text-[#3a3a3a] font-mono">#{eventoId}</span> • {operadorName}
           </p>
         </div>
-        {/* Saldo de ingressos físicos */}
-        {caixaId && (
+        {/* Saldo de ingressos físicos — só existe com o controle ligado */}
+        {caixaId && controlaIngressosFisicos && (
           <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl shrink-0"
                style={{ background: saldoAtual <= 5 ? 'rgba(248,113,113,0.08)' : '#0d0d0d', border: `1px solid ${saldoAtual <= 5 ? 'rgba(248,113,113,0.2)' : '#1e1e1e'}` }}>
             <Ticket size={11} style={{ color: saldoAtual <= 5 ? '#f87171' : '#555' }} />
@@ -1206,7 +1211,7 @@ if exist "%CHROME%" (
             style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
             <Calculator size={13} />
           </button>
-          {caixaId && (
+          {caixaId && controlaIngressosFisicos && (
             <button type="button" onClick={() => setModalTransferencia(true)}
               title="Transferir ingressos"
               className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
@@ -1265,6 +1270,7 @@ if exist "%CHROME%" (
           eventoId={eventoId}
           caixaId={caixaId}
           isOwner={!!isOwner}
+          controlaIngressosFisicos={!!controlaIngressosFisicos}
           onFechar={() => setModalFechamento(false)}
         />
       )}
@@ -1555,8 +1561,8 @@ if exist "%CHROME%" (
           </div>
         )}
 
-        {/* Ingressos físicos em mãos */}
-        {caixaId && (
+        {/* Ingressos físicos em mãos — só existe com o controle ligado */}
+        {caixaId && controlaIngressosFisicos && (
           <div
             className="flex items-center justify-between px-4 py-3 rounded-xl"
             style={{
@@ -1812,7 +1818,9 @@ function ModalSegundaTela({ eventoId, caixaId, onFechar, onAbrirAqui }: {
 }
 
 // ── Modal de Fechamento de Caixa ──────────────────────────────────────────────
-function ModalFechamento({ eventoId, caixaId, isOwner, onFechar }: { eventoId: string; caixaId: string; isOwner: boolean; onFechar: () => void }) {
+function ModalFechamento({ eventoId, caixaId, isOwner, controlaIngressosFisicos, onFechar }: {
+  eventoId: string; caixaId: string; isOwner: boolean; controlaIngressosFisicos: boolean; onFechar: () => void
+}) {
   const [dinheiro, setDinheiro]     = useState('')
   const [devolvidos, setDevolvidos] = useState('0')
   const [obs, setObs]               = useState('')
@@ -1821,8 +1829,9 @@ function ModalFechamento({ eventoId, caixaId, isOwner, onFechar }: { eventoId: s
   const [apuracao, setApuracao]     = useState<{
     fundo_inicial: number; total_dinheiro: number; expected_gaveta: number
     dinheiro_contado: number; diferenca_dinheiro: number
-    ingressos_alocados: number; recebidos: number; enviados: number
-    vendidos: number; ingressos_devolvidos: number; diferenca_ingressos: number
+    controla_ingressos_fisicos: boolean
+    ingressos_alocados: number | null; recebidos: number; enviados: number
+    vendidos: number; ingressos_devolvidos: number; diferenca_ingressos: number | null
   } | null>(null)
 
   async function fechar() {
@@ -1856,14 +1865,18 @@ function ModalFechamento({ eventoId, caixaId, isOwner, onFechar }: { eventoId: s
               value={fmt(Math.abs(apuracao.diferenca_dinheiro))}
               ok={Math.abs(apuracao.diferenca_dinheiro) < 0.01}
               sign={apuracao.diferenca_dinheiro > 0.01 ? 'falta' : apuracao.diferenca_dinheiro < -0.01 ? 'sobra' : ''} />
-            <div className="border-t border-[#1a1a1a] my-1" />
-            <Row label="Ingressos alocados + recebidos" value={String(apuracao.ingressos_alocados + apuracao.recebidos)} />
-            <Row label="Vendidos"                value={String(apuracao.vendidos)} />
-            <Row label="Devolvidos"              value={String(apuracao.ingressos_devolvidos)} />
-            <Row label="Diferença (ingressos)"
-              value={String(Math.abs(apuracao.diferenca_ingressos))}
-              ok={apuracao.diferenca_ingressos === 0}
-              sign={apuracao.diferenca_ingressos > 0 ? 'falta' : apuracao.diferenca_ingressos < 0 ? 'sobra' : ''} />
+            {apuracao.controla_ingressos_fisicos && apuracao.ingressos_alocados !== null && apuracao.diferenca_ingressos !== null && (
+              <>
+                <div className="border-t border-[#1a1a1a] my-1" />
+                <Row label="Ingressos alocados + recebidos" value={String(apuracao.ingressos_alocados + apuracao.recebidos)} />
+                <Row label="Vendidos"                value={String(apuracao.vendidos)} />
+                <Row label="Devolvidos"              value={String(apuracao.ingressos_devolvidos)} />
+                <Row label="Diferença (ingressos)"
+                  value={String(Math.abs(apuracao.diferenca_ingressos))}
+                  ok={apuracao.diferenca_ingressos === 0}
+                  sign={apuracao.diferenca_ingressos > 0 ? 'falta' : apuracao.diferenca_ingressos < 0 ? 'sobra' : ''} />
+              </>
+            )}
           </div>
           {!isOwner && (
             <p className="text-[#888] text-xs text-center" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -1903,15 +1916,17 @@ function ModalFechamento({ eventoId, caixaId, isOwner, onFechar }: { eventoId: s
               className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-4 py-3 text-white text-lg font-semibold outline-none focus:border-[#E8B84B]/40"
               style={{ fontFamily: 'var(--font-dm-sans)' }} />
           </div>
-          <div>
-            <label className="text-[#555] text-xs uppercase tracking-wider mb-1.5 block" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              Ingressos físicos devolvidos
-            </label>
-            <input type="number" min="0" value={devolvidos}
-              onChange={e => setDevolvidos(e.target.value)}
-              className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40"
-              style={{ fontFamily: 'var(--font-dm-sans)' }} />
-          </div>
+          {controlaIngressosFisicos && (
+            <div>
+              <label className="text-[#555] text-xs uppercase tracking-wider mb-1.5 block" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Ingressos físicos devolvidos
+              </label>
+              <input type="number" min="0" value={devolvidos}
+                onChange={e => setDevolvidos(e.target.value)}
+                className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+                style={{ fontFamily: 'var(--font-dm-sans)' }} />
+            </div>
+          )}
           <div>
             <label className="text-[#555] text-xs uppercase tracking-wider mb-1.5 block" style={{ fontFamily: 'var(--font-dm-sans)' }}>
               Observações (opcional)

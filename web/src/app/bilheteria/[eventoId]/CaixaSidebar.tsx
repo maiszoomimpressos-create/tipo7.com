@@ -15,7 +15,9 @@ interface Stats {
   totalCartao:     number
   totalVendas:     number
   vendidos:        number
-  saldoIngressos:  number
+  // null quando o caixa não controla ingresso físico (pulseira) — ver
+  // controlaIngressosFisicos no backend (caixas.service.ts).
+  saldoIngressos:  number | null
   ingressos_alocados: number
   recebidos:       number
   enviados:        number
@@ -77,7 +79,7 @@ export function CaixaSidebar({ caixaId }: { caixaId: string }) {
 
   if (!stats) return null
 
-  const saldoBaixo = stats.saldoIngressos <= 5
+  const saldoBaixo = stats.saldoIngressos !== null && stats.saldoIngressos <= 5
 
   return (
     <div className="flex flex-col gap-4">
@@ -168,7 +170,11 @@ export function CaixaSidebar({ caixaId }: { caixaId: string }) {
         </div>
       </div>
 
-      {/* Ingressos */}
+      {/* Ingressos — só existe quando o caixa controla ingresso físico
+          (pulseira). Sem isso ligado, stats.saldoIngressos vem null do
+          backend e esse painel inteiro some, em vez de mostrar um saldo
+          negativo sem sentido (pedido do usuário, 11/08/2026). */}
+      {stats.saldoIngressos !== null && (
       <div
         className="px-4 py-3.5 rounded-2xl flex flex-col gap-2.5"
         style={{
@@ -220,6 +226,7 @@ export function CaixaSidebar({ caixaId }: { caixaId: string }) {
           </div>
         )}
       </div>
+      )}
 
     </div>
   )

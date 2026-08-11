@@ -31,7 +31,7 @@ interface CaixaResumo {
   status:         string
   operadorName:   string | null
   totalVendas:    number
-  saldoIngressos: number
+  saldoIngressos: number | null
 }
 
 export interface TipoIngresso {

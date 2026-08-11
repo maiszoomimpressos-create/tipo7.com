@@ -33,6 +33,12 @@ interface CaixaConfig {
   nome:               string
   fundo_inicial:      number
   ingressos_alocados: number
+  // Chave seletora (pedido do usuário, 11/08/2026) — ingresso físico aqui é
+  // pulseira de controle de acesso, não o ingresso digital. Default false:
+  // maioria dos eventos vende só QR digital, sem pulseira nenhuma — contar
+  // ingresso físico nesse caso gerava saldo negativo sem sentido (achado
+  // real, venda PIX puramente digital decrementando estoque inexistente).
+  controla_ingressos_fisicos: boolean
   tipoOperador:       'nenhum' | 'cadastrado' | 'sem_cadastro'
   operadorId:         string | null
   operadorNome:       string | null
@@ -68,7 +74,10 @@ interface CaixaAberto {
   // ao precisar ler o fundo_inicial real pra edição inline (abaixo).
   fundoInicial:       number
   ingressosAlocados:  number
-  saldoIngressos:     number
+  controlaIngressosFisicos: boolean
+  // null quando controlaIngressosFisicos é false — sem controle físico,
+  // não tem saldo pra calcular.
+  saldoIngressos:     number | null
   vendidos:           number
   totalDinheiro:      number
   totalPix:           number
@@ -94,7 +103,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
     ativo: boolean; saldo_atual: number; meta_reserva: number; aviso_disparado: boolean
   } | null>(null)
   const [configs, setConfigs]     = useState<CaixaConfig[]>([
-    { nome: 'Caixa A', fundo_inicial: 0, ingressos_alocados: 0, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '' },
+    { nome: 'Caixa A', fundo_inicial: 0, ingressos_alocados: 0, controla_ingressos_fisicos: false, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '' },
   ])
   const [equipe, setEquipe]             = useState<MembroEquipe[]>([])
   const [salvando, setSalvando]         = useState(false)
@@ -179,7 +188,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
   function addCaixa() {
     const existentes = [...caixas.map(c => c.nome), ...configs.map(c => c.nome)]
     setConfigs(c => [...c, {
-      nome: nomeCaixaUnico(existentes), fundo_inicial: 0, ingressos_alocados: 0,
+      nome: nomeCaixaUnico(existentes), fundo_inicial: 0, ingressos_alocados: 0, controla_ingressos_fisicos: false,
       tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '',
     }])
   }
@@ -187,7 +196,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
   function iniciarNovoCaixa() {
     const nome = nomeCaixaUnico(caixas.map(c => c.nome))
     setFase('configurando')
-    setConfigs([{ nome, fundo_inicial: 0, ingressos_alocados: 0, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '' }])
+    setConfigs([{ nome, fundo_inicial: 0, ingressos_alocados: 0, controla_ingressos_fisicos: false, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '' }])
   }
 
   function removeCaixa(i: number) {
@@ -233,9 +242,12 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
     }
     setSalvando(true); setErr(null)
     const caixasPayload = configs.map(c => ({
-      nome:               c.nome,
-      fundo_inicial:      c.fundo_inicial,
-      ingressos_alocados: c.ingressos_alocados,
+      nome:                        c.nome,
+      fundo_inicial:               c.fundo_inicial,
+      // Zera se o controle estiver desligado — não manda quantidade
+      // digitada antes de desligar o toggle (defensivo).
+      ingressos_alocados:          c.controla_ingressos_fisicos ? c.ingressos_alocados : 0,
+      controla_ingressos_fisicos:  c.controla_ingressos_fisicos,
       ...(c.tipoOperador === 'cadastrado' && c.operadorId ? { operadorId: c.operadorId } : {}),
       ...(c.tipoOperador === 'sem_cadastro' && c.nomeOperadorLivre.trim()
         ? { nomeOperador: c.nomeOperadorLivre.trim() }
@@ -439,15 +451,37 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
                     </button>
                   </div>
                   <div>
-                    <label className="text-[#555] text-[10px] uppercase tracking-wider block mb-1.5"
-                           style={{ fontFamily: 'var(--font-dm-sans)' }}>Ingressos físicos</label>
-                    <input
-                      type="number" min="0" step="1"
-                      value={cfg.ingressos_alocados}
-                      onChange={e => updateConfig(i, 'ingressos_alocados', parseInt(e.target.value) || 0)}
-                      className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-3 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40"
-                      style={{ fontFamily: 'var(--font-dm-sans)' }}
-                    />
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[#555] text-[10px] uppercase tracking-wider"
+                             style={{ fontFamily: 'var(--font-dm-sans)' }}>Ingressos físicos (pulseira)</label>
+                      {/* Chave seletora — pedido do usuário, 11/08/2026. Default
+                          desligado: maioria dos eventos vende só QR digital, sem
+                          pulseira física nenhuma; contar isso gerava saldo
+                          negativo sem sentido a cada venda. */}
+                      <button type="button"
+                        onClick={() => updateConfig(i, 'controla_ingressos_fisicos', !cfg.controla_ingressos_fisicos)}
+                        title={cfg.controla_ingressos_fisicos ? 'Desligar controle de ingresso físico' : 'Ligar controle de ingresso físico'}
+                        className="w-8 h-[18px] rounded-full transition-colors relative shrink-0"
+                        style={{ background: cfg.controla_ingressos_fisicos ? ACCENT : '#222' }}>
+                        <div className="absolute top-[3px] w-3 h-3 rounded-full bg-white transition-all"
+                             style={{ left: cfg.controla_ingressos_fisicos ? '17px' : '3px' }} />
+                      </button>
+                    </div>
+                    {cfg.controla_ingressos_fisicos ? (
+                      <input
+                        type="number" min="0" step="1"
+                        value={cfg.ingressos_alocados}
+                        onChange={e => updateConfig(i, 'ingressos_alocados', parseInt(e.target.value) || 0)}
+                        className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-3 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+                        style={{ fontFamily: 'var(--font-dm-sans)' }}
+                        autoFocus
+                      />
+                    ) : (
+                      <div className="w-full bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl px-3 py-2.5 text-[#3a3a3a] text-sm"
+                           style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        Sem controle físico
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -565,7 +599,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
               Total de ingressos físicos
             </span>
             <span className="text-white font-bold text-lg" style={{ fontFamily: 'var(--font-outfit)', color: ACCENT }}>
-              {configs.reduce((s, c) => s + c.ingressos_alocados, 0)}
+              {configs.reduce((s, c) => s + (c.controla_ingressos_fisicos ? c.ingressos_alocados : 0), 0)}
             </span>
           </div>
 
@@ -889,7 +923,12 @@ function CaixaCard({ caixa, eventoId, fechado = false, onSalvo }: { caixa: Caixa
       </div>
       <div className="grid grid-cols-3 gap-2">
         <Stat label="Vendidos" value={String(caixa.vendidos)} muted={fechado} />
-        <Stat label="Saldo físico" value={String(caixa.saldoIngressos)} muted={fechado} alert={!fechado && caixa.saldoIngressos <= 5} />
+        <Stat
+          label="Saldo físico"
+          value={caixa.saldoIngressos === null ? '—' : String(caixa.saldoIngressos)}
+          muted={fechado}
+          alert={!fechado && caixa.saldoIngressos !== null && caixa.saldoIngressos <= 5}
+        />
         <Stat label="Total vendas" value={`R$ ${caixa.totalVendas.toFixed(2).replace('.', ',')}`} muted={fechado} accent={!fechado} />
       </div>
 

@@ -13,7 +13,10 @@ interface CaixaBootstrap {
   nome: string
   eventoId: string
   isOwner: boolean
-  saldoIngressos: number
+  // null quando o caixa não controla ingresso físico (pulseira) — ver
+  // controlaIngressosFisicos no backend (caixas.service.ts).
+  saldoIngressos: number | null
+  controlaIngressosFisicos: boolean
   evento: { id: string; title: string | null; dateStart: string | null; venueName: string | null; city: string | null; state: string | null }
   ingressos: Array<{ id: string; name: string; price: number; disponivel: number; eventoId: string; eventoTitle: string }>
   operadorName: string
@@ -47,6 +50,7 @@ export default async function CaixaPage({ params }: Props) {
       caixaId={caixaId}
       caixaNome={caixa.nome}
       saldoIngressos={caixa.saldoIngressos}
+      controlaIngressosFisicos={caixa.controlaIngressosFisicos}
       isOwner={caixa.isOwner}
       eventoTitle={caixa.evento.title ?? 'Evento'}
       eventoDate={caixa.evento.dateStart ?? null}

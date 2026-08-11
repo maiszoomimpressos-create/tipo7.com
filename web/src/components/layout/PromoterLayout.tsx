@@ -36,7 +36,7 @@ interface CaixaResumo {
   status:         string
   operadorName:   string | null
   totalVendas:    number
-  saldoIngressos: number
+  saldoIngressos: number | null
 }
 
 export function PromoterLayout({ children }: { children: React.ReactNode }) {

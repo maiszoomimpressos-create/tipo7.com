@@ -756,6 +756,16 @@ model Caixa {
   nome                            String
   fundoInicial                    Decimal                @default(0) @map("fundo_inicial") @db.Decimal(10, 2)
   ingressosAlocados               Int                    @default(0) @map("ingressos_alocados")
+  // Chave seletora (pedido do usuário, 11/08/2026): ingresso físico aqui é
+  // especificamente pulseira de controle de acesso, não o QR digital do
+  // ingresso em si. Só conta/exibe saldo de ingressos físicos quando o
+  // promotor liga isso explicitamente E informa a quantidade — sem isso,
+  // toda venda (inclusive PIX 100% digital) ficava decrementando um
+  // estoque físico que não existe de verdade, gerando saldo negativo
+  // artificial. Migration aplicada direto via SQL (docker exec no
+  // container do postgres) — sem prisma migrate, mesmo padrão do resto
+  // do schema (ver comentário no topo do arquivo).
+  controlaIngressosFisicos        Boolean                @default(false) @map("controla_ingressos_fisicos")
   status                          String                 @default("aberto")
   abertoEm                        DateTime               @default(now()) @map("aberto_em") @db.Timestamptz(6)
   fechadoEm                       DateTime?              @map("fechado_em") @db.Timestamptz(6)
