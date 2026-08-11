@@ -101,10 +101,11 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   // Saldo de ingressos físicos — atualizado via polling leve
   const [saldoAtual, setSaldoAtual] = useState(saldoIngressos ?? 0)
 
-  // Modais de transferência, fechamento e calculadora
+  // Modais de transferência, fechamento, calculadora e segunda tela
   const [modalTransferencia, setModalTransferencia] = useState(false)
   const [modalFechamento,    setModalFechamento]    = useState(false)
   const [modalCalculadora,   setModalCalculadora]   = useState(false)
+  const [modalSegundaTela,   setModalSegundaTela]   = useState(false)
 
   const [formato,      setFormato]      = useState<PrintFormat | null>(null)
   const [setupAberto,  setSetupAberto]  = useState(false)
@@ -235,10 +236,14 @@ if exist "%CHROME%" (
     }).catch(() => {})
   }
 
-  // Abre segunda tela no mesmo browser — o botão "Segunda tela" na tela de
-  // configurar impressão é justamente pra quem vai ligar um monitor/TV por
-  // cabo no mesmo aparelho: um clique já abre a janela pronta pra arrastar
-  // pra tela extra, sem precisar montar URL na mão.
+  // Abre segunda tela no mesmo browser — usado pelo botão "Abrir aqui neste
+  // aparelho" dentro do ModalSegundaTela (ver componente no fim do arquivo),
+  // pra quem vai ligar um monitor/TV por cabo no mesmo PC. O clique nos
+  // botões "Segunda tela" do cabeçalho/setup agora abre o modal com QR +
+  // link (pra abrir num celular/tablet à parte) em vez de chamar isso
+  // direto — achado real (10/08/2026): a Segunda Tela quase sempre roda num
+  // aparelho separado com a impressora Bluetooth pareada nele, não no
+  // mesmo PC do caixa.
   function abrirSegundaTela() {
     if (!caixaId) return
     if (segundaRef.current && !segundaRef.current.closed) {
@@ -1072,7 +1077,7 @@ if exist "%CHROME%" (
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={abrirSegundaTela}
+              onClick={() => setModalSegundaTela(true)}
               title="Abrir segunda tela para o cliente"
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
               style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
@@ -1153,6 +1158,15 @@ if exist "%CHROME%" (
           </button>
 
         </div>
+
+        {modalSegundaTela && caixaId && (
+          <ModalSegundaTela
+            eventoId={eventoId}
+            caixaId={caixaId}
+            onFechar={() => setModalSegundaTela(false)}
+            onAbrirAqui={abrirSegundaTela}
+          />
+        )}
       </div>
     )
   }
@@ -1200,7 +1214,7 @@ if exist "%CHROME%" (
               <ArrowRightLeft size={13} />
             </button>
           )}
-          <button type="button" onClick={abrirSegundaTela}
+          <button type="button" onClick={() => setModalSegundaTela(true)}
             title="Segunda tela"
             className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
             style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
@@ -1252,6 +1266,14 @@ if exist "%CHROME%" (
           caixaId={caixaId}
           isOwner={!!isOwner}
           onFechar={() => setModalFechamento(false)}
+        />
+      )}
+      {modalSegundaTela && caixaId && (
+        <ModalSegundaTela
+          eventoId={eventoId}
+          caixaId={caixaId}
+          onFechar={() => setModalSegundaTela(false)}
+          onAbrirAqui={abrirSegundaTela}
         />
       )}
 
@@ -1700,6 +1722,90 @@ function ModalTransferencia({
             </button>
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Modal de Segunda Tela (QR + copiar link) ──────────────────────────────────
+// Achado real (10/08/2026): a Segunda Tela quase sempre roda num aparelho
+// separado (celular/tablet com a impressora Bluetooth pareada nele via
+// RawBT, ver lib/rawbtPrint.ts), não no mesmo PC do caixa. Em vez de abrir
+// a janela direto no aparelho que clicou (só útil pra quem tem monitor/TV
+// a cabo no mesmo PC), mostra QR + link — estilo copia-e-cola do PIX — pra
+// escanear ou copiar e mandar pro celular/tablet que vai ficar com o
+// cliente/impressora. O link é escopado por caixaId (não por evento), então
+// abre direto na vitrine certa; exige login (getAuthUser em page.tsx), mas
+// sem checagem de permissão específica — qualquer usuário Tipo7 já logado
+// no aparelho entra direto, senão passa pelo /auth uma vez só.
+function ModalSegundaTela({ eventoId, caixaId, onFechar, onAbrirAqui }: {
+  eventoId: string; caixaId: string; onFechar: () => void; onAbrirAqui: () => void
+}) {
+  const [copiado, setCopiado] = useState(false)
+  const url = `${window.location.origin}/segunda-tela/${eventoId}/${caixaId}`
+
+  async function copiarLink() {
+    await navigator.clipboard.writeText(url)
+    setCopiado(true)
+    setTimeout(() => setCopiado(false), 2500)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm" onClick={onFechar}>
+      <div className="w-full max-w-md rounded-t-3xl flex flex-col gap-5 p-6"
+           style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
+           onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>
+            Segunda tela
+          </h3>
+          <button type="button" onClick={onFechar} className="text-[#444] hover:text-white"><X size={18} /></button>
+        </div>
+
+        <p className="text-[#555] text-sm -mt-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          Escaneie com a câmera do celular/tablet ou copie o link — abre direto na vitrine deste caixa.
+        </p>
+
+        <div className="flex justify-center">
+          <div className="bg-white p-4 rounded-2xl">
+            <QRCode value={url} size={200} />
+          </div>
+        </div>
+
+        <div
+          className="w-full rounded-2xl p-3"
+          style={{ background: '#111', border: '1px solid #1e1e1e' }}
+        >
+          <p className="text-[#888] text-xs break-all" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            {url}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={copiarLink}
+          className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold transition-all active:scale-95"
+          style={{
+            background: copiado ? '#1a2e1a' : ACCENT,
+            border:     `1px solid ${copiado ? '#2d5a2d' : ACCENT}`,
+            color:      copiado ? '#4ade80' : '#070707',
+            fontFamily: 'var(--font-dm-sans)',
+          }}
+        >
+          {copiado
+            ? <><CheckCircle2 size={14} /> Link copiado!</>
+            : <><Copy size={14} /> Copiar link</>
+          }
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { onAbrirAqui(); onFechar() }}
+          className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm transition-colors hover:text-white"
+          style={{ background: 'transparent', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
+        >
+          <Monitor size={14} /> Abrir aqui neste aparelho
+        </button>
       </div>
     </div>
   )
