@@ -189,6 +189,18 @@ const nextConfig = {
         source: '/(.*)',
         headers: securityHeaders,
       },
+      // Segunda Tela precisa poder ser embutida num iframe same-origin —
+      // painel de monitoramento no caixa do PC (pedido do usuário,
+      // 11/08/2026), pra acompanhar ao vivo o que está na tela do
+      // celular/tablet sem precisar olhar o aparelho físico. SAMEORIGIN
+      // ainda bloqueia embed de fora do próprio domínio; a regra genérica
+      // acima continua DENY pra todo o resto do site. Config mais
+      // específica listada depois — Next.js aplica por ordem, a última
+      // que casa a rota vence pra chaves repetidas.
+      {
+        source: '/segunda-tela/:path*',
+        headers: [{ key: 'X-Frame-Options', value: 'SAMEORIGIN' }],
+      },
     ]
   },
   images: {

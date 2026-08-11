@@ -7,7 +7,7 @@ import {
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
   Clock, Monitor, Settings, Download, FileText, Thermometer, MonitorOff,
-  ArrowRightLeft, X, Calculator, Zap,
+  ArrowRightLeft, X, Calculator, Zap, Eye,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { CaixaSidebar }       from './CaixaSidebar'
@@ -111,6 +111,7 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   const [modalFechamento,    setModalFechamento]    = useState(false)
   const [modalCalculadora,   setModalCalculadora]   = useState(false)
   const [modalSegundaTela,   setModalSegundaTela]   = useState(false)
+  const [modalMonitor,       setModalMonitor]       = useState(false)
 
   const [formato,      setFormato]      = useState<PrintFormat | null>(null)
   const [setupAberto,  setSetupAberto]  = useState(false)
@@ -1090,6 +1091,18 @@ if exist "%CHROME%" (
               <Monitor size={13} />
               Segunda tela
             </button>
+            {caixaId && (
+              <button
+                type="button"
+                onClick={() => setModalMonitor(true)}
+                title="Monitorar a Segunda Tela ao vivo, sem sair do PC"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
+                style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
+              >
+                <Eye size={13} />
+                Monitorar
+              </button>
+            )}
             {setupAberto ? (
               <button type="button" onClick={() => setSetupAberto(false)}
                 className="text-[#444] hover:text-white text-xs transition-colors"
@@ -1172,6 +1185,13 @@ if exist "%CHROME%" (
             onAbrirAqui={abrirSegundaTela}
           />
         )}
+        {modalMonitor && caixaId && (
+          <ModalMonitorSegundaTela
+            eventoId={eventoId}
+            caixaId={caixaId}
+            onFechar={() => setModalMonitor(false)}
+          />
+        )}
       </div>
     )
   }
@@ -1224,6 +1244,12 @@ if exist "%CHROME%" (
             className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
             style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
             <Monitor size={13} />
+          </button>
+          <button type="button" onClick={() => setModalMonitor(true)}
+            title="Monitorar a Segunda Tela ao vivo"
+            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
+            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
+            <Eye size={13} />
           </button>
           <button type="button" onClick={() => { setSetupAberto(true); setFormatoSel(formato ?? 'a4') }}
             title="Configurar impressora"
@@ -1280,6 +1306,13 @@ if exist "%CHROME%" (
           caixaId={caixaId}
           onFechar={() => setModalSegundaTela(false)}
           onAbrirAqui={abrirSegundaTela}
+        />
+      )}
+      {modalMonitor && caixaId && (
+        <ModalMonitorSegundaTela
+          eventoId={eventoId}
+          caixaId={caixaId}
+          onFechar={() => setModalMonitor(false)}
         />
       )}
 
@@ -1812,6 +1845,75 @@ function ModalSegundaTela({ eventoId, caixaId, onFechar, onAbrirAqui }: {
         >
           <Monitor size={14} /> Abrir aqui neste aparelho
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal de Monitoramento da Segunda Tela (painel ao vivo no PC) ────────────
+// Pedido do usuário (11/08/2026): se der algum problema na Segunda Tela
+// (não conectou, travou, impressora não configurada), o operador do PC
+// precisa saber sem ter que ir fisicamente olhar o outro aparelho. Um
+// iframe da própria página /segunda-tela/{eventoId}/{caixaId} resolve isso
+// de graça — é o MESMO componente React rodando, reage aos mesmos SSE/
+// localStorage que o celular de verdade recebe, então o que aparece aqui é
+// exatamente o que está na tela do celular, ao vivo.
+//
+// Precisou de uma exceção pontual em X-Frame-Options (next.config.mjs) —
+// só essa rota aceita ser embutida em iframe, e só same-origin (SAMEORIGIN),
+// resto do site continua DENY.
+function ModalMonitorSegundaTela({ eventoId, caixaId, onFechar }: {
+  eventoId: string; caixaId: string; onFechar: () => void
+}) {
+  const [carregando, setCarregando] = useState(true)
+  const url = `/segunda-tela/${eventoId}/${caixaId}`
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onFechar}>
+      <div
+        className="w-full max-w-sm rounded-3xl flex flex-col gap-4 p-5"
+        style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Eye size={16} style={{ color: ACCENT }} />
+            <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>
+              Monitorando a Segunda Tela
+            </h3>
+          </div>
+          <button type="button" onClick={onFechar} className="text-[#444] hover:text-white"><X size={18} /></button>
+        </div>
+
+        {/* Moldura tipo celular — só estética, deixa claro que é um espelho
+            de outro aparelho, não parte do próprio caixa. */}
+        <div
+          className="relative w-full mx-auto rounded-[2rem] p-2 overflow-hidden"
+          style={{ background: '#000', border: '2px solid #222', aspectRatio: '9 / 16' }}
+        >
+          {carregando && (
+            <div className="absolute inset-0 flex items-center justify-center z-10">
+              <Loader2 size={24} className="animate-spin text-[#444]" />
+            </div>
+          )}
+          <iframe
+            src={url}
+            title="Segunda Tela — monitoramento ao vivo"
+            className="w-full h-full rounded-[1.6rem]"
+            style={{ border: 'none' }}
+            onLoad={() => setCarregando(false)}
+          />
+        </div>
+
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-center text-[#555] text-xs hover:text-[#888] transition-colors"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}
+        >
+          Abrir em nova aba
+        </a>
       </div>
     </div>
   )
