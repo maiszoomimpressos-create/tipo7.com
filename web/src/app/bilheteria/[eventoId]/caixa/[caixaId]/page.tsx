@@ -54,7 +54,10 @@ export default async function CaixaPage({ params }: Props) {
       isOwner={caixa.isOwner}
       eventoTitle={caixa.evento.title ?? 'Evento'}
       eventoDate={caixa.evento.dateStart ?? null}
-      eventoLocal={[caixa.evento.venueName, caixa.evento.city, caixa.evento.state].filter(Boolean).join(' — ')}
+      // Hífen normal, não travessão — o ESC/POS da impressora térmica
+      // (rawbtPrint.ts) converte qualquer caractere fora do ASCII em "?",
+      // e o travessão "—" virava um "?" feio no ingresso impresso.
+      eventoLocal={[caixa.evento.venueName, caixa.evento.city, caixa.evento.state].filter(Boolean).join(' - ')}
       ingressos={caixa.ingressos}
       operadorName={caixa.operadorName}
     />

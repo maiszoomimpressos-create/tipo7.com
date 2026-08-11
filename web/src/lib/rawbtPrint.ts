@@ -65,8 +65,14 @@ class EscPosBuilder {
     this.raw(0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00)
     // 2) Tamanho do módulo
     this.raw(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, moduloTamanho)
-    // 3) Correção de erro (M = equilíbrio entre tamanho e robustez)
-    this.raw(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31)
+    // 3) Correção de erro — L (mínima) em vez de M. Achado real
+    // (11/08/2026, teste ao vivo): impressora clone barata (KP-1025)
+    // mandava "2QR CREAT ERR!" no papel a partir do 2º QR de uma tirada
+    // com vários ingressos — o microcontrolador dela não aguenta gerar
+    // QRs seguidos rápido demais. L reduz o dado redundante a codificar,
+    // o suficiente pra aliviar o processamento (o qrToken já é curto,
+    // não perde legibilidade real por usar correção mínima).
+    this.raw(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x30)
     // 4) Armazena os dados
     const len = dataBytes.length + 3
     this.raw(0x1d, 0x28, 0x6b, len & 0xff, (len >> 8) & 0xff, 0x31, 0x50, 0x30, ...dataBytes)
@@ -130,7 +136,14 @@ export function gerarComandosMultiplos(tickets: IngressoParaImprimir[]): Uint8Ar
   b.init()
   tickets.forEach((t, i) => {
     gerarComandosUmIngresso(b, t)
-    b.nl(i === tickets.length - 1 ? 3 : 6)
+    // Espaço extra entre vias (era 6 linhas, pensado só pra rasgar à mão).
+    // Achado real (11/08/2026): também funciona como o único "delay" que
+    // dá pra encaixar num fluxo ESC/POS sem comando de esperar tempo real
+    // — cada linha em branco é o motor avançando papel de verdade, dá
+    // folga pro microcontrolador da impressora terminar de processar o QR
+    // anterior antes do próximo comando de QR chegar (ver nota em qrCode()
+    // acima sobre o "2QR CREAT ERR!").
+    b.nl(i === tickets.length - 1 ? 3 : 20)
   })
   return new Uint8Array(b.build())
 }
