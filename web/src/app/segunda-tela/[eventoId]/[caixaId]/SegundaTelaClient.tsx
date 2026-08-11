@@ -88,6 +88,11 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
   const [fadeKey,         setFadeKey]         = useState(0)
   const [emTelaCheia,     setEmTelaCheia]     = useState(false)
   const [impressoraLigada, setImpressoraLigada] = useState(false)
+  // Impressão da venda aprovada agora é sempre por toque (achado real,
+  // 11/08/2026): o disparo silencioso pro RawBT direto do handler do SSE é
+  // bloqueado pelo Chrome Android (não é gesto direto do usuário). Precisa
+  // de um toque de verdade na tela — ver botão dedicado na tela "aprovado".
+  const [jaImprimiu,      setJaImprimiu]      = useState(false)
 
   const usarSlides = slides.length > 0
   const total      = usarSlides ? slides.length : eventosProximos.length
@@ -184,6 +189,29 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     setTimeout(() => setTesteEnviado(false), 2500)
   }
 
+  // payload.tickets só existe a partir de 10/08/2026 — sem ele não tem como
+  // montar o ESC/POS, então nem mostra o botão de tocar pra imprimir.
+  function payloadTemTickets(payload: AprovadoPayload | null): boolean {
+    return !!payload?.tickets?.length
+  }
+
+  function imprimirAprovado(payload: AprovadoPayload) {
+    if (!payload.tickets?.length || jaImprimiu) return
+    const tickets: IngressoParaImprimir[] = payload.tickets.map(t => ({
+      slotNumber:    t.slotNumber,
+      totalSlots:    payload.tickets!.length,
+      qrToken:       t.qrToken,
+      eventoTitle:   payload.eventoTitle ?? eventoTitle,
+      dataFormatada: payload.dataFormatada ?? null,
+      eventoLocal:   payload.eventoLocal ?? '',
+      ticketName:    payload.ticketName,
+      portador:      payload.portador ?? '',
+      cpf:           payload.cpf,
+    }))
+    imprimirViaRawBT(gerarComandosMultiplos(tickets))
+    setJaImprimiu(true)
+  }
+
   const botaoTestarImpressora = impressoraLigada && (
     <button
       type="button"
@@ -228,9 +256,13 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     try {
       const data = JSON.parse(stored)
       if (data.type === 'aprovado') {
+        setJaImprimiu(false)
         setAprovadoPayload(data as AprovadoPayload)
         setEstado('aprovado')
-        setTimeout(() => { setEstado('idle'); setAprovadoPayload(null) }, 8000)
+        // Timeout mais longo quando precisa de toque pra imprimir — 8s é
+        // curto demais pra alguém perceber, andar até o aparelho e tocar.
+        const timeout = payloadTemTickets(data) ? 25000 : 8000
+        setTimeout(() => { setEstado('idle'); setAprovadoPayload(null) }, timeout)
         return
       }
       if (data.type === 'pix') {
@@ -302,9 +334,11 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
           setAguardandoPayload(data as AguardandoPayload)
           setEstado('aguardando')
         } else if (data.type === 'aprovado') {
+          setJaImprimiu(false)
           setAprovadoPayload(data as AprovadoPayload)
           setEstado('aprovado')
-          setTimeout(() => { setEstado('idle'); setAprovadoPayload(null) }, 8000)
+          const timeout = payloadTemTickets(data) ? 25000 : 8000
+          setTimeout(() => { setEstado('idle'); setAprovadoPayload(null) }, timeout)
         }
       } catch {}
     }
@@ -328,28 +362,16 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
     })
     es.addEventListener('aprovado', (e: MessageEvent) => {
       const payload = JSON.parse(e.data) as AprovadoPayload
+      setJaImprimiu(false)
       setAprovadoPayload(payload)
       setEstado('aprovado')
-      setTimeout(() => { setEstado('idle'); setAprovadoPayload(null) }, 8000)
-
-      // Essa tela é quem tem a impressora conectada (caixa roda noutro
-      // aparelho, ex: PC) — dispara o RawBT com os dados que vieram no
-      // próprio evento. payload.tickets só existe a partir de 10/08/2026;
-      // sem ele (versão antiga do caixa em cache) não tem como imprimir.
-      if (impressoraLigadaRef.current && payload.tickets?.length) {
-        const tickets: IngressoParaImprimir[] = payload.tickets.map(t => ({
-          slotNumber:    t.slotNumber,
-          totalSlots:    payload.tickets!.length,
-          qrToken:       t.qrToken,
-          eventoTitle:   payload.eventoTitle ?? eventoTitle,
-          dataFormatada: payload.dataFormatada ?? null,
-          eventoLocal:   payload.eventoLocal ?? '',
-          ticketName:    payload.ticketName,
-          portador:      payload.portador ?? '',
-          cpf:           payload.cpf,
-        }))
-        imprimirViaRawBT(gerarComandosMultiplos(tickets))
-      }
+      // Achado real (11/08/2026): disparo silencioso pro RawBT direto daqui
+      // (dentro do callback do SSE) é bloqueado pelo Chrome Android — não é
+      // gesto direto do usuário, então não tenta mais. Só mostra o botão de
+      // toque (ver tela "aprovado" abaixo) quando tem impressora ligada e
+      // tickets no payload; timeout maior pra dar tempo de alguém tocar.
+      const timeout = (impressoraLigadaRef.current && payloadTemTickets(payload)) ? 25000 : 8000
+      setTimeout(() => { setEstado('idle'); setAprovadoPayload(null) }, timeout)
     })
     es.addEventListener('cancelado', () => {
       setEstado('idle')
@@ -482,6 +504,69 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
 
   // ── Tela aprovado ─────────────────────────────────────────────────────────
   if (estado === 'aprovado' && aprovadoPayload) {
+    // Precisa de um toque real pra imprimir (bloqueio do Chrome Android pra
+    // disparo silencioso — ver comentário no handler do SSE acima). A tela
+    // inteira vira o alvo do toque: maior chance de acerto pra quem for
+    // tocar na mão, e alvo fixo/previsível pra quem configurar um app de
+    // auto-toque (accessibility service) mirando no centro da tela.
+    const precisaTocar = impressoraLigada && payloadTemTickets(aprovadoPayload) && !jaImprimiu
+
+    if (precisaTocar) {
+      // div (não <button>) de propósito — os botões de canto (tela cheia,
+      // impressora, testar) já são <button> e ficam dentro dela; botão
+      // dentro de botão é HTML inválido e quebra o clique dos dois.
+      return (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Toque para imprimir o ingresso"
+          onClick={() => imprimirAprovado(aprovadoPayload)}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') imprimirAprovado(aprovadoPayload) }}
+          className="h-screen w-screen flex flex-col items-center justify-center gap-8 overflow-hidden select-none active:brightness-90 transition-all cursor-pointer"
+          style={{ background: 'radial-gradient(ellipse at center, #2a1f04 0%, #070707 70%)' }}
+        >
+          {/* stopPropagation — sem isso, tocar num desses botões de canto
+              também dispararia a impressão (o clique borbulha pro div pai). */}
+          <div onClick={e => e.stopPropagation()}>
+            {botaoTelaCheia}
+            {botaoImpressora}
+            {botaoTestarImpressora}
+          </div>
+          <div className="relative flex items-center justify-center">
+            <div
+              className="absolute rounded-full animate-ping"
+              style={{ width: 200, height: 200, background: `${ACCENT}12` }}
+            />
+            <div
+              className="w-48 h-48 rounded-full flex items-center justify-center"
+              style={{ background: `${ACCENT}18`, border: `3px solid ${ACCENT}60` }}
+            >
+              <Printer size={96} style={{ color: ACCENT }} />
+            </div>
+          </div>
+
+          <div className="text-center flex flex-col gap-3">
+            <h1
+              className="font-bold"
+              style={{ color: ACCENT, fontFamily: 'var(--font-syne)', fontSize: '3.25rem', lineHeight: 1.1 }}
+            >
+              Toque para imprimir
+            </h1>
+            <p className="text-white text-2xl font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {aprovadoPayload.quantidade}× {aprovadoPayload.ticketName}
+            </p>
+          </div>
+
+          <p
+            className="font-bold uppercase tracking-[0.35em] mt-8"
+            style={{ color: '#555', fontFamily: 'var(--font-syne)', fontSize: '0.85rem' }}
+          >
+            Tipo7.com
+          </p>
+        </div>
+      )
+    }
+
     return (
       <div
         className="h-screen w-screen flex flex-col items-center justify-center gap-8 overflow-hidden select-none"
@@ -515,7 +600,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
             {aprovadoPayload.quantidade}× {aprovadoPayload.ticketName}
           </p>
           <p className="text-[#555] text-lg mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            Obrigado pela sua compra!
+            {jaImprimiu ? 'Ingresso impresso ✓' : 'Obrigado pela sua compra!'}
           </p>
         </div>
 
