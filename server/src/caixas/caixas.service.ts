@@ -46,8 +46,13 @@ export class CaixasService {
     const recebidos = trans.filter((t) => t.caixaDestinoId === caixaId).reduce((s, t) => s + t.quantidade, 0);
     const enviados = trans.filter((t) => t.caixaOrigemId === caixaId).reduce((s, t) => s + t.quantidade, 0);
 
+    // 'approved' apenas — 'pending' inclui PIX aguardando pagamento (QR já
+    // gerado mas cliente ainda não pagou, ou venda abandonada sem cancelar).
+    // Achado real (10/08/2026): contar 'pending' aqui criava furo de caixa —
+    // gerar o QR já entrava em "Total arrecadado" e descontava ingresso
+    // físico antes de qualquer pagamento de fato acontecer.
     const orders = await this.prisma.order.findMany({
-      where: { caixaId, status: { notIn: ['rejected', 'cancelled'] } },
+      where: { caixaId, status: 'approved' },
       select: { id: true, total: true, paymentMethod: true },
     });
     const orderIds = orders.map((o) => o.id);
@@ -124,8 +129,9 @@ export class CaixasService {
         const recebidos = trans.filter((t) => t.caixaDestinoId === c.id).reduce((s, t) => s + t.quantidade, 0);
         const enviados = trans.filter((t) => t.caixaOrigemId === c.id).reduce((s, t) => s + t.quantidade, 0);
 
+        // 'approved' apenas — ver nota em calcularSaldoCaixa acima.
         const orders = await this.prisma.order.findMany({
-          where: { caixaId: c.id, status: { notIn: ['rejected', 'cancelled'] } },
+          where: { caixaId: c.id, status: 'approved' },
           select: { id: true, total: true, paymentMethod: true },
         });
 
@@ -592,8 +598,9 @@ export class CaixasService {
     const recebidos = transferencias.filter((t) => t.caixaDestinoId === body.caixaId).reduce((s, t) => s + t.quantidade, 0);
     const enviados = transferencias.filter((t) => t.caixaOrigemId === body.caixaId).reduce((s, t) => s + t.quantidade, 0);
 
+    // 'approved' apenas — ver nota em calcularSaldoCaixa acima.
     const orders = await this.prisma.order.findMany({
-      where: { caixaId: body.caixaId, status: { notIn: ['rejected', 'cancelled'] } },
+      where: { caixaId: body.caixaId, status: 'approved' },
       select: { id: true, total: true, paymentMethod: true },
     });
     const orderIds = orders.map((o) => o.id);
