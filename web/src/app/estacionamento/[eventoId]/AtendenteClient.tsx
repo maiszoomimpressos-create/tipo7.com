@@ -9,9 +9,24 @@ import {
 import { cn } from '@/lib/utils'
 import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
 import { ImpressoraBluetooth } from '@/components/ImpressoraBluetooth'
+import { PrintServerPanel } from '@/components/PrintServerPanel'
+import { imprimirTicketPrintServer } from '@/lib/printServerClient'
+import { gerarComandosMultiplos, imprimirViaRawBT } from '@/lib/rawbtPrint'
 import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
+
+// Estacionamento hoje não imprime nada de verdade na entrada (só WhatsApp) —
+// mesmas duas opções de alto nível da Bilheteria: Computador (RawBts
+// PrintServer, cobre Bluetooth/USB/driver Windows sozinho) ou Celular
+// (RawBT/Android). Sem 'a4' aqui, ticket de estacionamento é sempre cupom.
+type FormatoImpressaoEstacionamento = 'printserver' | 'rawbt' | 'nenhuma'
+
+const FORMATOS_IMPRESSAO_ESTACIONAMENTO: { value: FormatoImpressaoEstacionamento; label: string }[] = [
+  { value: 'printserver', label: 'Computador' },
+  { value: 'rawbt',        label: 'Celular' },
+  { value: 'nenhuma',      label: 'Não imprimir' },
+]
 
 interface Portao {
   id:    string
@@ -105,6 +120,19 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [saidaAlvo, setSaidaAlvo] = useState<Sessao | null>(null)
   const [formaPagamento, setFormaPagamento] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
   const [confirmandoSaida, setConfirmandoSaida] = useState(false)
+
+  // Impressão do ticket de estacionamento na entrada — mesmo padrão de
+  // localStorage por evento já usado na Bilheteria (tipo7-impressora-${id}).
+  const [formatoImpressao, setFormatoImpressao] = useState<FormatoImpressaoEstacionamento>('nenhuma')
+  const [erroImpressao, setErroImpressao] = useState<string | null>(null)
+  useEffect(() => {
+    const saved = localStorage.getItem(`tipo7-impressora-estacionamento-${eventoId}`) as FormatoImpressaoEstacionamento | null
+    if (saved) setFormatoImpressao(saved)
+  }, [eventoId])
+  function salvarFormatoImpressao(f: FormatoImpressaoEstacionamento) {
+    setFormatoImpressao(f)
+    localStorage.setItem(`tipo7-impressora-estacionamento-${eventoId}`, f)
+  }
 
   const carregarSessoes = useCallback(async () => {
     const res  = await apiFetchAuth(`/api/estacionamento/${eventoId}/sessoes?status=aberto`)
@@ -227,6 +255,15 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? 'Erro ao registrar entrada'); return }
+      // Falha de impressão não deve travar a entrada — o carro já está
+      // registrado no banco nesse ponto, o comprovante físico é só um
+      // reforço (o WhatsApp, se enviado, já cobre o caso de perda do papel).
+      if (data.sessaoId && formatoImpressao !== 'nenhuma') {
+        imprimirTicketEstacionamento(data.sessaoId).catch(e => {
+          console.error(e)
+          setErroImpressao(e instanceof Error ? e.message : 'Erro ao imprimir o ticket')
+        })
+      }
       setPlaca(''); setNomeCondutor(''); setTelefoneCondutor('')
       setModelo(''); setCor(''); setCpfCondutor(''); setFormaPagamentoEntrada('dinheiro')
       setPlacaAutopreenchida(false)
@@ -235,6 +272,42 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
       setErro('Erro ao registrar entrada. Tente novamente.')
     } finally {
       setRegistrando(false)
+    }
+  }
+
+  // Dispara a impressão do ticket de entrada — placa/modelo/cor viajam no
+  // campo `sector` do PrintServer (não existe campo dedicado pra isso, ver
+  // plano de integração) já que aqui não há conceito de setor de evento.
+  async function imprimirTicketEstacionamento(sessaoId: string) {
+    const nomeLocal = estacionamentoAtual?.nome ?? ''
+    const agora = new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const detalhesVeiculo = `${placa.trim().toUpperCase()} - ${modelo.trim()} ${cor.trim()}`.trim()
+
+    if (formatoImpressao === 'printserver') {
+      setErroImpressao(null)
+      await imprimirTicketPrintServer({
+        title:  'TICKET ESTACIONAMENTO',
+        event:  eventoTitle,
+        date:   agora,
+        local:  nomeLocal,
+        sector: detalhesVeiculo,
+        buyer:  nomeCondutor.trim() || undefined,
+        code:   sessaoId,
+        qr:     sessaoId,
+        price:  precisaPagarEntrada ? formatBRL(precoEntradaFixo) : undefined,
+      })
+    } else if (formatoImpressao === 'rawbt') {
+      setErroImpressao(null)
+      imprimirViaRawBT(gerarComandosMultiplos([{
+        slotNumber:    1,
+        totalSlots:    1,
+        qrToken:       sessaoId,
+        eventoTitle:   'TICKET ESTACIONAMENTO',
+        dataFormatada: agora,
+        eventoLocal:   nomeLocal,
+        ticketName:    detalhesVeiculo,
+        portador:      nomeCondutor.trim() || 'Estacionamento',
+      }]))
     }
   }
 
@@ -347,6 +420,32 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
 
         {/* Primeiro passo ao entrar no caixa: conectar a impressora */}
         <ImpressoraBluetooth contexto={eventoTitle} />
+
+        {/* Impressão do ticket de entrada — mesmas 2 opções de alto nível da
+            Bilheteria (Computador via PrintServer / Celular via RawBT). */}
+        <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl p-4 flex flex-col gap-3">
+          <p className="text-[#555] text-xs uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Imprimir ticket na entrada
+          </p>
+          <div className="flex gap-2">
+            {FORMATOS_IMPRESSAO_ESTACIONAMENTO.map(f => (
+              <button key={f.value} type="button" onClick={() => salvarFormatoImpressao(f.value)}
+                className="flex-1 py-2 rounded-xl text-xs font-semibold transition-colors"
+                style={{
+                  background: formatoImpressao === f.value ? `${ACCENT}15` : '#111',
+                  border: `1px solid ${formatoImpressao === f.value ? ACCENT + '50' : '#222'}`,
+                  color: formatoImpressao === f.value ? ACCENT : '#888',
+                  fontFamily: 'var(--font-dm-sans)',
+                }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {formatoImpressao === 'printserver' && <PrintServerPanel />}
+          {erroImpressao && (
+            <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erroImpressao}</p>
+          )}
+        </div>
 
         {estacionamentos.length === 0 && (
           <p className="text-[#555] text-sm text-center py-10">

@@ -6,27 +6,32 @@ import {
   Ticket, User, Phone, CreditCard, Calendar, Printer, ChevronDown,
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
-  Clock, Monitor, Settings, Download, FileText, Thermometer, MonitorOff,
+  Clock, Monitor, Settings, Download, FileText, MonitorOff,
   ArrowRightLeft, X, Calculator, Zap, Eye, RotateCcw,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { CaixaSidebar }       from './CaixaSidebar'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { gerarComandosMultiplos, imprimirViaRawBT, type IngressoParaImprimir } from '@/lib/rawbtPrint'
-import { serialSuportado, conectarImpressoraSerial, reconectarImpressoraSerial, imprimirViaSerial } from '@/lib/webSerialPrint'
+import { imprimirTicketPrintServer } from '@/lib/printServerClient'
+import { PrintServerPanel } from '@/components/PrintServerPanel'
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
 
 type MetodoPagamento = 'dinheiro' | 'pix' | 'cartao'
 type Etapa = 'venda' | 'pix' | 'confirmar' | 'dados' | 'impressao'
-type PrintFormat = 'a4' | 'termica80' | 'rawbt' | 'serial' | 'nenhuma'
+// 'termica80' (driver do Windows) e 'serial' (Web Serial/Bluetooth direto)
+// foram absorvidos por 'printserver' — o RawBts PrintServer descobre sozinho
+// impressora Bluetooth pareada, USB e com driver do Windows, tudo na mesma
+// lista, com auto-reconexão. Ver lib/printServerClient.ts e
+// components/PrintServerPanel.tsx.
+type PrintFormat = 'a4' | 'printserver' | 'rawbt' | 'nenhuma'
 
 const PRINT_FORMATS: { value: PrintFormat; label: string; sub: string; Icon: React.ElementType }[] = [
   { value: 'a4',       label: 'A4',          sub: 'Impressora comum',    Icon: FileText    },
-  { value: 'termica80', label: 'Térmica 80mm', sub: 'Impressora de cupom', Icon: Thermometer },
-  { value: 'rawbt',    label: 'Térmica direta (RawBT)', sub: 'Celular Android + app RawBT — sem diálogo', Icon: Zap },
-  { value: 'serial',   label: 'Bluetooth direto (PC)', sub: 'Impressora pareada no Windows/Mac — sem celular', Icon: Zap },
+  { value: 'printserver', label: 'Térmica (Computador)', sub: 'Bluetooth, USB ou driver Windows — via RawBts PrintServer', Icon: Printer },
+  { value: 'rawbt',    label: 'Térmica direta (Celular)', sub: 'Android + app RawBT — sem diálogo', Icon: Zap },
   { value: 'nenhuma',  label: 'Sem impressão', sub: 'Somente tela',       Icon: MonitorOff  },
 ]
 
@@ -85,8 +90,9 @@ const QTDS_RAPIDAS = [1, 2, 3, 4, 5]
 // completamente. RawBT precisa de gesto real do usuário a cada disparo
 // (ver rawbtPrint.ts), então pra >2 ingressos o operador toca uma vez por
 // lote — mais toques, mas garantido funcionar em vez de arriscar mandar
-// tudo automático e travar de novo. Web Serial não tem essa exigência de
-// gesto (ver imprimirViaSerialEmLotes), então lá o lote roda sozinho.
+// tudo automático e travar de novo. PrintServer não tem essa exigência de
+// gesto (ver imprimirViaPrintServerEmSequencia), então lá o lote roda
+// sozinho — só com um intervalo pequeno entre chamadas, não gesto manual.
 const BATCH_SIZE_IMPRESSAO = 2
 
 export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos, controlaIngressosFisicos, isOwner, eventoTitle, eventoDate, eventoLocal, ingressos, operadorName }: Props) {
@@ -142,33 +148,6 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
     if (saved) { setFormato(saved); setFormatoSel(saved) }
   }, [eventoId])
 
-  // Web Serial: tenta retomar a porta já autorizada antes, sem pedir
-  // permissão de novo (silencioso — getPorts()/open() em porta já concedida
-  // não exige gesto do usuário, ao contrário do requestPort() inicial).
-  // Assim, depois do "Conectar impressora" feito uma vez, toda visita
-  // futura já volta a imprimir sozinha.
-  const [serialOk,        setSerialOk]        = useState(false)
-  const [serialConectado, setSerialConectado] = useState(false)
-  const [conectandoSerial, setConectandoSerial] = useState(false)
-  useEffect(() => {
-    const ok = serialSuportado()
-    setSerialOk(ok)
-    if (!ok) return
-    reconectarImpressoraSerial().then(porta => setSerialConectado(!!porta))
-  }, [])
-
-  async function handleConectarSerial() {
-    setConectandoSerial(true)
-    try {
-      await conectarImpressoraSerial()
-      setSerialConectado(true)
-    } catch (e) {
-      console.error(e)
-      setErr(e instanceof Error ? e.message : 'Erro ao conectar impressora')
-    } finally {
-      setConectandoSerial(false)
-    }
-  }
 
   // Injeta CSS de impressão dinamicamente conforme o formato escolhido
   useEffect(() => {
@@ -179,37 +158,19 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
     if (!formato || formato === 'nenhuma' || formato === 'rawbt') return
     const s = document.createElement('style')
     s.id = 'tipo7-print-css'
-    if (formato === 'termica80') {
-      s.textContent = `
-        @media print {
-          @page { size: 80mm auto; margin: 0; }
-          body { background: #fff !important; }
-          .ingresso-print {
-            width: 76mm !important; padding: 4mm 3mm !important;
-            border: none !important; border-radius: 0 !important;
-            background: #fff !important; color: #000 !important;
-            page-break-after: always; break-after: page;
-            box-shadow: none !important;
-          }
-          .ingresso-print * { color: #000 !important; }
-          .ingresso-print svg rect { fill: #000 !important; }
+    s.textContent = `
+      @media print {
+        @page { size: A4; margin: 15mm; }
+        body { background: #fff !important; }
+        .ingresso-print {
+          background: #fff !important; color: #000 !important;
+          border: 1px solid #ccc !important;
+          page-break-after: always; break-after: page;
+          box-shadow: none !important;
         }
-      `
-    } else {
-      s.textContent = `
-        @media print {
-          @page { size: A4; margin: 15mm; }
-          body { background: #fff !important; }
-          .ingresso-print {
-            background: #fff !important; color: #000 !important;
-            border: 1px solid #ccc !important;
-            page-break-after: always; break-after: page;
-            box-shadow: none !important;
-          }
-          .ingresso-print * { color: #000 !important; }
-        }
-      `
-    }
+        .ingresso-print * { color: #000 !important; }
+      }
+    `
     document.head.appendChild(s)
     return () => { document.getElementById('tipo7-print-css')?.remove() }
   }, [formato])
@@ -638,8 +599,9 @@ if exist "%CHROME%" (
     : null
 
   // Único ponto de disparo de impressão — decide entre o diálogo nativo do
-  // navegador (window.print(), formatos a4/termica80) ou o disparo direto
-  // via RawBT (formato 'rawbt', sem diálogo nenhum). Usado tanto no
+  // navegador (window.print(), formato 'a4'), o PrintServer local (formato
+  // 'printserver', POST /ticket) ou o disparo direto via RawBT (formato
+  // 'rawbt', sem diálogo nenhum). Usado tanto no
   // auto-print ao chegar na tela de impressão quanto no botão manual.
   function montarTicketsParaImprimir(ticketsGerados: TicketGerado[]): IngressoParaImprimir[] {
     if (!resultado) return []
@@ -665,26 +627,41 @@ if exist "%CHROME%" (
       const tickets = montarTicketsParaImprimir(resultado.tickets.slice(0, BATCH_SIZE_IMPRESSAO))
       imprimirViaRawBT(gerarComandosMultiplos(tickets))
       setLoteImpresso(Math.min(BATCH_SIZE_IMPRESSAO, resultado.tickets.length))
-    } else if (formato === 'serial') {
-      // Web Serial não exige gesto do usuário pra escrever numa porta já
-      // autorizada — dá pra mandar em lotes com pausa real sozinho, sem
-      // toque nenhum (diferente do RawBT). Mesma limitação de buffer da
-      // impressora, resolvida aqui sem precisar de UI de lote manual.
-      const tickets = montarTicketsParaImprimir(resultado.tickets)
-      imprimirViaSerialEmLotes(tickets).catch(e => {
+    } else if (formato === 'printserver') {
+      // PrintServer roda local sem popup/bloqueio de navegador (diferente do
+      // RawBT no Android) — não precisa de toque manual por lote, imprime
+      // tudo em sequência sozinho.
+      imprimirViaPrintServerEmSequencia(resultado.tickets).catch(e => {
         console.error(e)
-        setErr(e instanceof Error ? e.message : 'Erro ao imprimir via Bluetooth')
+        setErr(e instanceof Error ? e.message : 'Erro ao imprimir via PrintServer')
       })
     } else {
       window.print()
     }
   }
 
-  async function imprimirViaSerialEmLotes(tickets: IngressoParaImprimir[]) {
-    for (let i = 0; i < tickets.length; i += BATCH_SIZE_IMPRESSAO) {
-      const chunk = tickets.slice(i, i + BATCH_SIZE_IMPRESSAO)
-      await imprimirViaSerial(gerarComandosMultiplos(chunk))
-      if (i + BATCH_SIZE_IMPRESSAO < tickets.length) await new Promise(r => setTimeout(r, 1500))
+  // Cada ingresso é UMA chamada POST /ticket (o PrintServer monta o cupom e
+  // o QR sozinho, servidor); intervalo pequeno entre chamadas pela mesma
+  // razão documentada em rawbtPrint.ts — impressora clone barata trava
+  // gerando QR em sequência rápida demais.
+  async function imprimirViaPrintServerEmSequencia(tickets: TicketGerado[]) {
+    for (let i = 0; i < tickets.length; i++) {
+      const t = tickets[i]
+      await imprimirTicketPrintServer({
+        title: 'INGRESSO TIPO7',
+        event: eventoTitle,
+        date:  dataFormatada ?? undefined,
+        local: eventoLocal,
+        buyer: nome || undefined,
+        code:  t.qr_token,
+        qr:    t.qr_token,
+        // Preço da venda atual — numa reimpressão de venda antiga o tipo de
+        // ingresso selecionado no dropdown pode não bater mais, então esse
+        // valor é "melhor esforço", não garantido (não crítico, é só um
+        // dado a mais no cupom impresso).
+        price: ingressoSelecionado ? `R$ ${ingressoSelecionado.price.toFixed(2).replace('.', ',')}` : undefined,
+      })
+      if (i < tickets.length - 1) await new Promise(r => setTimeout(r, 700))
     }
   }
 
@@ -1256,7 +1233,7 @@ if exist "%CHROME%" (
               Formato do papel
             </p>
             <div className="flex flex-col gap-2">
-              {PRINT_FORMATS.filter(f => f.value !== 'serial' || serialOk).map(f => (
+              {PRINT_FORMATS.map(f => (
                 <button key={f.value} type="button" onClick={() => setFormatoSel(f.value)}
                   className="flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all"
                   style={{
@@ -1284,30 +1261,10 @@ if exist "%CHROME%" (
               ))}
             </div>
 
-            {/* Status/conexão Web Serial — só aparece com esse formato
-                selecionado. Permissão concedida uma vez fica valendo pras
-                próximas visitas (reconectarImpressoraSerial no mount). */}
-            {formatoSel === 'serial' && (
-              <div className="rounded-2xl p-4 flex items-center justify-between gap-3"
-                   style={{ background: serialConectado ? 'rgba(74,222,128,0.06)' : '#0d0d0d', border: `1px solid ${serialConectado ? 'rgba(74,222,128,0.25)' : '#1a1a1a'}` }}>
-                <div className="flex items-center gap-2.5">
-                  <Zap size={16} className={serialConectado ? 'text-green-400' : 'text-[#444]'} />
-                  <span className="text-sm" style={{ color: serialConectado ? '#4ade80' : '#888', fontFamily: 'var(--font-dm-sans)' }}>
-                    {serialConectado ? 'Impressora conectada' : 'Nenhuma impressora conectada ainda'}
-                  </span>
-                </div>
-                {!serialConectado && (
-                  <button type="button" onClick={handleConectarSerial} disabled={conectandoSerial}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold disabled:opacity-50 transition-all hover:brightness-110"
-                    style={{ background: ACCENT, color: '#070707', fontFamily: 'var(--font-dm-sans)' }}>
-                    {conectandoSerial
-                      ? <><Loader2 size={12} className="animate-spin" /> Conectando...</>
-                      : 'Conectar'
-                    }
-                  </button>
-                )}
-              </div>
-            )}
+            {/* Status do RawBts PrintServer — só aparece com esse formato
+                selecionado. A escolha da impressora acontece no painel
+                próprio do PrintServer (localhost:8080), não aqui. */}
+            {formatoSel === 'printserver' && <PrintServerPanel />}
           </div>
 
           <button
