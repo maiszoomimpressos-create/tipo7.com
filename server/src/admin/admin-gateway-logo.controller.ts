@@ -4,7 +4,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtGuard } from '../auth/guards/supabase-jwt.guard';
 import type { AuthenticatedUser } from '../auth/strategies/supabase-jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
-import { SupabaseCompatService } from '../supabase-compat/supabase-compat.service';
+import { LocalStorageService } from '../storage/local-storage.service';
 import { AdminService } from './admin.service';
 
 const GATEWAYS = new Set(['mercadopago', 'pagbank']);
@@ -15,7 +15,7 @@ export class AdminGatewayLogoController {
   constructor(
     private readonly admin: AdminService,
     private readonly prisma: PrismaService,
-    private readonly supabaseCompat: SupabaseCompatService,
+    private readonly storageService: LocalStorageService,
   ) {}
 
   @Post()
@@ -34,12 +34,12 @@ export class AdminGatewayLogoController {
     const ext = file.originalname.split('.').pop() ?? 'png';
     const path = `_gateway-logos/${gateway}.${ext}`;
 
-    const { error: uploadError } = await this.supabaseCompat.storage
+    const { error: uploadError } = await this.storageService.storage
       .from('event-images')
       .upload(path, file.buffer, { contentType: file.mimetype, upsert: true });
     if (uploadError) throw new BadRequestException(uploadError.message);
 
-    const { data: publicUrlData } = this.supabaseCompat.storage.from('event-images').getPublicUrl(path);
+    const { data: publicUrlData } = this.storageService.storage.from('event-images').getPublicUrl(path);
     const url = `${publicUrlData.publicUrl}?v=${Date.now()}`;
 
     await this.prisma.platformSetting.upsert({

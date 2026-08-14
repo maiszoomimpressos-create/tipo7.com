@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ChevronLeft, ChevronRight, MapPin, Calendar, ArrowRight, Loader2, Megaphone } from 'lucide-react'
-import Image from 'next/image'
+import { ImageWithFallback } from '@/components/ui/ImageWithFallback'
 import { useWindowSize } from '@/hooks/useWindowSize'
 import { useLocation } from '@/contexts/LocationContext'
 
@@ -384,7 +384,7 @@ export function Carousel() {
                       transform: 'translateX(-50%)',
                     }}
                   >
-                    <Image
+                    <ImageWithFallback
                       src={item.data.image_url}
                       alt="Tipo7"
                       fill
@@ -429,7 +429,7 @@ export function Carousel() {
                     transform: 'translateX(-50%)',
                   }}
                 >
-                  <Image
+                  <ImageWithFallback
                     src={imgSrc}
                     alt={item.data.title}
                     fill
@@ -518,7 +518,7 @@ export function Carousel() {
                     transform: `translateX(calc(-50% + ${translateX}px)) scale(${sideConfig.scale})`,
                   }}
                 >
-                  <Image
+                  <ImageWithFallback
                     src={item.data.image_url}
                     alt="Tipo7"
                     fill
@@ -548,7 +548,7 @@ export function Carousel() {
                   transform: `translateX(calc(-50% + ${translateX}px)) scale(${sideConfig.scale})`,
                 }}
               >
-                <Image
+                <ImageWithFallback
                   src={imgSrc}
                   alt={item.data.title}
                   fill

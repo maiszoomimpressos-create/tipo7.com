@@ -1,5 +1,6 @@
 import { apiFetchServer } from '@/lib/apiFetchServer'
 import { MapPin, Calendar, ImageIcon } from 'lucide-react'
+import { EventThumbnail } from './EventThumbnail'
 
 const ACCENT_COLORS = ['#a855f7','#f97316','#E8B84B','#ec4899','#22c55e','#06b6d4','#eab308']
 
@@ -42,7 +43,7 @@ function EventCard({ evento, color }: { evento: EventoItem; color: string }) {
         style={{ background: `linear-gradient(135deg, #0d0d0d 0%, ${color}18 100%)` }}
       >
         {evento.banner_url
-          ? <img src={evento.banner_url} alt={evento.title} className="w-full h-full object-cover" />
+          ? <EventThumbnail src={evento.banner_url} alt={evento.title} fallback={<ImageIcon size={28} style={{ color: `${color}30` }} />} />
           : <ImageIcon size={28} style={{ color: `${color}30` }} />
         }
         <div

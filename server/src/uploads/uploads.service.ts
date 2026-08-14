@@ -2,19 +2,18 @@ import { BadRequestException, ForbiddenException, Injectable, InternalServerErro
 import { randomUUID } from 'crypto';
 import { EventPermissionsService } from '../event-permissions/event-permissions.service';
 import { OrgAdminService } from '../org-admin/org-admin.service';
-import { SupabaseCompatService } from '../supabase-compat/supabase-compat.service';
+import { LocalStorageService } from '../storage/local-storage.service';
 
-// Fase 6 — as políticas de RLS do Storage da Supabase exigem
-// auth.uid()/auth.role()='authenticated' (ex: "avatar upload proprio",
-// "event-images: upload autenticado", "organization-logos_insert") — sem
-// sessão da Supabase Auth no browser, upload direto client-side pra essas
-// buckets passa a ser sempre rejeitado pela RLS. Rotea via service_role
-// (bypassa RLS), mesmo padrão já usado em admin-banners/carrossel desde a
-// Fase 2/5.
+// Upload vai direto pro disco do VPS via LocalStorageService (ver
+// server/src/storage/) — não é mais Supabase Storage desde 14/08/2026 (o
+// projeto que hospedava esses buckets parou de existir, todas as imagens do
+// site quebraram). Continua roteado pelo backend com service account
+// (nunca client-side) pelo mesmo motivo de sempre: usuário comum não tem
+// acesso de escrita direto ao disco do servidor.
 @Injectable()
 export class UploadsService {
   constructor(
-    private readonly supabaseCompat: SupabaseCompatService,
+    private readonly storageService: LocalStorageService,
     private readonly orgAdmin: OrgAdminService,
     private readonly eventPermissions: EventPermissionsService,
   ) {}
@@ -24,7 +23,7 @@ export class UploadsService {
   }
 
   private async uploadAndGetUrl(bucket: string, path: string, file: Express.Multer.File): Promise<string> {
-    const { error } = await this.supabaseCompat.storage.from(bucket).upload(path, file.buffer, {
+    const { error } = await this.storageService.storage.from(bucket).upload(path, file.buffer, {
       upsert: true,
       contentType: file.mimetype,
     });
@@ -32,7 +31,7 @@ export class UploadsService {
 
     const {
       data: { publicUrl },
-    } = this.supabaseCompat.storage.from(bucket).getPublicUrl(path);
+    } = this.storageService.storage.from(bucket).getPublicUrl(path);
     return publicUrl;
   }
 

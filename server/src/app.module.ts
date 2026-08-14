@@ -38,7 +38,7 @@ import { QzModule } from './qz/qz.module';
 import { ScannerModule } from './scanner/scanner.module';
 import { StaffFunctionTemplatesModule } from './staff-function-templates/staff-function-templates.module';
 import { StatsModule } from './stats/stats.module';
-import { SupabaseCompatModule } from './supabase-compat/supabase-compat.module';
+import { StorageModule } from './storage/storage.module';
 import { TrabalhosModule } from './trabalhos/trabalhos.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
@@ -49,7 +49,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
-    SupabaseCompatModule,
+    StorageModule,
     CommonModule,
     AuthModule,
     AuthCoreModule,

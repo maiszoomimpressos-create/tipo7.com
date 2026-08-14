@@ -13,14 +13,20 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       // Em dev, React precisa de 'unsafe-eval' para reconstruir callstacks
+      // accounts.google.com/gsi/client — SDK do Google Identity Services
+      // (botão "Entrar com Google" + One Tap, ver handleGoogleLogin em
+      // app/auth/page.tsx) — sem isso no script-src o próprio carregamento
+      // do script é bloqueado pelo CSP (achado real, 12/08/2026).
       isDev
-        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com"
-        : "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com",
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com https://accounts.google.com"
+        : "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://accounts.google.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.supabase.co https://picsum.photos https://fastly.picsum.photos",
       "font-src 'self'",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mercadopago.com https://nominatim.openstreetmap.org https://maps.googleapis.com https://viacep.com.br wss://localhost:8181 ws://localhost:8182",
-      "frame-src https://www.mercadopago.com.br https://www.mercadopago.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mercadopago.com https://nominatim.openstreetmap.org https://maps.googleapis.com https://viacep.com.br https://accounts.google.com wss://localhost:8181 ws://localhost:8182",
+      // accounts.google.com — o One Tap/GSI renderiza o prompt de login num
+      // iframe dessa origem, mesmo motivo do script-src acima.
+      "frame-src https://www.mercadopago.com.br https://www.mercadopago.com https://accounts.google.com",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -170,6 +176,12 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/usuarios/admin-lista',
 ]
 
+// Uploads (avatar/banner/logo/carrossel) servidos direto do disco do
+// server/ (ver server/src/storage/) — não fica sob /api porque não é uma
+// rota de API, é conteúdo estático. Mesmo esquema de rewrite, mesma origem
+// do site (sem precisar liberar outro domínio no CSP img-src).
+const ROTAS_ESTATICAS_NESTJS = ['/uploads/:path*']
+
 const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
@@ -178,7 +190,7 @@ const nextConfig = {
     root: import.meta.dirname,
   },
   async rewrites() {
-    return ROTAS_MIGRADAS_NESTJS.map((source) => ({
+    return [...ROTAS_MIGRADAS_NESTJS, ...ROTAS_ESTATICAS_NESTJS].map((source) => ({
       source,
       destination: `${API_URL}${source.replace(/^\/api/, '')}`,
     }))

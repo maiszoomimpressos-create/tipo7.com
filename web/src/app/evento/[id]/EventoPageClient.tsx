@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
-import Image from 'next/image'
+import { ImageWithFallback } from '@/components/ui/ImageWithFallback'
 import { QRCodeCanvas } from 'qrcode.react'
 import {
   MapPin, Calendar, Clock, Tag, ArrowLeft,
@@ -493,7 +493,7 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
           style={{ height: 420 }}>
 
           {heroSlides[heroSlideIndex]
-            ? <Image
+            ? <ImageWithFallback
                 key={heroSlides[heroSlideIndex]}
                 src={heroSlides[heroSlideIndex]}
                 alt={heroTitulo}
