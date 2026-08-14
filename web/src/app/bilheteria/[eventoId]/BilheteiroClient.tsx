@@ -8,6 +8,7 @@ import {
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
   Clock, Monitor, Settings, Download, FileText, MonitorOff,
   ArrowRightLeft, X, Calculator, Zap, Eye, RotateCcw,
+  Bluetooth, Cable, Wifi, Sparkles,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { CaixaSidebar }       from './CaixaSidebar'
@@ -15,6 +16,7 @@ import { apiFetchAuth } from '@/lib/apiFetch'
 import { gerarComandosMultiplos, imprimirViaTipPrint, type IngressoParaImprimir } from '@/lib/rawbtPrint'
 import { imprimirTicketPrintServer } from '@/lib/printServerClient'
 import { PrintServerPanel } from '@/components/PrintServerPanel'
+import { serialSuportado, conectarImpressoraSerial, reconectarImpressoraSerial, imprimirViaSerial } from '@/lib/webSerialPrint'
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
@@ -26,13 +28,30 @@ type Etapa = 'venda' | 'pix' | 'confirmar' | 'dados' | 'impressao'
 // impressora Bluetooth pareada, USB e com driver do Windows, tudo na mesma
 // lista, com auto-reconexão. Ver lib/printServerClient.ts e
 // components/PrintServerPanel.tsx.
-type PrintFormat = 'a4' | 'printserver' | 'rawbt' | 'nenhuma'
+// 'tipprint' — conexão direta do navegador com a impressora via Web Serial
+// (ver lib/webSerialPrint.ts), sem depender de instalar o RawBts PrintServer
+// nem do app Android. Fica de fora de PRINT_FORMATS (não é mais um botão de
+// rádio igual aos outros): é o card em destaque no topo da tela, que abre o
+// modal "Tipo de conexão" em vez de selecionar na hora — ver renderização
+// da tela de setup mais abaixo.
+type PrintFormat = 'a4' | 'printserver' | 'rawbt' | 'nenhuma' | 'tipprint'
 
 const PRINT_FORMATS: { value: PrintFormat; label: string; sub: string; Icon: React.ElementType }[] = [
   { value: 'a4',       label: 'A4',          sub: 'Impressora comum',    Icon: FileText    },
   { value: 'printserver', label: 'Térmica (Computador)', sub: 'Bluetooth, USB ou driver Windows — via RawBts PrintServer', Icon: Printer },
   { value: 'rawbt',    label: 'Térmica direta (Celular)', sub: 'Android + app TipPrint — sem diálogo', Icon: Zap },
   { value: 'nenhuma',  label: 'Sem impressão', sub: 'Somente tela',       Icon: MonitorOff  },
+]
+
+// Tipos de conexão do modal do TipPrint — só Bluetooth funciona por
+// enquanto (Web Serial alcança impressora Bluetooth pareada como porta COM
+// virtual, ver lib/webSerialPrint.ts). Cabo (USB serial direto) e Rede
+// (ESC/POS via TCP/IP) ainda não têm implementação, ficam travados com
+// selo "Em breve" até existir.
+const TIPOS_CONEXAO: { value: 'bluetooth' | 'cabo' | 'rede'; label: string; sub: string; Icon: React.ElementType; disponivel: boolean }[] = [
+  { value: 'bluetooth', label: 'Bluetooth', sub: 'Impressora já pareada no sistema', Icon: Bluetooth, disponivel: true },
+  { value: 'cabo',       label: 'Cabo',       sub: 'USB direto no computador',        Icon: Cable,     disponivel: false },
+  { value: 'rede',       label: 'Rede',       sub: 'Impressora na mesma rede Wi-Fi',  Icon: Wifi,      disponivel: false },
 ]
 
 interface Ingresso {
@@ -140,6 +159,14 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   const [setupAberto,  setSetupAberto]  = useState(false)
   const [formatoSel,   setFormatoSel]   = useState<PrintFormat>('a4')
 
+  // Modal "Tipo de conexão" do TipPrint — abre ao clicar no card em
+  // destaque, não seleciona nada até o usuário escolher Bluetooth de fato
+  // (pareamento pede gesto do usuário, tem que ser síncrono com o clique).
+  const [modalTipPrint,      setModalTipPrint]      = useState(false)
+  const [conectandoBluetooth, setConectandoBluetooth] = useState(false)
+  const [erroConexaoTipPrint, setErroConexaoTipPrint] = useState<string | null>(null)
+  const [tipPrintConectado,  setTipPrintConectado]  = useState(false)
+
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
 
   // Lê formato salvo ao montar
@@ -153,9 +180,10 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   useEffect(() => {
     const prev = document.getElementById('tipo7-print-css')
     if (prev) prev.remove()
-    // 'rawbt' nunca passa por window.print() (imprime direto via intent),
-    // então o CSS de impressão do navegador não se aplica a ele.
-    if (!formato || formato === 'nenhuma' || formato === 'rawbt') return
+    // 'rawbt' e 'tipprint' nunca passam por window.print() (imprimem direto
+    // via intent ou Web Serial), então o CSS de impressão do navegador não
+    // se aplica a eles.
+    if (!formato || formato === 'nenhuma' || formato === 'rawbt' || formato === 'tipprint') return
     const s = document.createElement('style')
     s.id = 'tipo7-print-css'
     s.textContent = `
@@ -179,6 +207,29 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
     localStorage.setItem(`tipo7-impressora-${eventoId}`, formatoSel)
     setFormato(formatoSel)
     setSetupAberto(false)
+  }
+
+  // Se o formato salvo já é 'tipprint', tenta retomar a porta serial
+  // autorizada antes sem pedir permissão de novo (silencioso — só funciona
+  // se esse navegador já pareou essa impressora alguma vez).
+  useEffect(() => {
+    if (formatoSel !== 'tipprint') return
+    reconectarImpressoraSerial().then(porta => setTipPrintConectado(!!porta))
+  }, [formatoSel])
+
+  async function conectarBluetoothTipPrint() {
+    setConectandoBluetooth(true)
+    setErroConexaoTipPrint(null)
+    try {
+      await conectarImpressoraSerial()
+      setTipPrintConectado(true)
+      setFormatoSel('tipprint')
+      setModalTipPrint(false)
+    } catch (e) {
+      setErroConexaoTipPrint(e instanceof Error ? e.message : 'Não foi possível conectar a impressora.')
+    } finally {
+      setConectandoBluetooth(false)
+    }
   }
 
   function baixarAtalhoKiosk() {
@@ -634,6 +685,17 @@ if exist "%CHROME%" (
       imprimirViaPrintServerEmSequencia(resultado.tickets).catch(e => {
         console.error(e)
         setErr(e instanceof Error ? e.message : 'Erro ao imprimir via PrintServer')
+      })
+    } else if (formato === 'tipprint') {
+      // Web Serial: porta já autorizada não exige gesto do usuário pra
+      // escrever nela (diferente do intent:// do RawBT), então dá pra
+      // mandar o lote inteiro de uma vez, sem chunk por BATCH_SIZE_IMPRESSAO
+      // nem toque manual — gerarComandosMultiplos já intercala linhas em
+      // branco entre vias pra dar folga da impressora processar cada QR.
+      const tickets = montarTicketsParaImprimir(resultado.tickets)
+      imprimirViaSerial(gerarComandosMultiplos(tickets)).catch(e => {
+        console.error(e)
+        setErr(e instanceof Error ? e.message : 'Erro ao imprimir via TipPrint (Bluetooth) — confira se a impressora ainda está pareada.')
       })
     } else {
       window.print()
@@ -1232,6 +1294,41 @@ if exist "%CHROME%" (
             <p className="text-[#555] text-xs uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
               Formato do papel
             </p>
+
+            {/* TipPrint — card em destaque, recomendado. Diferente dos
+                outros (clique não seleciona na hora, abre o modal "Tipo de
+                conexão" — pareamento Bluetooth exige gesto do usuário
+                síncrono com o clique). */}
+            <button type="button" onClick={() => { setErroConexaoTipPrint(null); setModalTipPrint(true) }}
+              className="relative flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all overflow-hidden"
+              style={{
+                background: formatoSel === 'tipprint' ? `${ACCENT}14` : `${ACCENT}0a`,
+                border: `1.5px solid ${formatoSel === 'tipprint' ? ACCENT : ACCENT + '40'}`,
+              }}>
+              <span className="absolute top-3 right-3 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide"
+                style={{ background: ACCENT, color: '#070707', fontFamily: 'var(--font-dm-sans)' }}>
+                <Sparkles size={10} /> RECOMENDADO
+              </span>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${ACCENT}20` }}>
+                <Zap size={18} style={{ color: ACCENT }} />
+              </div>
+              <div className="flex-1">
+                <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  TipPrint
+                </p>
+                <p className="text-[#888] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  {formatoSel === 'tipprint'
+                    ? (tipPrintConectado ? 'Conectado — impressora pareada' : 'Selecionado — clique pra conectar a impressora')
+                    : 'Direto do navegador, sem instalar nada'}
+                </p>
+              </div>
+              <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0"
+                   style={{ borderColor: formatoSel === 'tipprint' ? ACCENT : '#333',
+                            background:  formatoSel === 'tipprint' ? ACCENT : 'transparent' }}>
+                {formatoSel === 'tipprint' && <div className="w-2 h-2 rounded-full bg-[#070707]" />}
+              </div>
+            </button>
+
             <div className="flex flex-col gap-2">
               {PRINT_FORMATS.map(f => (
                 <button key={f.value} type="button" onClick={() => setFormatoSel(f.value)}
@@ -1299,6 +1396,75 @@ if exist "%CHROME%" (
             caixaId={caixaId}
             onFechar={() => setModalMonitor(false)}
           />
+        )}
+
+        {/* Modal "Tipo de conexão" do TipPrint */}
+        {modalTipPrint && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+               onClick={() => !conectandoBluetooth && setModalTipPrint(false)}>
+            <div className="w-full max-w-sm rounded-3xl flex flex-col gap-4 p-5"
+                 style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
+                 onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>
+                  Tipo de conexão
+                </h3>
+                <button type="button" onClick={() => setModalTipPrint(false)} className="text-[#444] hover:text-white">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {!serialSuportado() && (
+                <div className="flex items-center gap-2 text-amber-400 text-xs py-2.5 px-3 rounded-xl bg-amber-400/5 border border-amber-400/10">
+                  <AlertTriangle size={13} className="shrink-0" />
+                  Esse navegador não suporta essa conexão — use o Chrome ou o Edge no computador.
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2">
+                {TIPOS_CONEXAO.map(t => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    disabled={!t.disponivel || !serialSuportado() || conectandoBluetooth}
+                    onClick={() => t.value === 'bluetooth' && conectarBluetoothTipPrint()}
+                    className="relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl text-left transition-all disabled:cursor-not-allowed"
+                    style={{
+                      background: '#111',
+                      border: '1px solid #1e1e1e',
+                      opacity: t.disponivel ? 1 : 0.5,
+                    }}>
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#0d0d0d' }}>
+                      {t.value === 'bluetooth' && conectandoBluetooth
+                        ? <Loader2 size={16} className="animate-spin" style={{ color: ACCENT }} />
+                        : <t.Icon size={16} style={{ color: t.disponivel ? ACCENT : '#555' }} />}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        {t.label}
+                      </p>
+                      <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        {t.value === 'bluetooth' && conectandoBluetooth ? 'Escolha a impressora na janela do navegador...' : t.sub}
+                      </p>
+                    </div>
+                    {!t.disponivel && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0"
+                        style={{ background: '#1a1a1a', color: '#666', fontFamily: 'var(--font-dm-sans)' }}>
+                        Em breve
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {erroConexaoTipPrint && (
+                <div className="flex items-center gap-2 text-red-400 text-xs py-2.5 px-3 rounded-xl bg-red-400/5 border border-red-400/10">
+                  <AlertTriangle size={13} className="shrink-0" />
+                  {erroConexaoTipPrint}
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     )
