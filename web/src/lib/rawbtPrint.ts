@@ -1,19 +1,25 @@
-// Impressão térmica automática via RawBT (app de terceiros já instalado no
-// Android do operador) — dispara direto no app via intent: URL, sem passar
-// pelo diálogo de impressão do Android (o que window.print() sempre abre).
+// Impressão térmica automática via app TipPrint (nosso próprio app Android,
+// br.com.tipprint) — dispara direto no app via intent: URL, sem passar pelo
+// diálogo de impressão do Android (o que window.print() sempre abre).
 //
-// Formato confirmado no código-fonte oficial do RawBT (DemoRawBtPrinter,
-// github.com/402d/DemoRawBtPrinter):
-//   intent:base64,<BASE64>#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;
+// Até 13/08/2026 isso usava o RawBT (app de terceiros, ru.a402d.rawbtprinter)
+// com o mesmo mecanismo de intent: URL — trocado pro nosso próprio app pra
+// não depender de app de terceiro (pareamento à parte, sem controle sobre
+// bugs/atualizações dele). O TipPrint Android ganhou um link equivalente
+// (PrintLinkActivity, scheme "tipprint") que aceita o mesmo formato de bytes
+// base64 e imprime na impressora já configurada no app. Formato do link
+// baseado no que o RawBT usa (DemoRawBtPrinter, github.com/402d/DemoRawBtPrinter):
+//   intent:base64,<BASE64>#Intent;scheme=tipprint;package=br.com.tipprint;end;
 // Bytes ESC/POS têm valores 128-255 (fora do ASCII puro), por isso SEMPRE
-// base64 aqui — o app confirma isso explicitamente pra esse caso.
+// base64 aqui.
 //
-// Só funciona em Android com RawBT instalado e a impressora já pareada nele
-// (ver memória project_impressao_termica_mobile.md) — não tem fallback
+// Só funciona em Android com o app TipPrint instalado e a impressora já
+// configurada nele (Bluetooth/USB/rede — telas do próprio app, ver
+// memória project_impressao_termica_mobile.md) — não tem fallback
 // silencioso: se o app não estiver instalado, o Android mostra a Play
 // Store ou não faz nada, dependendo do navegador.
 
-const RAWBT_PACKAGE = 'ru.a402d.rawbtprinter'
+const TIPPRINT_PACKAGE = 'br.com.tipprint'
 
 // ESC/POS não é UTF-8 — cada impressora usa uma codepage própria (PC437,
 // PC860 etc.) e não dá pra saber de antemão qual a KP-1025 aceita sem
@@ -148,11 +154,11 @@ export function gerarComandosMultiplos(tickets: IngressoParaImprimir[]): Uint8Ar
   return new Uint8Array(b.build())
 }
 
-// Dispara a impressão via RawBT — sem diálogo do Android. Precisa ser
-// chamado em resposta direta a uma ação do usuário/fluxo (não em background
-// silencioso) pra não ser bloqueado como pop-up/navegação indesejada.
-export function imprimirViaRawBT(bytes: Uint8Array): void {
+// Dispara a impressão via TipPrint (app próprio) — sem diálogo do Android.
+// Precisa ser chamado em resposta direta a uma ação do usuário/fluxo (não em
+// background silencioso) pra não ser bloqueado como pop-up/navegação indesejada.
+export function imprimirViaTipPrint(bytes: Uint8Array): void {
   const b64 = bytesToBase64(Array.from(bytes))
-  const url = `intent:base64,${encodeURIComponent(b64)}#Intent;scheme=rawbt;package=${RAWBT_PACKAGE};end;`
+  const url = `intent:base64,${encodeURIComponent(b64)}#Intent;scheme=tipprint;package=${TIPPRINT_PACKAGE};end;`
   window.location.href = url
 }

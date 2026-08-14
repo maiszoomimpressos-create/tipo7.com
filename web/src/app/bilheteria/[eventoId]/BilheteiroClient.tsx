@@ -12,7 +12,7 @@ import {
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { CaixaSidebar }       from './CaixaSidebar'
 import { apiFetchAuth } from '@/lib/apiFetch'
-import { gerarComandosMultiplos, imprimirViaRawBT, type IngressoParaImprimir } from '@/lib/rawbtPrint'
+import { gerarComandosMultiplos, imprimirViaTipPrint, type IngressoParaImprimir } from '@/lib/rawbtPrint'
 import { imprimirTicketPrintServer } from '@/lib/printServerClient'
 import { PrintServerPanel } from '@/components/PrintServerPanel'
 import QRCode from 'react-qr-code'
@@ -31,7 +31,7 @@ type PrintFormat = 'a4' | 'printserver' | 'rawbt' | 'nenhuma'
 const PRINT_FORMATS: { value: PrintFormat; label: string; sub: string; Icon: React.ElementType }[] = [
   { value: 'a4',       label: 'A4',          sub: 'Impressora comum',    Icon: FileText    },
   { value: 'printserver', label: 'Térmica (Computador)', sub: 'Bluetooth, USB ou driver Windows — via RawBts PrintServer', Icon: Printer },
-  { value: 'rawbt',    label: 'Térmica direta (Celular)', sub: 'Android + app RawBT — sem diálogo', Icon: Zap },
+  { value: 'rawbt',    label: 'Térmica direta (Celular)', sub: 'Android + app TipPrint — sem diálogo', Icon: Zap },
   { value: 'nenhuma',  label: 'Sem impressão', sub: 'Somente tela',       Icon: MonitorOff  },
 ]
 
@@ -625,7 +625,7 @@ if exist "%CHROME%" (
       // auto-print acima) — só chega aqui pelo clique manual do botão
       // "Imprimir" com poucos ingressos, ou pelo primeiro lote.
       const tickets = montarTicketsParaImprimir(resultado.tickets.slice(0, BATCH_SIZE_IMPRESSAO))
-      imprimirViaRawBT(gerarComandosMultiplos(tickets))
+      imprimirViaTipPrint(gerarComandosMultiplos(tickets))
       setLoteImpresso(Math.min(BATCH_SIZE_IMPRESSAO, resultado.tickets.length))
     } else if (formato === 'printserver') {
       // PrintServer roda local sem popup/bloqueio de navegador (diferente do
@@ -665,14 +665,14 @@ if exist "%CHROME%" (
     }
   }
 
-  // Dispara o próximo lote de ingressos via RawBT — usado pelo botão
+  // Dispara o próximo lote de ingressos via TipPrint (Android) — usado pelo botão
   // "Imprimir X-Y de N" quando a venda tem mais ingressos que um lote só
   // aguenta de uma vez (ver BATCH_SIZE_IMPRESSAO).
   function imprimirProximoLote() {
     if (!resultado) return
     const fim = Math.min(loteImpresso + BATCH_SIZE_IMPRESSAO, resultado.tickets.length)
     const tickets = montarTicketsParaImprimir(resultado.tickets.slice(loteImpresso, fim))
-    imprimirViaRawBT(gerarComandosMultiplos(tickets))
+    imprimirViaTipPrint(gerarComandosMultiplos(tickets))
     setLoteImpresso(fim)
   }
 

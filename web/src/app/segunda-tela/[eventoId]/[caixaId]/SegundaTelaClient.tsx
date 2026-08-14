@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'react-qr-code'
 import { CheckCircle2, Clock, MapPin, Calendar, Ticket as TicketIcon, Banknote, CreditCard, Loader2, Maximize2, Minimize2, Printer, Send } from 'lucide-react'
-import { gerarComandosMultiplos, imprimirViaRawBT, type IngressoParaImprimir } from '@/lib/rawbtPrint'
+import { gerarComandosMultiplos, imprimirViaTipPrint, type IngressoParaImprimir } from '@/lib/rawbtPrint'
 
 const ACCENT = '#E8B84B'
 
@@ -176,7 +176,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
   )
 
   // Impressão de teste — mesmo caminho de código de uma venda real
-  // (gerarComandosMultiplos + imprimirViaRawBT), só com dados fake. Serve
+  // (gerarComandosMultiplos + imprimirViaTipPrint), só com dados fake. Serve
   // pra confirmar que RawBT + Bluetooth + impressora estão realmente
   // conectados nesta tela sem precisar esperar uma venda de verdade
   // acontecer. Só aparece com o toggle da impressora ligado (achado real,
@@ -194,7 +194,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       ticketName:    'Impressao de teste',
       portador:      'Segunda Tela',
     }
-    imprimirViaRawBT(gerarComandosMultiplos([ticketTeste]))
+    imprimirViaTipPrint(gerarComandosMultiplos([ticketTeste]))
     setTesteEnviado(true)
     setTimeout(() => setTesteEnviado(false), 2500)
   }
@@ -222,7 +222,7 @@ export function SegundaTelaClient({ eventoId, caixaId, eventoTitle, slides, even
       portador:      payload.portador ?? '',
       cpf:           payload.cpf,
     }))
-    imprimirViaRawBT(gerarComandosMultiplos(tickets))
+    imprimirViaTipPrint(gerarComandosMultiplos(tickets))
     setLoteImpresso(fim)
     if (fim >= payload.tickets.length) setJaImprimiu(true)
   }

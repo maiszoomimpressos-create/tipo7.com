@@ -11,7 +11,7 @@ import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
 import { ImpressoraBluetooth } from '@/components/ImpressoraBluetooth'
 import { PrintServerPanel } from '@/components/PrintServerPanel'
 import { imprimirTicketPrintServer } from '@/lib/printServerClient'
-import { gerarComandosMultiplos, imprimirViaRawBT } from '@/lib/rawbtPrint'
+import { gerarComandosMultiplos, imprimirViaTipPrint } from '@/lib/rawbtPrint'
 import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
@@ -298,7 +298,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
       })
     } else if (formatoImpressao === 'rawbt') {
       setErroImpressao(null)
-      imprimirViaRawBT(gerarComandosMultiplos([{
+      imprimirViaTipPrint(gerarComandosMultiplos([{
         slotNumber:    1,
         totalSlots:    1,
         qrToken:       sessaoId,
