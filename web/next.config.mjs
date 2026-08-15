@@ -23,7 +23,15 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.supabase.co https://picsum.photos https://fastly.picsum.photos",
       "font-src 'self'",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mercadopago.com https://nominatim.openstreetmap.org https://maps.googleapis.com https://viacep.com.br https://accounts.google.com wss://localhost:8181 ws://localhost:8182",
+      // http://localhost:8080 — PrintServer local (RawBts ou TipPrint
+      // provisionado, mesma API — ver lib/printServerClient.ts,
+      // components/PrintServerPanel.tsx). Faltava aqui desde sempre: achado
+      // real (14/08/2026) via print do usuário mostrando "Failed to fetch"
+      // no console — "Refused to connect because it violates the CSP" —
+      // toda venda com formato 'printserver' falhava silenciosamente ao
+      // tentar imprimir, em qualquer navegador, mesmo com o PrintServer
+      // rodando certinho no PC.
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mercadopago.com https://nominatim.openstreetmap.org https://maps.googleapis.com https://viacep.com.br https://accounts.google.com http://localhost:8080 wss://localhost:8181 ws://localhost:8182",
       // accounts.google.com — o One Tap/GSI renderiza o prompt de login num
       // iframe dessa origem, mesmo motivo do script-src acima.
       "frame-src https://www.mercadopago.com.br https://www.mercadopago.com https://accounts.google.com",

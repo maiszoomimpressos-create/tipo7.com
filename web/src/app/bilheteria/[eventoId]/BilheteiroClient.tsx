@@ -368,8 +368,12 @@ if exist "%CHROME%" (
     if (formato === 'rawbt' && resultado.tickets.length > BATCH_SIZE_IMPRESSAO) return
 
     const t = setTimeout(() => {
-      imprimirTickets()
-      handleNovaVenda()
+      // Só avança pra "nova venda" sozinho se a impressão deu certo — se
+      // falhou, o erro já foi mostrado dentro de imprimirTickets() (setErr
+      // + throw) e o operador fica na tela de impressão vendo o motivo,
+      // em vez de ser jogado pra uma venda nova com o erro "vazando" lá
+      // (era exatamente esse o bug real, ver comentário em imprimirTickets).
+      imprimirTickets().then(handleNovaVenda).catch(() => {})
     }, 600)
 
     return () => clearTimeout(t)
@@ -758,7 +762,14 @@ if exist "%CHROME%" (
     }))
   }
 
-  function imprimirTickets() {
+  // Async e SEMPRE aguardada por quem chama (ver efeito de auto-print
+  // abaixo) — achado real (14/08/2026): o disparo era "solta e esquece"
+  // (chamava imprimirTickets() e já em seguida handleNovaVenda(), sem
+  // esperar a promise), então quando o PrintServer/Web Serial falhava
+  // alguns milissegundos depois, a tela de venda NOVA já estava aberta —
+  // o erro "vazava" pra lá, parecendo que a venda seguinte tinha falhado
+  // por um motivo que não tinha nada a ver com ela.
+  async function imprimirTickets() {
     if (!resultado) return
     if (formato === 'rawbt') {
       // >BATCH_SIZE_IMPRESSAO não chama isso sozinho (ver efeito de
@@ -771,9 +782,10 @@ if exist "%CHROME%" (
       // PrintServer roda local sem popup/bloqueio de navegador (diferente do
       // RawBT no Android) — não precisa de toque manual por lote, imprime
       // tudo em sequência sozinho.
-      imprimirViaPrintServerEmSequencia(resultado.tickets).catch(e => {
+      await imprimirViaPrintServerEmSequencia(resultado.tickets).catch(e => {
         console.error(e)
         setErr(e instanceof Error ? e.message : 'Erro ao imprimir via PrintServer')
+        throw e
       })
     } else if (formato === 'tipprint') {
       // Web Serial: porta já autorizada não exige gesto do usuário pra
@@ -782,9 +794,10 @@ if exist "%CHROME%" (
       // nem toque manual — gerarComandosMultiplos já intercala linhas em
       // branco entre vias pra dar folga da impressora processar cada QR.
       const tickets = montarTicketsParaImprimir(resultado.tickets)
-      imprimirViaSerial(gerarComandosMultiplos(tickets)).catch(e => {
+      await imprimirViaSerial(gerarComandosMultiplos(tickets)).catch(e => {
         console.error(e)
         setErr(e instanceof Error ? e.message : 'Erro ao imprimir via TipPrint (Bluetooth) — confira se a impressora ainda está pareada.')
+        throw e
       })
     } else if (formato !== 'nenhuma') {
       // 'nenhuma' ("Sem impressão", só tela) nunca deve abrir o diálogo do
@@ -1220,7 +1233,7 @@ if exist "%CHROME%" (
             )
           ) : (
             <button
-              onClick={imprimirTickets}
+              onClick={() => { imprimirTickets().catch(() => {}) }}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-[#070707]"
               style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
             >
