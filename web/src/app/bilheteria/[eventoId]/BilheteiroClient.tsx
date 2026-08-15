@@ -16,7 +16,7 @@ import { apiFetchAuth } from '@/lib/apiFetch'
 import { gerarComandosMultiplos, imprimirViaTipPrint, type IngressoParaImprimir } from '@/lib/rawbtPrint'
 import { imprimirTicketPrintServer } from '@/lib/printServerClient'
 import { PrintServerPanel } from '@/components/PrintServerPanel'
-import { serialSuportado, conectarImpressoraSerial, reconectarImpressoraSerial, imprimirViaSerial } from '@/lib/webSerialPrint'
+import { conectarImpressoraSerial, reconectarImpressoraSerial, imprimirViaSerial } from '@/lib/webSerialPrint'
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
@@ -163,9 +163,31 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   // destaque, não seleciona nada até o usuário escolher Bluetooth de fato
   // (pareamento pede gesto do usuário, tem que ser síncrono com o clique).
   const [modalTipPrint,      setModalTipPrint]      = useState(false)
+  // Bluetooth se comporta muito diferente em PC vs Android. PC tenta
+  // primeiro o provisionamento automático (POST /tipprint/provision — ver
+  // memória do projeto, project_tipprint_provisionamento_pc); enquanto o
+  // TipPrint Backend não tem endereço público, o servidor devolve 503 e
+  // isso cai sozinho pro Web Serial de sempre, sem o usuário perceber a
+  // diferença. Android nunca conecta daqui — usa o app TipPrint via
+  // intent, mesmo mecanismo que já existia como formato 'rawbt'.
+  const [etapaModalTipPrint, setEtapaModalTipPrint] = useState<'conexao' | 'aparelho' | 'instalar'>('conexao')
   const [conectandoBluetooth, setConectandoBluetooth] = useState(false)
   const [erroConexaoTipPrint, setErroConexaoTipPrint] = useState<string | null>(null)
   const [tipPrintConectado,  setTipPrintConectado]  = useState(false)
+  // Preenchido quando o provisionamento automático funciona — o pacote
+  // baixado já vira um PrintServer local (mesma API HTTP do RawBts
+  // PrintServer, ver docs/INTEGRACAO-TIPO7.md do lado do TipPrint), então
+  // depois de instalar o formato vira 'printserver' de verdade — reusa o
+  // <PrintServerPanel/> que já existe, sem nenhum código de impressão novo.
+  const [downloadInfo, setDownloadInfo] = useState<{ downloadUrl: string; expiresAt: string } | null>(null)
+
+  function fecharModalTipPrint() {
+    if (conectandoBluetooth) return
+    setModalTipPrint(false)
+    setEtapaModalTipPrint('conexao')
+    setErroConexaoTipPrint(null)
+    setDownloadInfo(null)
+  }
 
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
 
@@ -217,6 +239,39 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
     reconectarImpressoraSerial().then(porta => setTipPrintConectado(!!porta))
   }, [formatoSel])
 
+  // PC: primeiro tenta o provisionamento automático (baixa+instala um
+  // PrintServer já autorizado, sem colar chave nenhuma). Se o servidor
+  // devolver 503 (TipPrint Backend ainda sem endereço público — ver
+  // memória do projeto), cai sozinho pro Web Serial de sempre, sem avisar
+  // o usuário — pra ele é só "conectar", não importa qual dos dois rodou.
+  async function iniciarConexaoPC() {
+    setConectandoBluetooth(true)
+    setErroConexaoTipPrint(null)
+    try {
+      const res = await apiFetchAuth('/api/tipprint/provision', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ label: `Bilheteria — ${eventoTitle}` }),
+      })
+      if (res.status === 503) {
+        setConectandoBluetooth(false)
+        await conectarBluetoothTipPrint()
+        return
+      }
+      const data = await res.json()
+      if (!res.ok || !data.ok) throw new Error(data.error ?? 'Erro ao gerar a instalação.')
+      setDownloadInfo({ downloadUrl: data.downloadUrl, expiresAt: data.expiresAt })
+      setEtapaModalTipPrint('instalar')
+    } catch (e) {
+      setErroConexaoTipPrint(e instanceof Error ? e.message : 'Erro ao preparar a instalação.')
+    } finally {
+      setConectandoBluetooth(false)
+    }
+  }
+
+  // Web Serial de verdade, pareamento fica neste navegador — fluxo que já
+  // existia antes do provisionamento automático (docs.INTEGRACAO-TIPO7,
+  // ver iniciarConexaoPC acima); continua sendo o fallback de sempre.
   async function conectarBluetoothTipPrint() {
     setConectandoBluetooth(true)
     setErroConexaoTipPrint(null)
@@ -224,12 +279,26 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
       await conectarImpressoraSerial()
       setTipPrintConectado(true)
       setFormatoSel('tipprint')
+      // Fecha direto (não via fecharModalTipPrint — a guarda de "não fecha
+      // enquanto conecta" ainda leria conectandoBluetooth=true aqui dentro,
+      // o setConectandoBluetooth(false) do finally só aplica no próximo render).
       setModalTipPrint(false)
+      setEtapaModalTipPrint('conexao')
     } catch (e) {
       setErroConexaoTipPrint(e instanceof Error ? e.message : 'Não foi possível conectar a impressora.')
     } finally {
       setConectandoBluetooth(false)
     }
+  }
+
+  // Android: nada pra conectar/parear por aqui — o app TipPrint já cuida
+  // do Bluetooth sozinho quando a impressão dispara (mesmo mecanismo do
+  // formato 'rawbt', que já existia como "Térmica direta (Celular)" antes
+  // do card TipPrint em destaque existir).
+  function selecionarAndroidTipPrint() {
+    setFormatoSel('rawbt')
+    setModalTipPrint(false)
+    setEtapaModalTipPrint('conexao')
   }
 
   function baixarAtalhoKiosk() {
@@ -1299,7 +1368,7 @@ if exist "%CHROME%" (
                 outros (clique não seleciona na hora, abre o modal "Tipo de
                 conexão" — pareamento Bluetooth exige gesto do usuário
                 síncrono com o clique). */}
-            <button type="button" onClick={() => { setErroConexaoTipPrint(null); setModalTipPrint(true) }}
+            <button type="button" onClick={() => { setErroConexaoTipPrint(null); setDownloadInfo(null); setEtapaModalTipPrint('conexao'); setModalTipPrint(true) }}
               className="relative flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all overflow-hidden"
               style={{
                 background: formatoSel === 'tipprint' ? `${ACCENT}14` : `${ACCENT}0a`,
@@ -1398,64 +1467,151 @@ if exist "%CHROME%" (
           />
         )}
 
-        {/* Modal "Tipo de conexão" do TipPrint */}
+        {/* Modal do TipPrint — 2 passos: "Tipo de conexão" e, só se
+            Bluetooth, "Esse caixa vai ser PC ou Celular Android?" (os dois
+            usam Bluetooth mas por mecanismos bem diferentes — Web Serial
+            num, app TipPrint via intent no outro). */}
         {modalTipPrint && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-               onClick={() => !conectandoBluetooth && setModalTipPrint(false)}>
+               onClick={fecharModalTipPrint}>
             <div className="w-full max-w-sm rounded-3xl flex flex-col gap-4 p-5"
                  style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}
                  onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between">
-                <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>
-                  Tipo de conexão
-                </h3>
-                <button type="button" onClick={() => setModalTipPrint(false)} className="text-[#444] hover:text-white">
-                  <X size={18} />
-                </button>
-              </div>
 
-              {!serialSuportado() && (
-                <div className="flex items-center gap-2 text-amber-400 text-xs py-2.5 px-3 rounded-xl bg-amber-400/5 border border-amber-400/10">
-                  <AlertTriangle size={13} className="shrink-0" />
-                  Esse navegador não suporta essa conexão — use o Chrome ou o Edge no computador.
-                </div>
+              {etapaModalTipPrint === 'conexao' && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>
+                      Tipo de conexão
+                    </h3>
+                    <button type="button" onClick={fecharModalTipPrint} className="text-[#444] hover:text-white">
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    {TIPOS_CONEXAO.map(t => (
+                      <button
+                        key={t.value}
+                        type="button"
+                        disabled={!t.disponivel}
+                        onClick={() => t.value === 'bluetooth' && setEtapaModalTipPrint('aparelho')}
+                        className="relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl text-left transition-all disabled:cursor-not-allowed"
+                        style={{
+                          background: '#111',
+                          border: '1px solid #1e1e1e',
+                          opacity: t.disponivel ? 1 : 0.5,
+                        }}>
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#0d0d0d' }}>
+                          <t.Icon size={16} style={{ color: t.disponivel ? ACCENT : '#555' }} />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                            {t.label}
+                          </p>
+                          <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                            {t.sub}
+                          </p>
+                        </div>
+                        {!t.disponivel && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0"
+                            style={{ background: '#1a1a1a', color: '#666', fontFamily: 'var(--font-dm-sans)' }}>
+                            Em breve
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
 
-              <div className="flex flex-col gap-2">
-                {TIPOS_CONEXAO.map(t => (
-                  <button
-                    key={t.value}
-                    type="button"
-                    disabled={!t.disponivel || !serialSuportado() || conectandoBluetooth}
-                    onClick={() => t.value === 'bluetooth' && conectarBluetoothTipPrint()}
-                    className="relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl text-left transition-all disabled:cursor-not-allowed"
-                    style={{
-                      background: '#111',
-                      border: '1px solid #1e1e1e',
-                      opacity: t.disponivel ? 1 : 0.5,
-                    }}>
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#0d0d0d' }}>
-                      {t.value === 'bluetooth' && conectandoBluetooth
-                        ? <Loader2 size={16} className="animate-spin" style={{ color: ACCENT }} />
-                        : <t.Icon size={16} style={{ color: t.disponivel ? ACCENT : '#555' }} />}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        {t.label}
-                      </p>
-                      <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        {t.value === 'bluetooth' && conectandoBluetooth ? 'Escolha a impressora na janela do navegador...' : t.sub}
-                      </p>
-                    </div>
-                    {!t.disponivel && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0"
-                        style={{ background: '#1a1a1a', color: '#666', fontFamily: 'var(--font-dm-sans)' }}>
-                        Em breve
-                      </span>
-                    )}
+              {etapaModalTipPrint === 'aparelho' && (
+                <>
+                  <div className="flex items-center gap-3">
+                    <button type="button" onClick={() => setEtapaModalTipPrint('conexao')} className="text-[#444] hover:text-white">
+                      <ArrowLeft size={16} />
+                    </button>
+                    <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>
+                      Esse caixa vai ser PC ou Celular?
+                    </h3>
+                  </div>
+                  <p className="text-[#555] text-xs -mt-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    O jeito de conectar via Bluetooth muda conforme o aparelho que vai rodar essa tela.
+                  </p>
+
+                  <div className="flex flex-col gap-2">
+                    <button type="button" disabled={conectandoBluetooth}
+                      onClick={iniciarConexaoPC}
+                      className="relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl text-left transition-all disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ background: '#111', border: '1px solid #1e1e1e' }}>
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#0d0d0d' }}>
+                        {conectandoBluetooth
+                          ? <Loader2 size={16} className="animate-spin" style={{ color: ACCENT }} />
+                          : <Monitor size={16} style={{ color: ACCENT }} />}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>PC</p>
+                        <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                          {conectandoBluetooth ? 'Preparando a conexão...' : 'Windows/Mac/Linux com Chrome ou Edge'}
+                        </p>
+                      </div>
+                    </button>
+
+                    <button type="button" disabled={conectandoBluetooth}
+                      onClick={selecionarAndroidTipPrint}
+                      className="relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl text-left transition-all disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ background: '#111', border: '1px solid #1e1e1e' }}>
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#0d0d0d' }}>
+                        <Smartphone size={16} style={{ color: ACCENT }} />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>Celular Android</p>
+                        <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                          Precisa do app TipPrint instalado
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Provisionamento automático funcionou — baixa+instala já
+                  autorizado, não pede chave nenhuma. Vira formato
+                  'printserver' assim que o usuário confirmar que instalou
+                  (mesma API local do RawBts PrintServer, PrintServerPanel
+                  já detecta sozinho). */}
+              {etapaModalTipPrint === 'instalar' && downloadInfo && (
+                <>
+                  <div className="flex items-center gap-3">
+                    <button type="button" onClick={() => setEtapaModalTipPrint('aparelho')} className="text-[#444] hover:text-white">
+                      <ArrowLeft size={16} />
+                    </button>
+                    <h3 className="text-white text-base font-semibold" style={{ fontFamily: 'var(--font-syne)' }}>
+                      Instalar no PC
+                    </h3>
+                  </div>
+
+                  <a href={downloadInfo.downloadUrl} download
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold text-[#070707] flex items-center justify-center gap-2"
+                    style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                    <Download size={15} /> Baixar TipPrint
+                  </a>
+
+                  <ol className="text-[#777] text-xs space-y-1 list-decimal list-inside" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    <li>Abra o pacote baixado e rode o <code>Instalar.bat</code></li>
+                    <li>Pareie a impressora no Bluetooth do Windows (PIN padrão 0000)</li>
+                    <li>Já autorizado — nenhuma chave pra colar</li>
+                    <li>Volte aqui e clique em &quot;já instalei&quot;</li>
+                  </ol>
+
+                  <button type="button"
+                    onClick={() => { setFormatoSel('printserver'); fecharModalTipPrint() }}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 border border-[#222] text-[#888] hover:border-[#E8B84B]/40 hover:text-[#E8B84B] transition-colors"
+                    style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    <Check size={14} /> Já instalei, continuar
                   </button>
-                ))}
-              </div>
+                </>
+              )}
 
               {erroConexaoTipPrint && (
                 <div className="flex items-center gap-2 text-red-400 text-xs py-2.5 px-3 rounded-xl bg-red-400/5 border border-red-400/10">

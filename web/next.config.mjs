@@ -174,6 +174,7 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/admin/atributos',
   '/api/admin/atributos/:id',
   '/api/usuarios/admin-lista',
+  '/api/tipprint/provision',
 ]
 
 // Uploads (avatar/banner/logo/carrossel) servidos direto do disco do

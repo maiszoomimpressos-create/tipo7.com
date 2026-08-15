@@ -39,6 +39,7 @@ import { ScannerModule } from './scanner/scanner.module';
 import { StaffFunctionTemplatesModule } from './staff-function-templates/staff-function-templates.module';
 import { StatsModule } from './stats/stats.module';
 import { StorageModule } from './storage/storage.module';
+import { TipPrintModule } from './tipprint/tipprint.module';
 import { TrabalhosModule } from './trabalhos/trabalhos.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
@@ -81,6 +82,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     QrModule,
     CadastroModule,
     TrabalhosModule,
+    TipPrintModule,
     UsuariosModule,
     HoldersModule,
     HolderLinksModule,

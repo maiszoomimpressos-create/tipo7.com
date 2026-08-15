@@ -7,7 +7,7 @@
 import { useState } from 'react'
 import {
   ArrowRight, ArrowLeft, Radio, Users, Car, MessageCircle, ChevronDown, Eye, EyeOff,
-  Pencil, Check, X, Loader2, KeyRound,
+  Pencil, Check, X, Loader2, KeyRound, Printer,
 } from 'lucide-react'
 import { apiFetchAuth } from '@/lib/apiFetch'
 
@@ -27,7 +27,7 @@ interface Rota {
 
 interface Integracao {
   id:             string
-  area_slug:      'usuarios' | 'estacionamento' | 'whatsapp'
+  area_slug:      'usuarios' | 'estacionamento' | 'whatsapp' | 'tipprint'
   nome:           string
   base_url:       string | null
   api_key:        string | null
@@ -35,14 +35,19 @@ interface Integracao {
   rotas:          Rota[]
 }
 
-const AREA_ICON = { usuarios: Users, estacionamento: Car, whatsapp: MessageCircle } as const
-const AREA_COR  = { usuarios: '#E8B84B', estacionamento: '#38bdf8', whatsapp: '#25D366' } as const
+const AREA_ICON = { usuarios: Users, estacionamento: Car, whatsapp: MessageCircle, tipprint: Printer } as const
+const AREA_COR  = { usuarios: '#E8B84B', estacionamento: '#38bdf8', whatsapp: '#25D366', tipprint: '#f97316' } as const
 const AREA_SUB  = {
   usuarios:      'cadastro e edição de perfil',
   estacionamento: 'registro de entrada de veículos',
   whatsapp:      'envio de ingresso/estacionamento via Boot Whats',
+  // Provisionamento automático do PrintServer TipPrint em PC Windows —
+  // ver memória do projeto (project_tipprint_provisionamento_pc). Ainda
+  // sem base_url pública do lado deles: enquanto "Não configurado", o
+  // botão "PC" da Bilheteria continua caindo pro Web Serial de sempre.
+  tipprint:      'provisionamento automático do PrintServer (PC Windows)',
 } as const
-const AREA_NOME = { usuarios: 'Usuários', estacionamento: 'Estacionamento', whatsapp: 'WhatsApp' } as const
+const AREA_NOME = { usuarios: 'Usuários', estacionamento: 'Estacionamento', whatsapp: 'WhatsApp', tipprint: 'TipPrint' } as const
 
 const inp = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40 font-mono placeholder:text-[#383838] placeholder:font-sans'
 const lbl = 'text-[#666] text-[11px] font-medium tracking-widest uppercase'
