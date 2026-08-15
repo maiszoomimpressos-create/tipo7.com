@@ -225,9 +225,23 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
     return () => { document.getElementById('tipo7-print-css')?.remove() }
   }, [formato])
 
+  // Achado real (14/08/2026): conectar no TipPrint só atualizava
+  // `formatoSel` (o que a tela mostra selecionado) — quem decide pra onde
+  // vai a impressão de verdade é `formato`, gravado só quando clicava em
+  // "Salvar e voltar"/"Abrir caixa". Esquecer esse clique depois de
+  // conectar deixava a tela mostrando "TipPrint conectado" enquanto a
+  // impressão real ainda ia pro formato antigo (abria o diálogo do
+  // Windows). `persistirFormato` grava os dois juntos, na hora — os 3
+  // fluxos de conexão do TipPrint (Web Serial, Android, provisionamento)
+  // chamam ela direto, sem depender de outro clique.
+  function persistirFormato(f: PrintFormat) {
+    localStorage.setItem(`tipo7-impressora-${eventoId}`, f)
+    setFormato(f)
+    setFormatoSel(f)
+  }
+
   function salvarFormato() {
-    localStorage.setItem(`tipo7-impressora-${eventoId}`, formatoSel)
-    setFormato(formatoSel)
+    persistirFormato(formatoSel)
     setSetupAberto(false)
   }
 
@@ -278,7 +292,7 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
     try {
       await conectarImpressoraSerial()
       setTipPrintConectado(true)
-      setFormatoSel('tipprint')
+      persistirFormato('tipprint')
       // Fecha direto (não via fecharModalTipPrint — a guarda de "não fecha
       // enquanto conecta" ainda leria conectandoBluetooth=true aqui dentro,
       // o setConectandoBluetooth(false) do finally só aplica no próximo render).
@@ -296,7 +310,7 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   // formato 'rawbt', que já existia como "Térmica direta (Celular)" antes
   // do card TipPrint em destaque existir).
   function selecionarAndroidTipPrint() {
-    setFormatoSel('rawbt')
+    persistirFormato('rawbt')
     setModalTipPrint(false)
     setEtapaModalTipPrint('conexao')
   }
@@ -766,7 +780,11 @@ if exist "%CHROME%" (
         console.error(e)
         setErr(e instanceof Error ? e.message : 'Erro ao imprimir via TipPrint (Bluetooth) — confira se a impressora ainda está pareada.')
       })
-    } else {
+    } else if (formato !== 'nenhuma') {
+      // 'nenhuma' ("Sem impressão", só tela) nunca deve abrir o diálogo do
+      // navegador — achado real (14/08/2026): o botão manual "Imprimir"
+      // caía direto nesse `else` sem checar isso (o auto-print já tinha a
+      // guarda certa, esse aqui não).
       window.print()
     }
   }
@@ -1605,7 +1623,7 @@ if exist "%CHROME%" (
                   </ol>
 
                   <button type="button"
-                    onClick={() => { setFormatoSel('printserver'); fecharModalTipPrint() }}
+                    onClick={() => { persistirFormato('printserver'); fecharModalTipPrint() }}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 border border-[#222] text-[#888] hover:border-[#E8B84B]/40 hover:text-[#E8B84B] transition-colors"
                     style={{ fontFamily: 'var(--font-dm-sans)' }}>
                     <Check size={14} /> Já instalei, continuar
