@@ -1238,7 +1238,13 @@ if exist "%CHROME%" (
             )
           ) : (
             <button
-              onClick={() => { imprimirTickets().catch(() => {}) }}
+              // Achado real (14/08/2026): impressora despareou, o disparo
+              // automático falhou e ficou certo na tela mostrando o erro —
+              // mas depois de arrumar a conexão e clicar em "Imprimir" na
+              // mão, o reenvio funcionava e mesmo assim não saía da tela.
+              // O botão manual nunca chamava handleNovaVenda() no sucesso,
+              // só o disparo automático da primeira tentativa fazia isso.
+              onClick={() => { imprimirTickets().then(handleNovaVenda).catch(() => {}) }}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-[#070707]"
               style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
             >
