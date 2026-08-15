@@ -298,6 +298,11 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
       // o setConectandoBluetooth(false) do finally só aplica no próximo render).
       setModalTipPrint(false)
       setEtapaModalTipPrint('conexao')
+      // Achado real (14/08/2026): quem abriu essa tela pela engrenagem (já
+      // com caixa aberto) não tinha como voltar direto pra venda depois de
+      // conectar — só "Cancelar" (descarta) ou rolar até achar "Salvar e
+      // voltar". Conectar de verdade já É o "salvar e voltar" agora.
+      setSetupAberto(false)
     } catch (e) {
       setErroConexaoTipPrint(e instanceof Error ? e.message : 'Não foi possível conectar a impressora.')
     } finally {
@@ -313,6 +318,7 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
     persistirFormato('rawbt')
     setModalTipPrint(false)
     setEtapaModalTipPrint('conexao')
+    setSetupAberto(false)
   }
 
   function baixarAtalhoKiosk() {
@@ -1623,7 +1629,7 @@ if exist "%CHROME%" (
                   </ol>
 
                   <button type="button"
-                    onClick={() => { persistirFormato('printserver'); fecharModalTipPrint() }}
+                    onClick={() => { persistirFormato('printserver'); fecharModalTipPrint(); setSetupAberto(false) }}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 border border-[#222] text-[#888] hover:border-[#E8B84B]/40 hover:text-[#E8B84B] transition-colors"
                     style={{ fontFamily: 'var(--font-dm-sans)' }}>
                     <Check size={14} /> Já instalei, continuar
@@ -1662,6 +1668,18 @@ if exist "%CHROME%" (
             {eventoTitle} <span className="text-[#3a3a3a] font-mono">#{eventoId}</span> • {operadorName}
           </p>
         </div>
+        {/* Indicador de conexão do TipPrint — só aparece quando está de
+            fato conectado (não quando só o formato está selecionado, ver
+            achado real 14/08/2026 sobre esses dois estados desincronizarem). */}
+        {formato === 'tipprint' && tipPrintConectado && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl shrink-0"
+               style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)' }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+            <span className="text-[11px] font-semibold text-green-400" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              TipPrint conectado
+            </span>
+          </div>
+        )}
         {/* Saldo de ingressos físicos — só existe com o controle ligado */}
         {caixaId && controlaIngressosFisicos && (
           <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl shrink-0"
