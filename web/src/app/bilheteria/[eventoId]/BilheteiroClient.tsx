@@ -821,7 +821,12 @@ if exist "%CHROME%" (
         date:  dataFormatada ?? undefined,
         local: eventoLocal,
         buyer: nome || undefined,
-        code:  t.qr_token,
+        // Achado real (14/08/2026, foto do cupom impresso): mandar o
+        // qr_token inteiro aqui imprimia 3 linhas de hexadecimal ilegível
+        // no papel ("Codigo: 16b651ff9540a1af..."), redundante com o QR
+        // logo abaixo — ninguém vai digitar isso na portaria. Troca pro
+        // número curto do ingresso, mesmo padrão do ticket A4 (#001).
+        code:  `#${String(t.slot_number).padStart(3, '0')}`,
         qr:    t.qr_token,
         // Preço da venda atual — numa reimpressão de venda antiga o tipo de
         // ingresso selecionado no dropdown pode não bater mais, então esse
