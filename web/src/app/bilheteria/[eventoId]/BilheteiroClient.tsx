@@ -8,7 +8,7 @@ import {
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
   Clock, Monitor, Settings, Download, FileText, MonitorOff,
   ArrowRightLeft, X, Calculator, Zap, Eye, RotateCcw,
-  Bluetooth, Cable, Wifi, Sparkles,
+  Bluetooth, Cable, Wifi, Sparkles, Globe,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { CaixaSidebar }       from './CaixaSidebar'
@@ -142,6 +142,7 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   const dropdownRef      = useRef<HTMLDivElement>(null)
   const pollingRef       = useRef<ReturnType<typeof setInterval> | null>(null)
   const segundaRef       = useRef<Window | null>(null)
+  const siteRef          = useRef<Window | null>(null)
   const pixBroadcastRef  = useRef<object | null>(null)   // último payload PIX enviado
 
   // Saldo de ingressos físicos — atualizado via polling leve
@@ -410,6 +411,18 @@ if exist "%CHROME%" (
       return
     }
     segundaRef.current = window.open(`/segunda-tela/${eventoId}/${caixaId}`, 'tipo7-segunda-tela')
+  }
+
+  // Abre o site normal (home, eventos, perfil) numa aba à parte pro
+  // operador da bilheteria, já logado — o cookie de sessão é de domínio
+  // (.tipo7.com, ver auth-core.controller.ts), então uma aba nova pro
+  // mesmo domínio já chega autenticada, sem precisar passar token nenhum.
+  function abrirSite() {
+    if (siteRef.current && !siteRef.current.closed) {
+      siteRef.current.focus()
+      return
+    }
+    siteRef.current = window.open('/', 'tipo7-site')
   }
 
   // Fecha dropdown ao clicar fora
@@ -1740,6 +1753,12 @@ if exist "%CHROME%" (
             className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
             style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
             <Eye size={13} />
+          </button>
+          <button type="button" onClick={abrirSite}
+            title="Abrir o site em outra aba, já logado"
+            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
+            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
+            <Globe size={13} />
           </button>
           {caixaId && (
             <button type="button" onClick={() => setModalReimprimir(true)}

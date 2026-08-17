@@ -3,6 +3,7 @@ import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { AuditService } from '../common/audit.service';
 import { FeeRulesService } from '../common/fee-rules.service';
 import { gerarQrToken } from '../common/qr-token.util';
+import { IssueTicketsService } from '../common/issue-tickets.service';
 import { MpTokenService } from '../common/mp-token.service';
 import { PedidoAtomicoService } from '../common/pedido-atomico.service';
 import { SaldoBilheteriaService } from '../common/saldo-bilheteria.service';
@@ -19,6 +20,7 @@ export class BilheteriaService {
     private readonly mpToken: MpTokenService,
     private readonly audit: AuditService,
     private readonly pedidoAtomico: PedidoAtomicoService,
+    private readonly issueTickets: IssueTicketsService,
   ) {}
 
   private async temPermissaoVenderNoEvento(userId: string, eventoId: string): Promise<boolean> {
@@ -218,6 +220,23 @@ export class BilheteriaService {
       })),
       skipDuplicates: true,
     });
+
+    // Achado real (17/08/2026): quem recebia o WhatsApp do ingresso numa
+    // venda de balcão era o CAIXA (o `issueTickets()` automático do webhook
+    // usa `order.userId`, que aqui é o operador, não o comprador — ver
+    // notificarCompradorPresencial() em issue-tickets.service.ts). Este é o
+    // ponto certo pra avisar de verdade: já temos telefone real de "Dados do
+    // comprador" e os tickets já existem nesse momento.
+    if (comprador.telefone) {
+      try {
+        await this.issueTickets.notificarCompradorPresencial(orderId, {
+          nome: comprador.nome?.trim() || 'Cliente',
+          telefone: comprador.telefone,
+        });
+      } catch {
+        // best-effort — não trava o fluxo de venda por falha no WhatsApp
+      }
+    }
 
     return { ok: true };
   }

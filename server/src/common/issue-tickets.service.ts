@@ -42,11 +42,23 @@ export class IssueTicketsService {
       where: { id: orderId },
       select: {
         userId: true,
+        caixaId: true,
         event: { select: { title: true, dateStart: true, venueName: true, city: true, state: true, bannerUrl: true } },
       },
     });
 
-    if (!order || !generatedTickets.length || !process.env.RESEND_API_KEY) return;
+    if (!order || !generatedTickets.length) return;
+
+    // Achado real (17/08/2026): em venda de bilheteria (presencial), `userId`
+    // aqui é quem OPEROU o caixa, não quem comprou — mandar e-mail/WhatsApp
+    // pro perfil dele notificava o operador, não o cliente. Nesse caso quem
+    // avisa o comprador é a própria BilheteriaService, depois de confirmar o
+    // pagamento, com o telefone que o operador digitou em "Dados do
+    // comprador" (ver notificarCompradorPresencial() abaixo) — aqui só cria
+    // os tickets e para.
+    if (order.caixaId) return;
+
+    if (!process.env.RESEND_API_KEY) return;
     if (!order.userId) return;
 
     const emailRows = await this.prisma.$queryRaw<{ id: string; email: string }[]>`
@@ -114,6 +126,49 @@ export class IssueTicketsService {
             estado: order.event?.state ?? '',
           },
         });
+      }
+    }
+  }
+
+  // Venda presencial de bilheteria — chamado pela BilheteriaService depois
+  // de confirmar o pagamento e salvar o TicketHolder, com o telefone que o
+  // operador do caixa digitou em "Dados do comprador". Só WhatsApp: cliente
+  // de balcão não passa e-mail, então não tem pra onde mandar o e-mail do
+  // ingresso (diferente da compra online, onde `issueTickets()` acima já
+  // resolve o e-mail/telefone certos porque ali `order.userId` É o
+  // comprador). Best-effort, igual ao WhatsApp de issueTickets().
+  async notificarCompradorPresencial(orderId: string, contato: { nome: string; telefone: string }): Promise<void> {
+    if (!contato.telefone) return;
+
+    const tickets = await this.prisma.ticket.findMany({
+      where: { orderId },
+      select: { qrToken: true, orderItem: { select: { ticket: { select: { name: true } } } } },
+    });
+    if (!tickets.length) return;
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { event: { select: { title: true, dateStart: true, venueName: true, city: true, state: true } } },
+    });
+
+    for (const t of tickets) {
+      try {
+        await this.whatsapp.enviar({
+          to: contato.telefone,
+          recipientName: contato.nome || 'Cliente',
+          type: 'ingresso_emitido',
+          qrData: t.qrToken,
+          details: {
+            nome_evento: order?.event?.title ?? 'Evento',
+            data: order?.event?.dateStart?.toISOString() ?? '',
+            ingresso: t.orderItem?.ticket?.name ?? 'Ingresso',
+            local: order?.event?.venueName ?? '',
+            cidade: order?.event?.city ?? '',
+            estado: order?.event?.state ?? '',
+          },
+        });
+      } catch (err) {
+        this.logger.error('[notificarCompradorPresencial] falha ao enviar whatsapp', err as Error);
       }
     }
   }
