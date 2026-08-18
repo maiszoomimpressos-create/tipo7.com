@@ -354,9 +354,14 @@ export class EstacionamentoService {
       // O que interessa pro condutor é quando ELE entrou, não quando o
       // evento começa — os dois agora vêm do mesmo instante (a entrada),
       // já formatados pt-BR, cada um só com sua parte.
+      // Achado real #3 (17/08/2026): o servidor roda em UTC — sem fixar
+      // timeZone, toLocaleDateString/toLocaleTimeString formatam no fuso do
+      // SERVIDOR, não no do Brasil. Deu ticket com "18/08 00:53" pra uma
+      // entrada que aconteceu "17/08 21:53" de verdade (Brasília é UTC-3,
+      // e ainda vira o dia errado perto da meia-noite).
       const agora = new Date();
-      const data = agora.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const horario = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const data = agora.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' });
+      const horario = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
       await this.whatsapp.enviar({
         to: params.telefone,
         recipientName: params.nomeCondutor,

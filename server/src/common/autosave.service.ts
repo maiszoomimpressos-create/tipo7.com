@@ -109,15 +109,26 @@ export class AutosaveService {
   // prependia a marca outra vez em cima do que já tinha (ex: "RENAULT
   // KWID" → "RENAULT RENAULT KWID" → "RENAULT RENAULT RENAULT KWID" ...).
   // Corrigido na origem (salvarVeiculoNaAutosave só reenvia o modelo se a
-  // placa for nova), mas isso aqui protege a LEITURA pra placas que já
-  // ficaram com o campo corrompido no banco da Autosave antes do fix.
+  // placa for nova), mas placas que já ficaram com o campo corrompido no
+  // banco da Autosave (testadas antes do fix) continuavam mostrando a
+  // marca repetida N vezes — um simples "já começa com a marca, não
+  // prepende de novo" não limpa duplicata que já está DENTRO do texto
+  // salvo. Agora remove TODAS as ocorrências repetidas da marca no início
+  // do modelo (não só a primeira), então autocorrige registros já sujos.
   private montarModelo(v: AutosaveVehicle): string | null {
     const brand = v.brand?.trim() || '';
-    const model = v.model?.trim() || '';
+    let model = v.model?.trim() || '';
     if (!brand) return model || null;
-    if (!model) return brand;
-    if (model.toLowerCase().startsWith(brand.toLowerCase())) return model;
-    return `${brand} ${model}`;
+
+    if (model) {
+      const brandLower = brand.toLowerCase();
+      const palavras = model.split(/\s+/);
+      let i = 0;
+      while (i < palavras.length && palavras[i].toLowerCase() === brandLower) i++;
+      model = palavras.slice(i).join(' ');
+    }
+
+    return model ? `${brand} ${model}` : brand;
   }
 
   private async fetchComTimeout(url: string, init: RequestInit): Promise<Response> {
