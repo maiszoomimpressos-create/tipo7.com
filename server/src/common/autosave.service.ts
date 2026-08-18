@@ -103,9 +103,21 @@ export class AutosaveService {
     }
   }
 
+  // Achado real (17/08/2026): salvarVeiculoNaAutosave() grava de volta o
+  // valor combinado (marca+modelo) no campo `model` sozinho, sem tocar em
+  // `brand` — cada re-entrada da mesma placa rodava essa função de novo e
+  // prependia a marca outra vez em cima do que já tinha (ex: "RENAULT
+  // KWID" → "RENAULT RENAULT KWID" → "RENAULT RENAULT RENAULT KWID" ...).
+  // Corrigido na origem (salvarVeiculoNaAutosave só reenvia o modelo se a
+  // placa for nova), mas isso aqui protege a LEITURA pra placas que já
+  // ficaram com o campo corrompido no banco da Autosave antes do fix.
   private montarModelo(v: AutosaveVehicle): string | null {
-    const partes = [v.brand, v.model].filter(Boolean);
-    return partes.length > 0 ? partes.join(' ') : null;
+    const brand = v.brand?.trim() || '';
+    const model = v.model?.trim() || '';
+    if (!brand) return model || null;
+    if (!model) return brand;
+    if (model.toLowerCase().startsWith(brand.toLowerCase())) return model;
+    return `${brand} ${model}`;
   }
 
   private async fetchComTimeout(url: string, init: RequestInit): Promise<Response> {

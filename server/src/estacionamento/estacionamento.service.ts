@@ -289,12 +289,19 @@ export class EstacionamentoService {
     if (resultado?.error === 'estacionamento_nao_encontrado') throw new NotFoundException('Estacionamento não encontrado');
     if (!resultado?.sessao_id) throw new BadRequestException('Erro ao registrar entrada');
 
-    // Best-effort — não aguarda nem bloqueia a resposta.
-    void this.autosave.salvarVeiculoNaAutosave({
-      placa: body.placa.trim().toUpperCase(),
-      modelo: body.modelo.trim(),
-      cor: body.cor.trim(),
-    });
+    // Best-effort — não aguarda nem bloqueia a resposta. Só salva de volta
+    // na Autosave quando a placa NÃO veio do autopreenchimento (achado real
+    // 17/08/2026: reenviar o campo "modelo" — que já vem combinado marca+
+    // modelo pro atendente ver na tela — pro placa já cadastrada duplicava
+    // a marca a cada entrada repetida, ver montarModelo() em
+    // autosave.service.ts). Placa já conhecida não precisa resalvar nada.
+    if (!body.veiculoJaCadastrado) {
+      void this.autosave.salvarVeiculoNaAutosave({
+        placa: body.placa.trim().toUpperCase(),
+        modelo: body.modelo.trim(),
+        cor: body.cor.trim(),
+      });
+    }
 
     // Ticket de estacionamento por WhatsApp — achado real (17/08/2026): o
     // formulário já EXIGIA o telefone (ou confirmação de "sem WhatsApp") mas
@@ -339,9 +346,17 @@ export class EstacionamentoService {
       // tirar `data` achando redundante, a 2ª rejeição pediu `data` de
       // volta — ou seja, os 4 (`data`, `cor`, `modelo`, `horario`) são
       // TODOS obrigatórios ao mesmo tempo. Ver docs/boot-whats-details.md.
-      const horario = new Date().toLocaleString('pt-BR', {
-        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-      });
+      //
+      // Achado real #2 (17/08/2026): o template deles monta a frase
+      // "{data} às {horario}" — mandar `data` como a data do EVENTO (ISO
+      // cru) junto de `horario` como a hora da ENTRADA virava uma mistura
+      // sem sentido tipo "2026-08-16T00:00:00.000Z às 18/08/2026, 00:39".
+      // O que interessa pro condutor é quando ELE entrou, não quando o
+      // evento começa — os dois agora vêm do mesmo instante (a entrada),
+      // já formatados pt-BR, cada um só com sua parte.
+      const agora = new Date();
+      const data = agora.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const horario = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       await this.whatsapp.enviar({
         to: params.telefone,
         recipientName: params.nomeCondutor,
@@ -349,7 +364,7 @@ export class EstacionamentoService {
         qrData: params.sessaoId,
         details: {
           nome_evento: evento?.title ?? 'Evento',
-          data: evento?.dateStart?.toISOString() ?? '',
+          data,
           local: params.estacionamentoNome,
           cidade: evento?.city ?? '',
           estado: evento?.state ?? '',

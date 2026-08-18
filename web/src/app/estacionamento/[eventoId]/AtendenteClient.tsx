@@ -247,6 +247,12 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           modelo:            modelo.trim()           || undefined,
           cor:               cor.trim()              || undefined,
           cpfCondutor:       cpfCondutor.trim()       || undefined,
+          // Achado real (17/08/2026): reenviar o "modelo" pra Autosave numa
+          // placa que já veio do autopreenchimento duplicava a marca a cada
+          // entrada repetida (ver salvarVeiculoNaAutosave). `placaAutopreenchida`
+          // já rastreia exatamente isso — se veio da busca, não precisa
+          // salvar de novo.
+          veiculoJaCadastrado: placaAutopreenchida,
           semWhatsapp,
           formaPagamento:    precisaPagarEntrada ? formaPagamentoEntrada : undefined,
           caixaId:           precisaCaixaEntrada ? caixaId ?? undefined : undefined,

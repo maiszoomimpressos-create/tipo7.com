@@ -95,21 +95,30 @@ lado deles, só não usa os mesmos nomes do ingresso de evento:
   "qrData": "uuid-da-sessao-de-estacionamento",
   "details": {
     "nome_evento": "Festival de Verão",
-    "data": "2026-12-15T22:00:00.000Z",
+    "data": "17/08/2026",
     "local": "Estacionamento Principal",
     "cidade": "Chapecó",
     "estado": "SC",
     "placa": "ABC1D23",
     "modelo": "Onix",
     "cor": "Prata",
-    "horario": "17/08/2026 21:14"
+    "horario": "21:14"
   }
 }
 ```
 
+**Achado real #2 (17/08/2026):** o template deles monta a frase
+`"{data} às {horario}"`. A primeira versão mandava `data` como a data do
+EVENTO em ISO cru — misturado com `horario` (hora da ENTRADA), virava algo
+tipo `"2026-08-16T00:00:00.000Z às 18/08/2026, 00:39"` na mensagem final,
+sem sentido nenhum pro condutor. Corrigido: os dois agora vêm do mesmo
+instante (a ENTRADA do veículo, não a data do evento), já formatados
+pt-BR e cada um só com sua parte (`data` = `dd/mm/aaaa`, `horario` =
+`hh:mm`).
+
 | Campo | Observação |
 |---|---|
-| `data`, `modelo`, `cor`, `horario` | **Obrigatórios** — 422 se faltar qualquer um. `data` é a data do EVENTO (ISO, mesmo campo do ingresso). `horario` é o horário da ENTRADA do veículo, já formatado pt-BR (`dd/mm/aaaa hh:mm`), não ISO. |
+| `data`, `modelo`, `cor`, `horario` | **Obrigatórios** — 422 se faltar qualquer um. Os 4 vêm do momento da ENTRADA do veículo (não da data do evento). `data` = `dd/mm/aaaa`, `horario` = `hh:mm`, ambos pt-BR, não ISO. |
 | `nome_evento`, `local`, `cidade`, `estado`, `placa` | Enviados também, não confirmado se são obrigatórios ou só enriquecem o texto. |
 
 `qrData` aqui é o `id` da sessão de estacionamento (`estacionamento_sessoes.id`)
