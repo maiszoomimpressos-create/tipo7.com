@@ -122,7 +122,17 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
             if (s.status !== 'active') return false
             const pos  = Array.isArray(s.event_positions) ? s.event_positions[0] : s.event_positions
             const perms: { permission: string }[] = pos?.event_position_permissions ?? []
-            return perms.some(p => p.permission === 'vender_ingresso')
+            // Achado real (17/08/2026): esse caixa é compartilhado entre
+            // bilheteria e estacionamento (mesmo model no banco — ver
+            // AtendenteClient.tsx, que só libera registrar entrada/saída
+            // paga se tiver caixa designado) — só filtrava vender_ingresso
+            // antes, então quem só tinha função de estacionamento nunca
+            // aparecia aqui pra ser escolhido como operador.
+            return perms.some(p =>
+              p.permission === 'vender_ingresso' ||
+              p.permission === 'estacionamento_entrada' ||
+              p.permission === 'estacionamento_saida',
+            )
           })
           .map((s: any) => ({
             userId:   s.user_id,
@@ -555,7 +565,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
                       </div>
                     ) : (
                       <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        Nenhum membro com função de bilheteiro encontrado. Adicione membros com permissão de vender ingressos em Gestão da Equipe.
+                        Nenhum membro com função de caixa (bilheteria ou estacionamento) encontrado. Adicione alguém com uma dessas permissões em Gestão da Equipe.
                       </p>
                     )
                   )}

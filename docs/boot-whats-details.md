@@ -71,8 +71,45 @@ quebra; a chamada segue funcionando como sempre funcionou.
 - [ ] Confirmar aqui neste documento (ou por onde for combinado) quando o
       ajuste do template estiver no ar, pra gente validar ponta a ponta com
       uma compra de teste real.
-- **Ainda não implementado do lado da Tipo7:** o mesmo `details` só existe
-  hoje pra `type: "ingresso_emitido"`. Quando o fluxo de ticket de
-  estacionamento (nova feature, ainda em desenho) entrar, vai precisar do
-  mesmo tratamento pra `type: "estacionamento_emitido"` — combinamos isso
-  numa próxima rodada.
+
+## `type: "estacionamento_emitido"` (implementado 17/08/2026)
+
+Dispara na entrada do veículo (`POST /estacionamento/entrada`), só quando o
+atendente informa o WhatsApp do condutor no formulário. Mesmo formato dos
+campos antigos, `details` com um conjunto um pouco diferente do ingresso de
+evento (não tem "ingresso", tem placa/veículo em vez disso):
+
+```json
+{
+  "to": "5546988212387",
+  "type": "estacionamento_emitido",
+  "recipientName": "Nome do condutor",
+  "qrData": "uuid-da-sessao-de-estacionamento",
+  "details": {
+    "nome_evento": "Festival de Verão",
+    "data": "2026-12-15T22:00:00.000Z",
+    "local": "Estacionamento Principal",
+    "cidade": "Chapecó",
+    "estado": "SC",
+    "placa": "ABC1D23",
+    "veiculo": "Onix Prata"
+  }
+}
+```
+
+`qrData` aqui é o `id` da sessão de estacionamento (`estacionamento_sessoes.id`)
+puro — mesmo valor que já vai pro QR impresso no ticket físico (ver
+`imprimirTicketEstacionamento()` em `AtendenteClient.tsx`), não é um token
+dedicado como o `Ticket.qr_token` do ingresso de evento. `local` aqui é o
+nome do **estacionamento** (ex: "Estacionamento Principal"), não o venue do
+evento.
+
+**Ainda não existe validação por scan desse QR na saída** — hoje quem
+registra a saída é o atendente buscando a sessão na lista, não um scanner
+lendo o ticket. Se/quando isso for implementado, o `qrData` já é compatível
+(é o `sessaoId`), só falta o endpoint de validação do lado da Tipo7.
+
+- [ ] Time da Boot Whats confirma se o template de `estacionamento_emitido`
+      já existe do lado de vocês ou precisa ser criado — a Tipo7 já está
+      mandando esses campos em produção, mas sem template configurado a
+      mensagem pode sair genérica ou não sair.

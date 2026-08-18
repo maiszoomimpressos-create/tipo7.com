@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AutosaveService } from '../common/autosave.service';
 import { calcularValorEstacionamento } from '../common/estacionamento-pricing.util';
+import { WhatsAppService } from '../common/whatsapp.service';
 import { EventPermissionsService } from '../event-permissions/event-permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -32,10 +33,13 @@ function mapEstacionamento(e: {
 
 @Injectable()
 export class EstacionamentoService {
+  private readonly logger = new Logger(EstacionamentoService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventPermissions: EventPermissionsService,
     private readonly autosave: AutosaveService,
+    private readonly whatsapp: WhatsAppService,
   ) {}
 
   // ==== CRUD de estacionamentos (dono/admin do evento) ====
@@ -292,7 +296,57 @@ export class EstacionamentoService {
       cor: body.cor.trim(),
     });
 
+    // Ticket de estacionamento por WhatsApp — achado real (17/08/2026): o
+    // formulário já EXIGIA o telefone (ou confirmação de "sem WhatsApp") mas
+    // nada disparava de fato, o campo `estacionamento_emitido` só existia
+    // preparado no enum do WhatsAppService. Reaproveita o mesmo `sessao_id`
+    // que já vai pro QR impresso (ver imprimirTicketEstacionamento() no
+    // AtendenteClient — usa `sessaoId` puro como conteúdo do QR, então dá
+    // pra usar como `qrData` aqui sem precisar de token novo). Best-effort,
+    // mesmo padrão do e-mail/WhatsApp de ingresso — nunca trava a entrada.
+    if (body.telefoneCondutor?.trim()) {
+      void this.notificarTicketEstacionamento({
+        sessaoId: resultado.sessao_id,
+        eventId: estacionamento.eventId,
+        estacionamentoNome: estacionamento.nome,
+        telefone: body.telefoneCondutor.trim(),
+        nomeCondutor: body.nomeCondutor?.trim() || 'Cliente',
+        placa: body.placa.trim().toUpperCase(),
+        modelo: body.modelo?.trim() || '',
+        cor: body.cor?.trim() || '',
+      });
+    }
+
     return { ok: true, sessaoId: resultado.sessao_id };
+  }
+
+  private async notificarTicketEstacionamento(params: {
+    sessaoId: string; eventId: string; estacionamentoNome: string; telefone: string;
+    nomeCondutor: string; placa: string; modelo: string; cor: string;
+  }): Promise<void> {
+    try {
+      const evento = await this.prisma.event.findUnique({
+        where: { id: params.eventId },
+        select: { title: true, dateStart: true, venueName: true, city: true, state: true },
+      });
+      await this.whatsapp.enviar({
+        to: params.telefone,
+        recipientName: params.nomeCondutor,
+        type: 'estacionamento_emitido',
+        qrData: params.sessaoId,
+        details: {
+          nome_evento: evento?.title ?? 'Evento',
+          data: evento?.dateStart?.toISOString() ?? '',
+          local: params.estacionamentoNome,
+          cidade: evento?.city ?? '',
+          estado: evento?.state ?? '',
+          placa: params.placa,
+          veiculo: `${params.modelo} ${params.cor}`.trim(),
+        },
+      });
+    } catch (err) {
+      this.logger.error('[notificarTicketEstacionamento] falha ao enviar whatsapp', err as Error);
+    }
   }
 
   async saida(userId: string, body: Record<string, any>) {
