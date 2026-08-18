@@ -75,9 +75,15 @@ quebra; a chamada segue funcionando como sempre funcionou.
 ## `type: "estacionamento_emitido"` (implementado 17/08/2026)
 
 Dispara na entrada do veículo (`POST /estacionamento/entrada`), só quando o
-atendente informa o WhatsApp do condutor no formulário. Mesmo formato dos
-campos antigos, `details` com um conjunto um pouco diferente do ingresso de
-evento (não tem "ingresso", tem placa/veículo em vez disso):
+atendente informa o WhatsApp do condutor no formulário.
+
+**Achado real em produção (17/08/2026):** a primeira versão mandava
+`veiculo` (modelo+cor combinados) e `data` (ISO cru) — a Boot Whats
+rejeitou com `422 VALIDATION_ERROR`: *"O tipo 'estacionamento_emitido'
+precisa dos dados: cor, modelo, horario"*. Ou seja, o template **já existe
+do lado deles**, só espera nomes de campo diferentes dos usados no
+ingresso de evento. Corrigido pra bater com o que a resposta de erro
+exigiu:
 
 ```json
 {
@@ -87,15 +93,21 @@ evento (não tem "ingresso", tem placa/veículo em vez disso):
   "qrData": "uuid-da-sessao-de-estacionamento",
   "details": {
     "nome_evento": "Festival de Verão",
-    "data": "2026-12-15T22:00:00.000Z",
     "local": "Estacionamento Principal",
     "cidade": "Chapecó",
     "estado": "SC",
     "placa": "ABC1D23",
-    "veiculo": "Onix Prata"
+    "modelo": "Onix",
+    "cor": "Prata",
+    "horario": "17/08/2026 21:14"
   }
 }
 ```
+
+| Campo | Observação |
+|---|---|
+| `modelo`, `cor`, `horario` | **Obrigatórios** — é o que a Boot Whats valida hoje (422 se faltar). `horario` é string já formatada pt-BR (`dd/mm/aaaa hh:mm`), não ISO. |
+| `nome_evento`, `local`, `cidade`, `estado`, `placa` | Enviados também, não confirmado se são obrigatórios ou só enriquecem o texto. |
 
 `qrData` aqui é o `id` da sessão de estacionamento (`estacionamento_sessoes.id`)
 puro — mesmo valor que já vai pro QR impresso no ticket físico (ver
@@ -108,8 +120,3 @@ evento.
 registra a saída é o atendente buscando a sessão na lista, não um scanner
 lendo o ticket. Se/quando isso for implementado, o `qrData` já é compatível
 (é o `sessaoId`), só falta o endpoint de validação do lado da Tipo7.
-
-- [ ] Time da Boot Whats confirma se o template de `estacionamento_emitido`
-      já existe do lado de vocês ou precisa ser criado — a Tipo7 já está
-      mandando esses campos em produção, mas sem template configurado a
-      mensagem pode sair genérica ou não sair.

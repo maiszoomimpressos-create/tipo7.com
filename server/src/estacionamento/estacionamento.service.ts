@@ -329,6 +329,16 @@ export class EstacionamentoService {
         where: { id: params.eventId },
         select: { title: true, dateStart: true, venueName: true, city: true, state: true },
       });
+      // Achado real (17/08/2026, produção): a Boot Whats JÁ tinha o
+      // template de "estacionamento_emitido" pronto do lado deles — não
+      // precisou combinar nada, só rejeitou (422 VALIDATION_ERROR) porque os
+      // nomes de campo chutados na primeira versão não batiam com o que
+      // eles exigem: querem `cor`/`modelo` separados (não um `veiculo`
+      // combinado) e um `horario` formatado (não têm uso pra `data` ISO
+      // crua). Ver docs/boot-whats-details.md.
+      const horario = new Date().toLocaleString('pt-BR', {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
       await this.whatsapp.enviar({
         to: params.telefone,
         recipientName: params.nomeCondutor,
@@ -336,12 +346,13 @@ export class EstacionamentoService {
         qrData: params.sessaoId,
         details: {
           nome_evento: evento?.title ?? 'Evento',
-          data: evento?.dateStart?.toISOString() ?? '',
           local: params.estacionamentoNome,
           cidade: evento?.city ?? '',
           estado: evento?.state ?? '',
           placa: params.placa,
-          veiculo: `${params.modelo} ${params.cor}`.trim(),
+          modelo: params.modelo,
+          cor: params.cor,
+          horario,
         },
       });
     } catch (err) {
