@@ -331,11 +331,14 @@ export class EstacionamentoService {
       });
       // Achado real (17/08/2026, produção): a Boot Whats JÁ tinha o
       // template de "estacionamento_emitido" pronto do lado deles — não
-      // precisou combinar nada, só rejeitou (422 VALIDATION_ERROR) porque os
-      // nomes de campo chutados na primeira versão não batiam com o que
-      // eles exigem: querem `cor`/`modelo` separados (não um `veiculo`
-      // combinado) e um `horario` formatado (não têm uso pra `data` ISO
-      // crua). Ver docs/boot-whats-details.md.
+      // precisou combinar nada, só rejeitou (422 VALIDATION_ERROR) em cada
+      // tentativa reclamando de um campo obrigatório por vez (a mensagem
+      // de erro só lista o que falta, não o conjunto completo). Descoberto
+      // por tentativa: 1ª rejeição pediu cor/modelo/horario (tinha mandado
+      // `veiculo` combinado e não tinha `horario`); ao corrigir isso e
+      // tirar `data` achando redundante, a 2ª rejeição pediu `data` de
+      // volta — ou seja, os 4 (`data`, `cor`, `modelo`, `horario`) são
+      // TODOS obrigatórios ao mesmo tempo. Ver docs/boot-whats-details.md.
       const horario = new Date().toLocaleString('pt-BR', {
         day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
       });
@@ -346,6 +349,7 @@ export class EstacionamentoService {
         qrData: params.sessaoId,
         details: {
           nome_evento: evento?.title ?? 'Evento',
+          data: evento?.dateStart?.toISOString() ?? '',
           local: params.estacionamentoNome,
           cidade: evento?.city ?? '',
           estado: evento?.state ?? '',
