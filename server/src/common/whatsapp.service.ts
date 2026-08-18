@@ -61,9 +61,21 @@ export class WhatsAppService {
           ...(params.details ? { details: params.details } : {}),
         }),
       });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        this.logger.error(`[whatsapp] falha ao enviar (${res.status}): ${body}`);
+      const bodyText = await res.text().catch(() => '');
+      // Achado real (17/08/2026): "aceitou sem 422" não é a mesma coisa que
+      // "mandou de verdade" — a Boot Whats pode devolver HTTP 200 com
+      // `success: false` no corpo (mesmo formato do erro de validação, só
+      // sem status de erro), e o código antigo só olhava `res.ok`, nunca o
+      // corpo em caso de sucesso aparente. Log em nível LOG (não warn/error)
+      // pra não gerar ruído — só serve de rastro pra comparar quando alguém
+      // reportar "não chegou".
+      let success: boolean | undefined;
+      try { success = JSON.parse(bodyText)?.success; } catch { /* corpo não é JSON, ignora */ }
+
+      if (!res.ok || success === false) {
+        this.logger.error(`[whatsapp] falha ao enviar (${res.status}): ${bodyText}`);
+      } else {
+        this.logger.log(`[whatsapp] enviado (${res.status}) to=${this.normalizarTelefone(params.to)} type=${params.type ?? 'compra_confirmada'}: ${bodyText}`);
       }
     } catch (err) {
       this.logger.error('[whatsapp] erro ao chamar Boot Whats', err as Error);
