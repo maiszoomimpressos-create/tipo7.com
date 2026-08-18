@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Car, Plus, Loader2, Clock, Banknote, CreditCard, Smartphone, Gift, X, ArrowLeft, DoorOpen,
-  Wallet, Lock, AlertTriangle,
+  Wallet, Lock, AlertTriangle, CheckCircle2, XCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
@@ -120,6 +120,18 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [saidaAlvo, setSaidaAlvo] = useState<Sessao | null>(null)
   const [formaPagamento, setFormaPagamento] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
   const [confirmandoSaida, setConfirmandoSaida] = useState(false)
+
+  // Pedido do usuário (17/08/2026): sinal visual grande no terminal do
+  // caixa depois de validar o pagamento (dinheiro/PIX hoje, cartão entra
+  // depois) — verde "LIBERADO" ou vermelho "ACESSO NEGADO", pra quem tá
+  // olhando de longe (ex: portão/cancela) saber na hora se o carro pode
+  // passar, sem precisar ler texto pequeno de erro.
+  const [statusAcesso, setStatusAcesso] = useState<{ tipo: 'liberado' | 'negado'; titulo: string; detalhe: string } | null>(null)
+  useEffect(() => {
+    if (!statusAcesso) return
+    const t = setTimeout(() => setStatusAcesso(null), statusAcesso.tipo === 'liberado' ? 3500 : 5000)
+    return () => clearTimeout(t)
+  }, [statusAcesso])
 
   // Impressão do ticket de estacionamento na entrada — mesmo padrão de
   // localStorage por evento já usado na Bilheteria (tipo7-impressora-${id}).
@@ -260,7 +272,12 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
         }),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.error ?? 'Erro ao registrar entrada'); return }
+      if (!res.ok) {
+        const msg = data.error ?? 'Erro ao registrar entrada'
+        setErro(msg)
+        setStatusAcesso({ tipo: 'negado', titulo: 'ACESSO NEGADO', detalhe: msg })
+        return
+      }
       // Falha de impressão não deve travar a entrada — o carro já está
       // registrado no banco nesse ponto, o comprovante físico é só um
       // reforço (o WhatsApp, se enviado, já cobre o caso de perda do papel).
@@ -270,12 +287,15 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           setErroImpressao(e instanceof Error ? e.message : 'Erro ao imprimir o ticket')
         })
       }
+      setStatusAcesso({ tipo: 'liberado', titulo: 'LIBERADO', detalhe: `${placa.trim().toUpperCase()} — entrada registrada` })
       setPlaca(''); setNomeCondutor(''); setTelefoneCondutor('')
       setModelo(''); setCor(''); setCpfCondutor(''); setFormaPagamentoEntrada('dinheiro')
       setPlacaAutopreenchida(false)
       await carregarSessoes()
     } catch {
-      setErro('Erro ao registrar entrada. Tente novamente.')
+      const msg = 'Erro ao registrar entrada. Tente novamente.'
+      setErro(msg)
+      setStatusAcesso({ tipo: 'negado', titulo: 'ACESSO NEGADO', detalhe: msg })
     } finally {
       setRegistrando(false)
     }
@@ -366,11 +386,19 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
         }),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.error ?? 'Erro ao registrar saída'); return }
+      if (!res.ok) {
+        const msg = data.error ?? 'Erro ao registrar saída'
+        setErro(msg)
+        setStatusAcesso({ tipo: 'negado', titulo: 'ACESSO NEGADO', detalhe: msg })
+        return
+      }
+      setStatusAcesso({ tipo: 'liberado', titulo: 'LIBERADO', detalhe: `${saidaAlvo.placa} — saída registrada` })
       setSaidaAlvo(null)
       await carregarSessoes()
     } catch {
-      setErro('Erro ao registrar saída. Tente novamente.')
+      const msg = 'Erro ao registrar saída. Tente novamente.'
+      setErro(msg)
+      setStatusAcesso({ tipo: 'negado', titulo: 'ACESSO NEGADO', detalhe: msg })
     } finally {
       setConfirmandoSaida(false)
     }
@@ -766,6 +794,31 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Sinal grande de liberado/negado — some sozinho, ou toque pra
+          fechar antes. z-[200] pra ficar acima até dos outros modais. */}
+      {statusAcesso && (
+        <div
+          onClick={() => setStatusAcesso(null)}
+          className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-4 px-6 cursor-pointer"
+          style={{
+            background: statusAcesso.tipo === 'liberado' ? 'rgba(22,163,74,0.97)' : 'rgba(220,38,38,0.97)',
+          }}
+        >
+          {statusAcesso.tipo === 'liberado'
+            ? <CheckCircle2 size={96} className="text-white" strokeWidth={1.5} />
+            : <XCircle size={96} className="text-white" strokeWidth={1.5} />}
+          <p className="text-white text-4xl font-bold tracking-wide text-center" style={{ fontFamily: 'var(--font-outfit)' }}>
+            {statusAcesso.titulo}
+          </p>
+          <p className="text-white/90 text-base text-center max-w-sm" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            {statusAcesso.detalhe}
+          </p>
+          <p className="text-white/60 text-xs mt-4" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Toque pra fechar
+          </p>
         </div>
       )}
     </div>
