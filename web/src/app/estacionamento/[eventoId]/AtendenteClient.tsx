@@ -185,6 +185,19 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     return calcularValorEstacionamento(config, saidaAlvo.entrada_em, new Date())
   }, [saidaAlvo, estacionamentos])
 
+  // Achado real (19/08/2026): o backend já bloqueia entrada duplicada da
+  // mesma placa no mesmo evento (ver registrar_entrada_estacionamento), mas
+  // só avisa o atendente quando ele aperta "Registrar entrada" — tarde
+  // demais, depois de já ter preenchido tudo. `sessoes` já traz TODAS as
+  // sessões abertas do evento (todos os estacionamentos, não só o
+  // selecionado — mesmo escopo do bloqueio no banco), então dá pra avisar
+  // assim que a placa bate com uma sessão aberta, sem round-trip extra.
+  const placaJaDentro = useMemo(() => {
+    const alvo = placa.trim().toUpperCase()
+    if (alvo.length !== 7) return null
+    return sessoes.find(s => s.placa.toUpperCase() === alvo) ?? null
+  }, [placa, sessoes])
+
   // Ocupação do lote selecionado — recalcula sozinho toda vez que a lista de
   // sessões abertas muda (entrada nova ocupa, saída libera).
   const estacionamentoAtual = estacionamentos.find(e => e.id === estacionamentoId) ?? null
@@ -583,10 +596,22 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                   <Loader2 size={14} className="animate-spin absolute right-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
                 )}
               </div>
-              {placaAutopreenchida && (
+              {placaAutopreenchida && !placaJaDentro && (
                 <p className="text-[10px] -mt-1 flex items-center gap-1" style={{ color: '#4ade80', fontFamily: 'var(--font-dm-sans)' }}>
                   Modelo e cor preenchidos automaticamente — confira antes de registrar.
                 </p>
+              )}
+              {placaJaDentro && (
+                <div className="rounded-lg px-3 py-2 -mt-1" style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.35)' }}>
+                  <p className="text-red-400 text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Esta placa já está dentro do estacionamento
+                  </p>
+                  <p className="text-red-400/70 text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    {placaJaDentro.estacionamentos?.nome ?? 'Estacionamento'} — entrada às{' '}
+                    {new Date(placaJaDentro.entrada_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.
+                    Registre a saída antes de uma nova entrada.
+                  </p>
+                </div>
               )}
               <div className="grid grid-cols-2 gap-2">
                 <input type="text" placeholder="Modelo *" value={modelo} disabled={lotado}
@@ -645,7 +670,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               )}
 
               <button type="button" onClick={handleRegistrarEntrada}
-                disabled={registrando || !placa.trim() || !modelo.trim() || !cor.trim() || lotado || (precisaCaixaEntrada && !caixaId) || (precisaPortaoEntrada && !portaoEntradaSel)}
+                disabled={registrando || !placa.trim() || !modelo.trim() || !cor.trim() || lotado || !!placaJaDentro || (precisaCaixaEntrada && !caixaId) || (precisaPortaoEntrada && !portaoEntradaSel)}
                 className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
                 style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
                 {registrando ? <Loader2 size={15} className="animate-spin" /> : <><Plus size={15} /> Registrar entrada</>}
