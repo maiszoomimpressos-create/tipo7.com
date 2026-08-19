@@ -198,22 +198,29 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     return sessoes.find(s => s.placa.toUpperCase() === alvo) ?? null
   }, [placa, sessoes])
 
-  // Aviso flutuante da placa duplicada — some ao trocar de placa/sumir a
-  // duplicata, ao clicar fora dele ou no X. O bloqueio do botão continua
-  // valendo mesmo escondido (só esconde o aviso, não desarma a trava).
-  const [avisoPlacaFechado, setAvisoPlacaFechado] = useState(false)
+  // Aviso flutuante da placa duplicada — cobre por cima os campos já
+  // preenchidos (não só ocupa espaço vazio embaixo do input). Fechar (X ou
+  // clique fora) já limpa os dados digitados, pedido do usuário
+  // (19/08/2026) pra não deixar lixo de uma tentativa barrada no
+  // formulário. Limpar a placa já derruba `placaJaDentro` sozinho (some
+  // menos que 7 caracteres), então não precisa de um segundo estado de
+  // "fechado".
   const avisoPlacaRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { setAvisoPlacaFechado(false) }, [placaJaDentro?.id])
+  const limparCamposPlaca = useCallback(() => {
+    setPlaca(''); setModelo(''); setCor('')
+    setNomeCondutor(''); setTelefoneCondutor(''); setCpfCondutor('')
+    setPlacaAutopreenchida(false); setVeiculoJaCadastrado(false)
+  }, [])
   useEffect(() => {
-    if (!placaJaDentro || avisoPlacaFechado) return
+    if (!placaJaDentro) return
     function onClickFora(e: MouseEvent) {
       if (avisoPlacaRef.current && !avisoPlacaRef.current.contains(e.target as Node)) {
-        setAvisoPlacaFechado(true)
+        limparCamposPlaca()
       }
     }
     document.addEventListener('mousedown', onClickFora)
     return () => document.removeEventListener('mousedown', onClickFora)
-  }, [placaJaDentro, avisoPlacaFechado])
+  }, [placaJaDentro, limparCamposPlaca])
 
   // Ocupação do lote selecionado — recalcula sozinho toda vez que a lista de
   // sessões abertas muda (entrada nova ocupa, saída libera).
@@ -612,94 +619,112 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                 {buscandoPlaca && (
                   <Loader2 size={14} className="animate-spin absolute right-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
                 )}
-                {placaJaDentro && !avisoPlacaFechado && (
+              </div>
+
+              {/* Resto do formulário — vira o "fundo" desfocado quando o
+                  aviso de placa duplicada cobre tudo por cima. */}
+              <div className="relative">
+                <div className={cn(
+                  'flex flex-col gap-3 transition-all duration-150',
+                  placaJaDentro && 'blur-[3px] opacity-30 pointer-events-none select-none'
+                )}>
+                  {placaAutopreenchida && !placaJaDentro && (
+                    <p className="text-[10px] -mt-1 flex items-center gap-1" style={{ color: '#4ade80', fontFamily: 'var(--font-dm-sans)' }}>
+                      Modelo e cor preenchidos automaticamente — confira antes de registrar.
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="text" placeholder="Modelo *" value={modelo} disabled={lotado}
+                      onChange={e => setModelo(e.target.value)}
+                      className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
+                    <input type="text" placeholder="Cor *" value={cor} disabled={lotado}
+                      onChange={e => setCor(e.target.value)}
+                      className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="text" placeholder="Nome (opcional)" value={nomeCondutor} disabled={lotado}
+                      onChange={e => setNomeCondutor(e.target.value)}
+                      className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
+                    <input type="tel" placeholder="WhatsApp (envio do ticket) *" value={telefoneCondutor} disabled={lotado}
+                      onChange={e => setTelefoneCondutor(e.target.value)}
+                      className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
+                  </div>
+                  <input type="text" placeholder="CPF do condutor (opcional)" value={cpfCondutor} disabled={lotado}
+                    inputMode="numeric" maxLength={14}
+                    onChange={e => setCpfCondutor(formatCPF(e.target.value))}
+                    className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
+
+                  {/* Preço fixo cobra na entrada */}
+                  {precisaPagarEntrada && (
+                    <div className="rounded-xl p-3" style={{ background: '#111', border: '1px solid #1c1c1c' }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>Preço fixo</p>
+                        <p className="text-white text-sm font-bold" style={{ fontFamily: 'var(--font-outfit)' }}>
+                          {formatBRL(precoEntradaFixo)}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {([
+                          { value: 'dinheiro' as const, icon: Banknote,    label: 'Dinheiro' },
+                          { value: 'pix'      as const, icon: Smartphone,  label: 'PIX'      },
+                          { value: 'cartao'   as const, icon: CreditCard,  label: 'Cartão'   },
+                          { value: 'cortesia' as const, icon: Gift,        label: 'Cortesia' },
+                        ]).map(({ value, icon: Icon, label }) => (
+                          <button key={value} type="button" onClick={() => setFormaPagamentoEntrada(value)}
+                            className={cn(
+                              'flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-medium transition-all',
+                              formaPagamentoEntrada === value
+                                ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white'
+                                : 'bg-[#0d0d0d] border-[#1c1c1c] text-[#777]'
+                            )}>
+                            <Icon size={12} /> {label}
+                          </button>
+                        ))}
+                      </div>
+                      {precisaCaixaEntrada && !caixaId && (
+                        <p className="text-red-400 text-[11px] mt-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                          Nenhum caixa designado pra você — peça pro organizador abrir e designar um caixa.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <button type="button" onClick={handleRegistrarEntrada}
+                    disabled={registrando || !placa.trim() || !modelo.trim() || !cor.trim() || lotado || !!placaJaDentro || (precisaCaixaEntrada && !caixaId) || (precisaPortaoEntrada && !portaoEntradaSel)}
+                    className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
+                    style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                    {registrando ? <Loader2 size={15} className="animate-spin" /> : <><Plus size={15} /> Registrar entrada</>}
+                  </button>
+                </div>
+
+                {placaJaDentro && (
                   <div ref={avisoPlacaRef}
-                    className="absolute left-0 right-0 top-full mt-1.5 z-20 rounded-lg px-3 py-2.5 shadow-lg"
-                    style={{ background: '#1a0d0d', border: '1px solid rgba(248,113,113,0.4)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                    className="absolute inset-0 z-30 flex flex-col rounded-xl p-4 shadow-2xl"
+                    style={{ background: '#1a0d0d', border: '1px solid rgba(248,113,113,0.45)', boxShadow: '0 12px 32px rgba(0,0,0,0.6)' }}>
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-red-400 text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      <p className="text-red-400 text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                         Esta placa já está dentro do estacionamento
                       </p>
-                      <button type="button" onClick={() => setAvisoPlacaFechado(true)}
-                        className="text-red-400/50 hover:text-red-400 shrink-0 -mt-0.5 -mr-0.5">
-                        <X size={13} />
+                      <button type="button" onClick={limparCamposPlaca}
+                        className="text-red-400/50 hover:text-red-400 shrink-0 -mt-1 -mr-1">
+                        <X size={16} />
                       </button>
                     </div>
-                    <p className="text-red-400/70 text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    <p className="text-red-400/70 text-xs mt-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                       {placaJaDentro.estacionamentos?.nome ?? 'Estacionamento'} — entrada às{' '}
                       {new Date(placaJaDentro.entrada_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.
+                    </p>
+                    <p className="text-red-400/70 text-xs mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                       Registre a saída antes de uma nova entrada.
                     </p>
+                    <button type="button" onClick={limparCamposPlaca}
+                      className="mt-auto w-full py-2.5 rounded-lg text-xs font-semibold text-red-400 border border-red-400/30 hover:bg-red-400/10 transition-colors"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Limpar e tentar outra placa
+                    </button>
                   </div>
                 )}
               </div>
-              {placaAutopreenchida && !placaJaDentro && (
-                <p className="text-[10px] -mt-1 flex items-center gap-1" style={{ color: '#4ade80', fontFamily: 'var(--font-dm-sans)' }}>
-                  Modelo e cor preenchidos automaticamente — confira antes de registrar.
-                </p>
-              )}
-              <div className="grid grid-cols-2 gap-2">
-                <input type="text" placeholder="Modelo *" value={modelo} disabled={lotado}
-                  onChange={e => setModelo(e.target.value)}
-                  className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
-                <input type="text" placeholder="Cor *" value={cor} disabled={lotado}
-                  onChange={e => setCor(e.target.value)}
-                  className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input type="text" placeholder="Nome (opcional)" value={nomeCondutor} disabled={lotado}
-                  onChange={e => setNomeCondutor(e.target.value)}
-                  className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
-                <input type="tel" placeholder="WhatsApp (envio do ticket) *" value={telefoneCondutor} disabled={lotado}
-                  onChange={e => setTelefoneCondutor(e.target.value)}
-                  className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
-              </div>
-              <input type="text" placeholder="CPF do condutor (opcional)" value={cpfCondutor} disabled={lotado}
-                inputMode="numeric" maxLength={14}
-                onChange={e => setCpfCondutor(formatCPF(e.target.value))}
-                className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
-
-              {/* Preço fixo cobra na entrada */}
-              {precisaPagarEntrada && (
-                <div className="rounded-xl p-3" style={{ background: '#111', border: '1px solid #1c1c1c' }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>Preço fixo</p>
-                    <p className="text-white text-sm font-bold" style={{ fontFamily: 'var(--font-outfit)' }}>
-                      {formatBRL(precoEntradaFixo)}
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {([
-                      { value: 'dinheiro' as const, icon: Banknote,    label: 'Dinheiro' },
-                      { value: 'pix'      as const, icon: Smartphone,  label: 'PIX'      },
-                      { value: 'cartao'   as const, icon: CreditCard,  label: 'Cartão'   },
-                      { value: 'cortesia' as const, icon: Gift,        label: 'Cortesia' },
-                    ]).map(({ value, icon: Icon, label }) => (
-                      <button key={value} type="button" onClick={() => setFormaPagamentoEntrada(value)}
-                        className={cn(
-                          'flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-medium transition-all',
-                          formaPagamentoEntrada === value
-                            ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white'
-                            : 'bg-[#0d0d0d] border-[#1c1c1c] text-[#777]'
-                        )}>
-                        <Icon size={12} /> {label}
-                      </button>
-                    ))}
-                  </div>
-                  {precisaCaixaEntrada && !caixaId && (
-                    <p className="text-red-400 text-[11px] mt-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Nenhum caixa designado pra você — peça pro organizador abrir e designar um caixa.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <button type="button" onClick={handleRegistrarEntrada}
-                disabled={registrando || !placa.trim() || !modelo.trim() || !cor.trim() || lotado || !!placaJaDentro || (precisaCaixaEntrada && !caixaId) || (precisaPortaoEntrada && !portaoEntradaSel)}
-                className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
-                style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-                {registrando ? <Loader2 size={15} className="animate-spin" /> : <><Plus size={15} /> Registrar entrada</>}
-              </button>
             </div>
             )}
 
