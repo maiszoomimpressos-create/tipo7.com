@@ -141,6 +141,13 @@ export class AutosaveService {
     }
   }
 
+  // Achado real (18/08/2026): até aqui, qualquer falha (status != 200,
+  // timeout, exceção de rede) virava "não achou" em silêncio — igual ao
+  // caso de placa nova de verdade. Sem log nenhum, uma falha real (401,
+  // 5xx, timeout) e uma busca legítima sem resultado eram indistinguíveis
+  // depois do fato, exigindo reproduzir manualmente pra saber qual foi.
+  // Loga como `warn` (best-effort, não deve travar o atendente) só quando
+  // NÃO for um "não achou" normal — mesmo padrão de criarOuAtualizarVeiculo.
   async buscarVeiculoPorPlaca(placa: string): Promise<VeiculoConsultado | null> {
     const creds = await this.getCredenciais('estacionamento');
     if (!creds) return null;
@@ -149,7 +156,11 @@ export class AutosaveService {
       const res = await this.fetchComTimeout(`${creds.baseUrl}/vehicles?plate=${encodeURIComponent(placa)}`, {
         headers: { 'x-api-key': creds.apiKey },
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        this.logger.warn(`[autosave/vehicles] lookup falhou (${res.status}) pra placa ${placa}: ${body.slice(0, 300) || 'sem corpo'}`);
+        return null;
+      }
 
       const data = (await res.json()) as { found?: boolean; vehicles?: AutosaveVehicle[] };
       if (!data.found || !data.vehicles?.length) return null;
@@ -161,7 +172,8 @@ export class AutosaveService {
         cor: exato.color?.trim() || null,
         telefone: exato.driver_phone?.trim() || null,
       };
-    } catch {
+    } catch (err) {
+      this.logger.error(`[autosave/vehicles] lookup falhou (rede/timeout) pra placa ${placa}`, err as Error);
       return null;
     }
   }
