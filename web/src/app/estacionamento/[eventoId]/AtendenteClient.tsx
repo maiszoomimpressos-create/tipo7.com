@@ -206,10 +206,20 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   // menos que 7 caracteres), então não precisa de um segundo estado de
   // "fechado".
   const avisoPlacaRef = useRef<HTMLDivElement>(null)
+  // Achado real (19/08/2026): limpar os campos não cancelava a busca de
+  // placa em andamento — se a resposta da Autosave chegasse DEPOIS do
+  // clique em "Limpar", ela reaplicava modelo/cor da placa antiga por
+  // cima dos campos recém-zerados. `placaAtualRef` espelha `placa` em
+  // tempo real (sem esperar o próximo render) pra handleBuscarPlaca
+  // conferir, quando a resposta chega, se ainda é a placa que o
+  // atendente está vendo — se não for, descarta o resultado.
+  const placaAtualRef = useRef('')
+  useEffect(() => { placaAtualRef.current = placa }, [placa])
   const limparCamposPlaca = useCallback(() => {
     setPlaca(''); setModelo(''); setCor('')
     setNomeCondutor(''); setTelefoneCondutor(''); setCpfCondutor('')
     setPlacaAutopreenchida(false); setVeiculoJaCadastrado(false)
+    placaAtualRef.current = ''
   }, [])
   useEffect(() => {
     if (!placaJaDentro) return
@@ -261,6 +271,10 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     try {
       const res = await apiFetchAuth(`/api/estacionamento/placa-lookup?placa=${encodeURIComponent(placaLimpa)}`)
       const data = await res.json()
+      // Descarta se o atendente já trocou/limpou a placa enquanto a busca
+      // estava em andamento — evita reaplicar modelo/cor de uma placa que
+      // não é mais a que está na tela (ver comentário em placaAtualRef).
+      if (placaAtualRef.current.trim().toUpperCase() !== placaLimpa) return
       if (data.found) {
         if (data.modelo) setModelo(data.modelo)
         if (data.cor)    setCor(data.cor)
