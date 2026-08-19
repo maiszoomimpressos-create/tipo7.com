@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Car, Plus, Loader2, Clock, Banknote, CreditCard, Smartphone, Gift, X, ArrowLeft, DoorOpen,
@@ -197,6 +197,23 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     if (alvo.length !== 7) return null
     return sessoes.find(s => s.placa.toUpperCase() === alvo) ?? null
   }, [placa, sessoes])
+
+  // Aviso flutuante da placa duplicada — some ao trocar de placa/sumir a
+  // duplicata, ao clicar fora dele ou no X. O bloqueio do botão continua
+  // valendo mesmo escondido (só esconde o aviso, não desarma a trava).
+  const [avisoPlacaFechado, setAvisoPlacaFechado] = useState(false)
+  const avisoPlacaRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { setAvisoPlacaFechado(false) }, [placaJaDentro?.id])
+  useEffect(() => {
+    if (!placaJaDentro || avisoPlacaFechado) return
+    function onClickFora(e: MouseEvent) {
+      if (avisoPlacaRef.current && !avisoPlacaRef.current.contains(e.target as Node)) {
+        setAvisoPlacaFechado(true)
+      }
+    }
+    document.addEventListener('mousedown', onClickFora)
+    return () => document.removeEventListener('mousedown', onClickFora)
+  }, [placaJaDentro, avisoPlacaFechado])
 
   // Ocupação do lote selecionado — recalcula sozinho toda vez que a lista de
   // sessões abertas muda (entrada nova ocupa, saída libera).
@@ -595,23 +612,31 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                 {buscandoPlaca && (
                   <Loader2 size={14} className="animate-spin absolute right-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
                 )}
+                {placaJaDentro && !avisoPlacaFechado && (
+                  <div ref={avisoPlacaRef}
+                    className="absolute left-0 right-0 top-full mt-1.5 z-20 rounded-lg px-3 py-2.5 shadow-lg"
+                    style={{ background: '#1a0d0d', border: '1px solid rgba(248,113,113,0.4)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-red-400 text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        Esta placa já está dentro do estacionamento
+                      </p>
+                      <button type="button" onClick={() => setAvisoPlacaFechado(true)}
+                        className="text-red-400/50 hover:text-red-400 shrink-0 -mt-0.5 -mr-0.5">
+                        <X size={13} />
+                      </button>
+                    </div>
+                    <p className="text-red-400/70 text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {placaJaDentro.estacionamentos?.nome ?? 'Estacionamento'} — entrada às{' '}
+                      {new Date(placaJaDentro.entrada_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.
+                      Registre a saída antes de uma nova entrada.
+                    </p>
+                  </div>
+                )}
               </div>
               {placaAutopreenchida && !placaJaDentro && (
                 <p className="text-[10px] -mt-1 flex items-center gap-1" style={{ color: '#4ade80', fontFamily: 'var(--font-dm-sans)' }}>
                   Modelo e cor preenchidos automaticamente — confira antes de registrar.
                 </p>
-              )}
-              {placaJaDentro && (
-                <div className="rounded-lg px-3 py-2 -mt-1" style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.35)' }}>
-                  <p className="text-red-400 text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Esta placa já está dentro do estacionamento
-                  </p>
-                  <p className="text-red-400/70 text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    {placaJaDentro.estacionamentos?.nome ?? 'Estacionamento'} — entrada às{' '}
-                    {new Date(placaJaDentro.entrada_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.
-                    Registre a saída antes de uma nova entrada.
-                  </p>
-                </div>
               )}
               <div className="grid grid-cols-2 gap-2">
                 <input type="text" placeholder="Modelo *" value={modelo} disabled={lotado}
