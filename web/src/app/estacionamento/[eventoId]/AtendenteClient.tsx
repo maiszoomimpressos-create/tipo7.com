@@ -203,9 +203,15 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portoesEntradaDisponiveis])
 
-  const handleBuscarPlaca = async () => {
-    const placaLimpa = placa.trim()
-    if (placaLimpa.length < 7) return
+  // Achado real (18/08/2026, pedido do dono): antes só buscava no onBlur —
+  // ou seja, só depois do atendente tirar o foco do campo, um passo a mais e
+  // um delay evitável. Agora o onChange chama isso já passando o valor novo
+  // direto (aceita `valorPlaca` em vez de ler `placa` do estado, que ainda
+  // não foi commitado nesse mesmo ciclo de render — closure velha clássica).
+  // onBlur continua de reforço (cobre paste/autofill que não passa aqui).
+  const handleBuscarPlaca = async (valorPlaca?: string) => {
+    const placaLimpa = (valorPlaca ?? placa).trim()
+    if (placaLimpa.length !== 7) return
     setBuscandoPlaca(true)
     try {
       const res = await apiFetchAuth(`/api/estacionamento/placa-lookup?placa=${encodeURIComponent(placaLimpa)}`)
@@ -548,8 +554,15 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               )}
               <div className="relative">
                 <input type="text" placeholder="Placa *" value={placa} disabled={lotado}
-                  onChange={e => { setPlaca(e.target.value.toUpperCase()); setPlacaAutopreenchida(false) }}
-                  onBlur={handleBuscarPlaca}
+                  onChange={e => {
+                    const next = e.target.value.toUpperCase()
+                    setPlaca(next)
+                    setPlacaAutopreenchida(false)
+                    // Dispara assim que a 7ª letra/número é digitado — não
+                    // espera o atendente tirar o foco do campo.
+                    if (next.trim().length === 7) void handleBuscarPlaca(next)
+                  }}
+                  onBlur={() => handleBuscarPlaca()}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)', textTransform: 'uppercase' }} />
                 {buscandoPlaca && (
                   <Loader2 size={14} className="animate-spin absolute right-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
