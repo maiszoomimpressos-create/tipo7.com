@@ -473,7 +473,12 @@ export class EstacionamentoService {
   async placaLookup(placa: string) {
     const veiculo = await this.autosave.buscarVeiculoPorPlaca(placa);
     if (!veiculo) return { found: false };
-    return { found: true, modelo: veiculo.modelo, cor: veiculo.cor };
+    // `jaCadastrado` repassado pro front -- distingue "já é veículo de
+    // verdade" de "achamos o dado mas nunca foi cadastrado" (ver
+    // AutosaveService.buscarVeiculoPorPlaca). O front usa isso, não mais
+    // "achou = já cadastrado", pra decidir se ainda precisa mandar o POST
+    // de criação na entrada.
+    return { found: true, modelo: veiculo.modelo, cor: veiculo.cor, jaCadastrado: veiculo.jaCadastrado };
   }
 
   async abrirCaixa(userId: string, eventoId: string, body: Record<string, any>) {

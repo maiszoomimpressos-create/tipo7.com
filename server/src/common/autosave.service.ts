@@ -20,6 +20,15 @@ interface AutosaveVehicle {
   model?: string;
   color?: string;
   driver_phone?: string;
+  // Achado real (19/08/2026, dado real perdido em produção): `found: true`
+  // na Autosave passou a significar duas coisas diferentes desde que ela
+  // ganhou fallback pra APIBrasil -- "já é um veículo cadastrado de
+  // verdade" OU "achamos o dado agora, mas nunca foi cadastrado". Sem esse
+  // campo pra distinguir, `entrada()` sempre assumia a primeira opção
+  // (via `veiculoJaCadastrado: placaAutopreenchida`) e pulava o POST que
+  // criaria o veículo -- placa nunca virava cadastro na Autosave mesmo
+  // depois do atendente confirmar a entrada.
+  registered?: boolean;
 }
 
 // Contrato completo de POST /vehicles, recebido do time da Autosave em
@@ -72,6 +81,11 @@ export interface VeiculoConsultado {
   modelo: string | null;
   cor: string | null;
   telefone: string | null;
+  // true só quando a Autosave confirma que é um veículo já cadastrado de
+  // verdade (tabela `vehicles`) -- false quando o dado veio de cache/
+  // APIBrasil mas ainda não virou cadastro. Quem chama usa isso pra saber
+  // se ainda precisa mandar o POST de criação.
+  jaCadastrado: boolean;
 }
 
 export interface AutosaveCustomer {
@@ -180,6 +194,7 @@ export class AutosaveService {
         modelo: this.montarModelo(exato),
         cor: exato.color?.trim() || null,
         telefone: exato.driver_phone?.trim() || null,
+        jaCadastrado: exato.registered === true,
       };
     } catch (err) {
       this.logger.error(`[autosave/vehicles] lookup falhou (rede/timeout) pra placa ${placa}`, err as Error);

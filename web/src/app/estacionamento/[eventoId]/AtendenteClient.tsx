@@ -102,6 +102,14 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [cpfCondutor, setCpfCondutor] = useState('')
   const [buscandoPlaca, setBuscandoPlaca] = useState(false)
   const [placaAutopreenchida, setPlacaAutopreenchida] = useState(false)
+  // Achado real (19/08/2026, dado real perdido em produção): separado de
+  // `placaAutopreenchida` de propósito. Autopreencher (achou dado) não é a
+  // mesma coisa que já estar cadastrado na Autosave -- desde o fallback pra
+  // APIBrasil, uma placa nunca vista antes também autopreenche, mas não é
+  // veículo cadastrado ainda. Usar `placaAutopreenchida` aqui fazia a
+  // entrada "pular" o POST que criaria o veículo, e ele nunca aparecia na
+  // Autosave mesmo depois de "Registrar entrada".
+  const [veiculoJaCadastrado, setVeiculoJaCadastrado] = useState(false)
   const [registrando, setRegistrando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [formaPagamentoEntrada, setFormaPagamentoEntrada] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
@@ -220,6 +228,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
         if (data.modelo) setModelo(data.modelo)
         if (data.cor)    setCor(data.cor)
         setPlacaAutopreenchida(true)
+        setVeiculoJaCadastrado(data.jaCadastrado === true)
       }
     } catch {
       // Busca é best-effort — se falhar, atendente preenche manualmente.
@@ -267,10 +276,14 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           cpfCondutor:       cpfCondutor.trim()       || undefined,
           // Achado real (17/08/2026): reenviar o "modelo" pra Autosave numa
           // placa que já veio do autopreenchimento duplicava a marca a cada
-          // entrada repetida (ver salvarVeiculoNaAutosave). `placaAutopreenchida`
-          // já rastreia exatamente isso — se veio da busca, não precisa
-          // salvar de novo.
-          veiculoJaCadastrado: placaAutopreenchida,
+          // entrada repetida (ver salvarVeiculoNaAutosave).
+          // Achado real (19/08/2026): `placaAutopreenchida` só diz "achamos
+          // dado pra essa placa" — não diz se ela já é um veículo cadastrado
+          // de verdade (desde o fallback pra APIBrasil, placa nunca vista
+          // também autopreenche). Usar `veiculoJaCadastrado` (confirmado pela
+          // própria Autosave) é o que garante que uma placa nova de fato
+          // recebe o POST que cria o veículo, mesmo já vindo autopreenchida.
+          veiculoJaCadastrado,
           semWhatsapp,
           formaPagamento:    precisaPagarEntrada ? formaPagamentoEntrada : undefined,
           caixaId:           precisaCaixaEntrada ? caixaId ?? undefined : undefined,
@@ -297,6 +310,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
       setPlaca(''); setNomeCondutor(''); setTelefoneCondutor('')
       setModelo(''); setCor(''); setCpfCondutor(''); setFormaPagamentoEntrada('dinheiro')
       setPlacaAutopreenchida(false)
+      setVeiculoJaCadastrado(false)
       await carregarSessoes()
     } catch {
       const msg = 'Erro ao registrar entrada. Tente novamente.'
@@ -558,6 +572,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                     const next = e.target.value.toUpperCase()
                     setPlaca(next)
                     setPlacaAutopreenchida(false)
+                    setVeiculoJaCadastrado(false)
                     // Dispara assim que a 7ª letra/número é digitado — não
                     // espera o atendente tirar o foco do campo.
                     if (next.trim().length === 7) void handleBuscarPlaca(next)
