@@ -1,7 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-const AUTOSAVE_TIMEOUT_MS = 3000;
+// Achado real (18/08/2026, ao vivo em produção): 3000ms era curto demais
+// pra primeira busca de uma placa nova depois que a Autosave passou a ter
+// fallback pago (APIBrasil) quando não acha no cache/banco dela — medido
+// direto: uma consulta fria (nunca vista) levou ~1.9s SEM o nosso timeout,
+// mas o log novo em buscarVeiculoPorPlaca pegou um AbortError real batendo
+// nos 3s antes disso, o que virava "não achou" em silêncio (o pior caso:
+// justamente a placa nova que a feature de fallback foi feita pra cobrir).
+// Subido pra 8000ms — folga sobre o pior caso observado, sem deixar o
+// atendente esperando indefinidamente se a Autosave cair de vez.
+const AUTOSAVE_TIMEOUT_MS = 8000;
 
 type Area = 'usuarios' | 'estacionamento';
 
