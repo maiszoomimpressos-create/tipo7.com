@@ -698,30 +698,28 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                 </div>
 
                 {placaJaDentro && (
-                  <div ref={avisoPlacaRef}
-                    className="absolute inset-0 z-30 flex flex-col rounded-xl p-4 shadow-2xl"
-                    style={{ background: '#1a0d0d', border: '1px solid rgba(248,113,113,0.45)', boxShadow: '0 12px 32px rgba(0,0,0,0.6)' }}>
-                    <div className="flex items-start justify-between gap-2">
+                  <div className="absolute inset-0 z-30 flex items-center justify-center p-3">
+                    <div ref={avisoPlacaRef}
+                      className="w-full max-w-[240px] flex flex-col items-center text-center rounded-xl p-4 shadow-2xl"
+                      style={{ background: '#1a0d0d', border: '1px solid rgba(248,113,113,0.45)', boxShadow: '0 12px 32px rgba(0,0,0,0.6)' }}>
+                      <button type="button" onClick={limparCamposPlaca}
+                        className="self-end text-red-400/50 hover:text-red-400 -mt-1.5 -mr-1.5 mb-1">
+                        <X size={15} />
+                      </button>
                       <p className="text-red-400 text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                         Esta placa já está dentro do estacionamento
                       </p>
+                      <p className="text-red-400/70 text-xs mt-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        {placaJaDentro.estacionamentos?.nome ?? 'Estacionamento'} — entrada às{' '}
+                        {new Date(placaJaDentro.entrada_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.
+                        {' '}Registre a saída antes de uma nova entrada.
+                      </p>
                       <button type="button" onClick={limparCamposPlaca}
-                        className="text-red-400/50 hover:text-red-400 shrink-0 -mt-1 -mr-1">
-                        <X size={16} />
+                        className="mt-3 w-full py-2 rounded-lg text-xs font-semibold text-red-400 border border-red-400/30 hover:bg-red-400/10 transition-colors"
+                        style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        Limpar e tentar outra placa
                       </button>
                     </div>
-                    <p className="text-red-400/70 text-xs mt-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {placaJaDentro.estacionamentos?.nome ?? 'Estacionamento'} — entrada às{' '}
-                      {new Date(placaJaDentro.entrada_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.
-                    </p>
-                    <p className="text-red-400/70 text-xs mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Registre a saída antes de uma nova entrada.
-                    </p>
-                    <button type="button" onClick={limparCamposPlaca}
-                      className="mt-auto w-full py-2.5 rounded-lg text-xs font-semibold text-red-400 border border-red-400/30 hover:bg-red-400/10 transition-colors"
-                      style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      Limpar e tentar outra placa
-                    </button>
                   </div>
                 )}
               </div>
