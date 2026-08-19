@@ -287,6 +287,15 @@ export class EstacionamentoService {
     if (resultado?.error === 'lotado') throw new ConflictException('Lotado — não há vagas disponíveis neste estacionamento.');
     if (resultado?.error === 'estacionamento_inativo') throw new BadRequestException('Estacionamento inativo');
     if (resultado?.error === 'estacionamento_nao_encontrado') throw new NotFoundException('Estacionamento não encontrado');
+    // Achado real (19/08/2026): sem essa checagem (agora feita atômica dentro
+    // de registrar_entrada_estacionamento, com lock, pra não abrir brecha de
+    // corrida entre checar e inserir) a mesma placa reenviada — reteste do
+    // operador, duplo clique, etc. — criava uma sessão nova a cada vez em vez
+    // de recusar. Achamos 40 sessões abertas pra 23 placas num evento de
+    // teste; limpeza retroativa feita manualmente, isso aqui evita reincidir.
+    if (resultado?.error === 'placa_ja_dentro') {
+      throw new ConflictException('Esta placa já está registrada como dentro do estacionamento. Registre a saída antes de uma nova entrada.');
+    }
     if (!resultado?.sessao_id) throw new BadRequestException('Erro ao registrar entrada');
 
     // Best-effort — não aguarda nem bloqueia a resposta. Só salva de volta
