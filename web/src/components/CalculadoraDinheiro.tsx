@@ -59,6 +59,12 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
 
   // Refs diretos para os elementos DOM dos campos Valor — lidos no blur sem tocar em state
   const valEls = useRef<Record<number, HTMLInputElement | null>>({})
+  // Refs dos campos Qtd — achado real (20/08/2026): usuário esperava digitar
+  // direto sem precisar clicar em cada campo primeiro (mesma reclamação da
+  // Calculadora, que só respondia a clique). Foco automático no primeiro
+  // campo ao abrir a aba + Enter avança pro próximo, pra dar pra contar tudo
+  // só no teclado.
+  const qtyEls = useRef<(HTMLInputElement | null)[]>([])
 
   const [focused, setFocused] = useState<string | null>(null)
 
@@ -196,6 +202,13 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, disp, prev, op, newNum])
 
+  // Foca o primeiro campo (R$200) assim que a aba Cédulas fica ativa — sem
+  // isso, o usuário tinha que clicar num campo antes de conseguir digitar
+  // qualquer coisa.
+  useEffect(() => {
+    if (tab === 'cedulas') qtyEls.current[0]?.focus()
+  }, [tab])
+
   const CALC_KEYS = [
     'C', '←', '%', '÷',
     '7', '8', '9', '×',
@@ -323,6 +336,7 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
 
                       {/* Campo Quantidade — controlado, atualiza total em tempo real */}
                       <input
+                        ref={el => { qtyEls.current[idx] = el }}
                         type="number"
                         min="0"
                         step="1"
@@ -332,6 +346,13 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
                         onChange={e => onQtyChange(c.valor, e.target.value)}
                         onFocus={() => setFocused(`${c.valor}-qty`)}
                         onBlur={() => setFocused(null)}
+                        onKeyDown={e => {
+                          if (e.key !== 'Enter') return
+                          e.preventDefault()
+                          const proximo = qtyEls.current[idx + 1]
+                          if (proximo) proximo.focus()
+                          else (e.target as HTMLInputElement).blur()
+                        }}
                         style={{
                           ...inputBase(`${c.valor}-qty`, isAtivo),
                           textAlign: 'center',
