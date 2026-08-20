@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
+import { CaixasService } from '../caixas/caixas.service';
 import { OrgAdminService } from '../org-admin/org-admin.service';
 import { EventPermissionsService } from '../event-permissions/event-permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +13,7 @@ export class EventosAdminService {
     private readonly prisma: PrismaService,
     private readonly orgAdmin: OrgAdminService,
     private readonly eventPermissions: EventPermissionsService,
+    private readonly caixas: CaixasService,
   ) {}
 
   private async assertOwner(userId: string, eventoId: string): Promise<void> {
@@ -709,18 +711,13 @@ export class EventosAdminService {
     return { ok: true };
   }
 
-  // ==== encerramento de evento (19/08/2026, design combinado — ver
+  // ==== encerramento de evento (19-20/08/2026, design combinado — ver
   // project_token_pin_acesso_caixa na memória) ====
-  //
-  // Só a pré-checagem por enquanto — lista o que impede o caminho normal de
-  // encerrar (caixa não fechado, sessão de estacionamento ainda aberta), sem
-  // executar nada. A ação de encerrar em si (com o caminho de exceção via
-  // senha) e o cron automático por dateEnd ainda não foram construídos —
-  // dependem de decisão do usuário sobre o que fazer com pendência (fechar
-  // sozinho vs. travar como registro pendente).
-  async getPendenciasEncerramento(userId: string, eventoId: string) {
-    await this.assertOwner(userId, eventoId);
 
+  // Extraído pra reuso em getPendenciasEncerramento() (leitura, tela) e
+  // encerrar()/o cron automático (decisão de bloquear ou não). Não é
+  // `private` de propósito — EventosLifecycleCronService reusa via injeção.
+  async calcularPendenciasEncerramento(eventoId: string) {
     const caixasPendentes = await this.prisma.caixa.findMany({
       where: { eventoId, status: { not: 'fechado' } },
       select: { id: true, nome: true, status: true },
@@ -736,6 +733,71 @@ export class EventosAdminService {
       caixas_pendentes: caixasPendentes.map((c) => ({ id: c.id, nome: c.nome, status: c.status })),
       sessoes_abertas: sessoesAbertas.map((s) => ({ id: s.id, placa: s.placa, estacionamento_nome: s.estacionamento.nome })),
     };
+  }
+
+  // GET /eventos/:id/encerramento/pendencias — só leitura, base pro botão.
+  async getPendenciasEncerramento(userId: string, eventoId: string) {
+    await this.assertOwner(userId, eventoId);
+    return this.calcularPendenciasEncerramento(eventoId);
+  }
+
+  // Efetivamente fecha o evento — apaga token+PIN de todo EventStaff (o
+  // registro em si permanece, é histórico de quem trabalhou) e marca o
+  // evento como encerrado. Reusado pelo caminho manual (limpo ou forçado) e
+  // pelo cron automático (só caminho limpo, nunca força sozinho). Não é
+  // `private` de propósito — EventosLifecycleCronService reusa via injeção.
+  async fecharEventoDeVerdade(eventoId: string, opts: { forcado: boolean; por: string | null; snapshot: unknown }) {
+    await this.prisma.eventStaff.updateMany({
+      where: { eventId: eventoId },
+      data: { token: null, pinHash: null, pinTentativas: 0, pinBloqueadoAte: null },
+    });
+    await this.prisma.event.update({
+      where: { id: eventoId },
+      data: {
+        status: 'encerrado',
+        vendasOnlinePausadas: true,
+        encerradoEm: new Date(),
+        encerradoForcado: opts.forcado,
+        encerradoPor: opts.por,
+        encerradoPendenciasSnapshot: opts.forcado ? (opts.snapshot as Prisma.InputJsonValue) : Prisma.JsonNull,
+      },
+    });
+  }
+
+  // POST /eventos/:id/encerrar — pedido do usuário (20/08/2026): achou um
+  // evento de teste com dateEnd passado há 4 dias ainda 100% ativo, porque
+  // nada no sistema encerra evento sozinho. Caminho normal (sem pendência)
+  // fecha liso. Com pendência, exige forcar=true + o PIN do próprio dono
+  // (mesmo mecanismo da sangria — "assinatura", não é só um clique de OK) e
+  // grava snapshot de tudo que ficou pendente, pra auditoria.
+  async encerrar(userId: string, eventoId: string, body: { forcar?: boolean; codigo?: string }) {
+    const evento = await this.prisma.event.findUnique({
+      where: { id: eventoId },
+      select: { organizationId: true, status: true },
+    });
+    if (!evento) throw new NotFoundException('Evento não encontrado');
+    if (!(await this.orgAdmin.isOrgAdmin(evento.organizationId, userId))) throw new ForbiddenException('Sem permissão');
+    if (evento.status === 'encerrado') throw new BadRequestException('Este evento já está encerrado.');
+
+    const pendencias = await this.calcularPendenciasEncerramento(eventoId);
+
+    if (pendencias.pode_encerrar) {
+      await this.fecharEventoDeVerdade(eventoId, { forcado: false, por: userId, snapshot: null });
+      return { ok: true, forcado: false };
+    }
+
+    if (!body.forcar) {
+      // Não é exceção — é resposta normal pro front decidir mostrar a tela
+      // de "isso está pendente, quer forçar?" em vez de tratar como erro.
+      return { ok: false, precisa_forcar: true, ...pendencias };
+    }
+
+    if (!body.codigo?.trim()) throw new BadRequestException('Informe seu PIN ou senha pra autorizar o encerramento com pendência.');
+    const autorizado = await this.caixas.verificarPinOuSenhaDono(eventoId, userId, body.codigo.trim());
+    if (!autorizado) throw new ForbiddenException('Código de autorização inválido.');
+
+    await this.fecharEventoDeVerdade(eventoId, { forcado: true, por: userId, snapshot: pendencias });
+    return { ok: true, forcado: true };
   }
 
   // ==== funções ====

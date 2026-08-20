@@ -881,4 +881,20 @@ export class CaixasService {
 
     throw new ForbiddenException('Código de autorização inválido.');
   }
+
+  // "Assinatura" do dono pra ações sensíveis fora do módulo de caixa (hoje:
+  // encerramento forçado de evento com pendência — ver
+  // EventosAdminService.encerrar()). Mesmo princípio da sangria: PIN
+  // (dele mesmo, dessa vez — não de terceiro) ou senha da conta como
+  // fallback. Público — chamado pelo EventosModule via injeção de
+  // CaixasService.
+  async verificarPinOuSenhaDono(eventoId: string, ownerId: string, codigo: string): Promise<boolean> {
+    const staff = await this.prisma.eventStaff.findUnique({
+      where: { eventId_userId: { eventId: eventoId, userId: ownerId } },
+      select: { pinHash: true },
+    });
+    if (staff?.pinHash && (await bcrypt.compare(codigo, staff.pinHash))) return true;
+
+    return this.authCore.verifyPassword(ownerId, codigo);
+  }
 }

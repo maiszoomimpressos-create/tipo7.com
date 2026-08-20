@@ -70,6 +70,11 @@ export class EventosAdminController {
     return this.eventos.getPendenciasEncerramento(user.id, id);
   }
 
+  @Post('encerrar')
+  encerrar(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: { forcar?: boolean; codigo?: string }) {
+    return this.eventos.encerrar(user.id, id, body);
+  }
+
   @Get('funcoes')
   listFuncoes(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.eventos.listFuncoes(user.id, id);

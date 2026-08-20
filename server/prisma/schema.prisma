@@ -304,6 +304,15 @@ model Event {
   complement                String?
   vendasOnlinePausadas      Boolean                    @default(false) @map("vendas_online_pausadas")
   transferenciaRequerSenha  Boolean                    @default(false) @map("transferencia_requer_senha")
+  // Encerramento de evento (20/08/2026) — ver project_token_pin_acesso_caixa
+  // na memória. encerradoPendenciasSnapshot só é preenchido no caminho de
+  // exceção (força com pendência) — foto de quais caixas/sessões estavam
+  // pendentes no momento, pra auditoria.
+  encerradoEm               DateTime?                  @map("encerrado_em") @db.Timestamptz(6)
+  encerradoForcado          Boolean                    @default(false) @map("encerrado_forcado")
+  // FK -> profiles.id, quem autorizou (dono/organizador)
+  encerradoPor              String?                    @map("encerrado_por") @db.Uuid
+  encerradoPendenciasSnapshot Json?                     @map("encerrado_pendencias_snapshot")
   paymentGateway            String                     @default("mercadopago") @map("payment_gateway")
   moduloIngressos           Boolean                    @default(true) @map("modulo_ingressos")
   moduloEstacionamento      Boolean                    @default(false) @map("modulo_estacionamento")

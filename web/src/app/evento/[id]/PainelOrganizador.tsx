@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Ticket, Users, Settings, ExternalLink, BarChart2, Layers, Car, Loader2, ShoppingBag } from 'lucide-react'
+import { Ticket, Users, Settings, ExternalLink, BarChart2, Layers, Car, Loader2, ShoppingBag, PowerOff } from 'lucide-react'
 import { PainelIngressos, type IngressoEditavel } from './PainelIngressos'
 import { PainelEquipe } from './PainelEquipe'
 import { PainelAtributos } from './PainelAtributos'
+import { ModalEncerrarEvento } from './ModalEncerrarEvento'
 import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
@@ -26,6 +27,7 @@ export function PainelOrganizador({ eventoId, ingressos, capacity, dias, diaSele
   const [estacionamentoAtivo, setEstacionamentoAtivo] = useState(!!moduloEstacionamento)
   const [ativando, setAtivando] = useState(false)
   const [erroAtivar, setErroAtivar] = useState<string | null>(null)
+  const [modalEncerrar, setModalEncerrar] = useState(false)
 
   function handleUpdate(id: string, fields: Partial<IngressoEditavel>) {
     setLocalIngressos(prev => prev.map(t => t.id === id ? { ...t, ...fields } : t))
@@ -49,6 +51,14 @@ export function PainelOrganizador({ eventoId, ingressos, capacity, dias, diaSele
 
   return (
     <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #1a1a1a', background: '#0a0a0a' }}>
+
+      {modalEncerrar && (
+        <ModalEncerrarEvento
+          eventoId={eventoId}
+          onFechar={() => setModalEncerrar(false)}
+          onEncerrado={() => { setModalEncerrar(false); window.location.reload() }}
+        />
+      )}
 
       {/* Cabeçalho do painel */}
       <div className="px-4 pt-4 pb-0 min-w-0">
@@ -83,6 +93,15 @@ export function PainelOrganizador({ eventoId, ingressos, capacity, dias, diaSele
             >
               Editar <ExternalLink size={11} />
             </a>
+            <span className="text-[#222]">·</span>
+            <button
+              type="button"
+              onClick={() => setModalEncerrar(true)}
+              className="flex items-center gap-1 text-[#555] text-xs hover:text-red-400 transition-colors"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <PowerOff size={11} /> Encerrar
+            </button>
           </div>
         </div>
 
