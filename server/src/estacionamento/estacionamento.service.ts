@@ -64,8 +64,13 @@ export class EstacionamentoService {
       throw new ForbiddenException('Sem permissão');
     }
 
+    // Achado real (19/08/2026) — ver comentário em getStaffEstacionamento:
+    // sem isso, o atendente via (e podia operar) TODOS os estacionamentos do
+    // evento, mesmo o caixa dele estando vinculado a só um.
+    const estacionamentoRestrito = await this.eventPermissions.getStaffEstacionamento(userId, eventoId);
+
     const estacionamentos = await this.prisma.estacionamento.findMany({
-      where: { eventId: eventoId, ativo: true },
+      where: { eventId: eventoId, ativo: true, ...(estacionamentoRestrito ? { id: estacionamentoRestrito } : {}) },
       orderBy: { createdAt: 'asc' },
       include: { estacionamentoPortoes: true },
     });
@@ -188,7 +193,14 @@ export class EstacionamentoService {
       throw new ForbiddenException('Sem permissão para este evento');
     }
 
-    const estacionamentos = await this.prisma.estacionamento.findMany({ where: { eventId: eventoId }, select: { id: true } });
+    // Mesma restrição de listEstacionamentosAtivos — sem isso, o atendente
+    // via as sessões (carros dentro) de estacionamentos que não são o dele.
+    const estacionamentoRestrito = await this.eventPermissions.getStaffEstacionamento(userId, eventoId);
+
+    const estacionamentos = await this.prisma.estacionamento.findMany({
+      where: { eventId: eventoId, ...(estacionamentoRestrito ? { id: estacionamentoRestrito } : {}) },
+      select: { id: true },
+    });
     const ids = estacionamentos.map((e) => e.id);
     if (ids.length === 0) return { sessoes: [] };
 
@@ -228,6 +240,14 @@ export class EstacionamentoService {
 
     if (!(await this.eventPermissions.hasEventPermission(userId, estacionamento.eventId, 'estacionamento_entrada'))) {
       throw new ForbiddenException('Sem permissão para este evento');
+    }
+
+    // Mesma restrição de listEstacionamentosAtivos — sem isso o operador
+    // conseguia registrar entrada em qualquer estacionamento do evento,
+    // mesmo tendo caixa vinculado a só um (achado real 19/08/2026).
+    const estacionamentoRestrito = await this.eventPermissions.getStaffEstacionamento(userId, estacionamento.eventId);
+    if (estacionamentoRestrito && estacionamentoRestrito !== body.estacionamentoId) {
+      throw new ForbiddenException('Você só pode registrar entrada no seu estacionamento designado');
     }
 
     const portoes = estacionamento.estacionamentoPortoes;
@@ -408,6 +428,12 @@ export class EstacionamentoService {
 
     if (!(await this.eventPermissions.hasEventPermission(userId, config.eventId, 'estacionamento_saida'))) {
       throw new ForbiddenException('Sem permissão para este evento');
+    }
+
+    // Mesma restrição de entrada() acima.
+    const estacionamentoRestrito = await this.eventPermissions.getStaffEstacionamento(userId, config.eventId);
+    if (estacionamentoRestrito && estacionamentoRestrito !== config.id) {
+      throw new ForbiddenException('Você só pode registrar saída no seu estacionamento designado');
     }
 
     const portoes = config.estacionamentoPortoes;

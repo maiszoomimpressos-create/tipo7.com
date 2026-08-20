@@ -60,4 +60,24 @@ export class EventPermissionsService {
     });
     return staff?.portaoId ?? null;
   }
+
+  // Estacionamento ao qual esse membro está restrito (null = sem restrição —
+  // dono do evento, ou staff com caixa "geral" não vinculado a um local
+  // específico). Achado real (19/08/2026): um mesmo usuário com a permissão
+  // estacionamento_entrada/saida conseguia registrar entrada e cobrar em
+  // TODOS os estacionamentos do evento, porque a permissão era checada só no
+  // nível do evento — nunca no nível de "para qual estacionamento esse staff
+  // foi designado". A designação já existe (o promotor escolhe o
+  // estacionamento ao abrir o caixa do operador, ver GerenciadorEstacionamentos
+  // > AbrirCaixaModal), só faltava impor. Mesmo padrão de getStaffPortao
+  // acima, derivado do caixa aberto do operador em vez de um campo próprio.
+  async getStaffEstacionamento(userId: string, eventoId: string): Promise<string | null> {
+    if (await this.isEventOwner(userId, eventoId)) return null;
+
+    const caixa = await this.prisma.caixa.findFirst({
+      where: { eventoId, operadorId: userId, status: 'aberto' },
+      select: { estacionamentoId: true },
+    });
+    return caixa?.estacionamentoId ?? null;
+  }
 }
