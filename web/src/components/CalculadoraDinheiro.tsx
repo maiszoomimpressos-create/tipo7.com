@@ -65,15 +65,25 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
   // campo ao abrir a aba + Enter avança pro próximo, pra dar pra contar tudo
   // só no teclado.
   const qtyEls = useRef<(HTMLInputElement | null)[]>([])
+  const totalManualEl = useRef<HTMLInputElement | null>(null)
 
   const [focused, setFocused] = useState<string | null>(null)
 
-  const total = CEDULAS.reduce(
+  const totalCedulas = CEDULAS.reduce(
     (s, c) => s + Math.round(c.valor * 100) * (qtds[c.valor] ?? 0),
     0,
   ) / 100
 
+  // Achado real (20/08/2026): usuário queria digitar o valor total direto
+  // aqui no Cédulas, sem precisar trocar pra aba Calculadora — o "Total
+  // contado" era só texto fixo, não dava pra clicar nele. null = segue
+  // somando as denominações normalmente; um número = a pessoa digitou o
+  // total na mão, isso manda em vez da soma das cédulas.
+  const [totalManual, setTotalManual] = useState<number | null>(null)
+  const total = totalManual ?? totalCedulas
+
   function onQtyChange(denominacao: number, raw: string) {
+    setTotalManual(null) // voltar a mexer em cédula desfaz o valor digitado na mão
     const qty = Math.max(0, parseInt(raw) || 0)
     qtdsRef.current[denominacao] = qty       // ref síncrono
     setQtds(prev => ({ ...prev, [denominacao]: qty }))
@@ -86,6 +96,7 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
 
   function onValBlur(denominacao: number) {
     setFocused(null)
+    setTotalManual(null) // idem — desfaz o valor digitado na mão
     const el = valEls.current[denominacao]
     if (!el) return
     // Lê direto do DOM — nunca stale, independente de re-renders pendentes
@@ -103,8 +114,10 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
     CEDULAS.forEach(c => { m[c.valor] = 0 })
     qtdsRef.current = { ...m }
     setQtds(m)
+    setTotalManual(null)
     // Limpa campos Valor diretamente no DOM
     CEDULAS.forEach(c => { const el = valEls.current[c.valor]; if (el) el.value = '' })
+    if (totalManualEl.current) totalManualEl.current.value = ''
   }
 
   function salvar() {
@@ -209,6 +222,14 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
     if (tab === 'cedulas') qtyEls.current[0]?.focus()
   }, [tab])
 
+  // Mantém o campo "Total contado" sincronizado com a soma das cédulas —
+  // só quando ele não está em foco (senão apagava o que a pessoa acabou de
+  // digitar a cada tecla).
+  useEffect(() => {
+    const el = totalManualEl.current
+    if (el && document.activeElement !== el) el.value = fmt(total)
+  }, [total])
+
   const CALC_KEYS = [
     'C', '←', '%', '÷',
     '7', '8', '9', '×',
@@ -276,10 +297,30 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
               <div>
                 <p className="text-[#666] text-[10px] uppercase tracking-wider mb-0.5"
                    style={{ fontFamily: 'var(--font-dm-sans)' }}>Total contado</p>
-                <p className="font-bold"
-                   style={{ fontFamily: 'var(--font-outfit)', fontSize: '2rem', color: total > 0 ? '#fff' : '#444' }}>
-                  R$ {fmt(total)}
-                </p>
+                {/* Achado real (20/08/2026): isso aqui era um <p> fixo — não
+                    dava pra clicar e digitar o valor direto, só somava as
+                    cédulas de baixo. Agora é editável: digitar aqui vale
+                    como valor final (desfaz se voltar a mexer numa
+                    cédula), sem precisar trocar de aba. */}
+                <div className="flex items-baseline gap-1">
+                  <span className="font-bold" style={{ fontFamily: 'var(--font-outfit)', fontSize: '2rem', color: total > 0 ? '#fff' : '#444' }}>R$</span>
+                  <input
+                    ref={totalManualEl}
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0,00"
+                    defaultValue={fmt(total)}
+                    onChange={e => { e.target.value = e.target.value.replace(/[^0-9,.]/g, '') }}
+                    onBlur={e => {
+                      const raw = e.target.value.replace(',', '.')
+                      const val = Math.max(0, parseFloat(raw) || 0)
+                      setTotalManual(val)
+                      e.target.value = fmt(val)
+                    }}
+                    className="font-bold bg-transparent outline-none"
+                    style={{ fontFamily: 'var(--font-outfit)', fontSize: '2rem', color: total > 0 ? '#fff' : '#444', width: '9rem' }}
+                  />
+                </div>
               </div>
               {total > 0 && (
                 <button type="button" onClick={limpar}
