@@ -1,11 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Ticket, Users, Settings, ExternalLink, BarChart2, Layers, Car, Loader2, ShoppingBag, PowerOff } from 'lucide-react'
+import { Ticket, Users, Settings, ExternalLink, BarChart2, Layers, Car, Loader2, ShoppingBag, PowerOff, CalendarClock } from 'lucide-react'
 import { PainelIngressos, type IngressoEditavel } from './PainelIngressos'
 import { PainelEquipe } from './PainelEquipe'
 import { PainelAtributos } from './PainelAtributos'
 import { ModalEncerrarEvento } from './ModalEncerrarEvento'
+import { ModalAdiarEvento } from './ModalAdiarEvento'
 import { apiFetchAuth } from '@/lib/apiFetch'
 
 const ACCENT = '#E8B84B'
@@ -28,6 +29,7 @@ export function PainelOrganizador({ eventoId, ingressos, capacity, dias, diaSele
   const [ativando, setAtivando] = useState(false)
   const [erroAtivar, setErroAtivar] = useState<string | null>(null)
   const [modalEncerrar, setModalEncerrar] = useState(false)
+  const [modalAdiar, setModalAdiar] = useState(false)
 
   function handleUpdate(id: string, fields: Partial<IngressoEditavel>) {
     setLocalIngressos(prev => prev.map(t => t.id === id ? { ...t, ...fields } : t))
@@ -57,6 +59,14 @@ export function PainelOrganizador({ eventoId, ingressos, capacity, dias, diaSele
           eventoId={eventoId}
           onFechar={() => setModalEncerrar(false)}
           onEncerrado={() => { setModalEncerrar(false); window.location.reload() }}
+        />
+      )}
+
+      {modalAdiar && (
+        <ModalAdiarEvento
+          eventoId={eventoId}
+          onFechar={() => setModalAdiar(false)}
+          onAdiado={() => { setModalAdiar(false); window.location.reload() }}
         />
       )}
 
@@ -93,6 +103,15 @@ export function PainelOrganizador({ eventoId, ingressos, capacity, dias, diaSele
             >
               Editar <ExternalLink size={11} />
             </a>
+            <span className="text-[#222]">·</span>
+            <button
+              type="button"
+              onClick={() => setModalAdiar(true)}
+              className="flex items-center gap-1 text-[#555] text-xs hover:text-[#E8B84B] transition-colors"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <CalendarClock size={11} /> Adiar
+            </button>
             <span className="text-[#222]">·</span>
             <button
               type="button"

@@ -720,6 +720,53 @@ export class EventosAdminService {
     return { ok: true };
   }
 
+  // POST /eventos/:id/adiar — pedido do usuário (20/08/2026): promotor pode
+  // precisar empurrar a data do evento. Só a mecânica por enquanto (escolha
+  // explícita do usuário) — avisar quem já comprou ingresso fica pra depois,
+  // é escopo grande (não existe fluxo de notificação em massa hoje).
+  //
+  // Efeitos: troca as datas, reabre o evento se ele tinha sido encerrado
+  // (por causa da data velha) e reativa venda online (assume que a pausa
+  // foi automática por causa da data vencida — se o promotor tinha pausado
+  // manualmente por outro motivo, precisa pausar de novo depois). Não mexe
+  // no histórico de encerramento (encerradoEm etc.) — fica registrado que
+  // esse evento já foi encerrado uma vez, mesmo reaberto.
+  async adiar(userId: string, eventoId: string, body: { dateStart?: string; dateEnd?: string }) {
+    const evento = await this.prisma.event.findUnique({
+      where: { id: eventoId },
+      select: { organizationId: true, status: true },
+    });
+    if (!evento) throw new NotFoundException('Evento não encontrado');
+    if (!(await this.orgAdmin.isOrgAdmin(evento.organizationId, userId))) throw new ForbiddenException('Sem permissão');
+
+    if (evento.status === 'cancelado') throw new BadRequestException('Evento cancelado — não é possível adiar.');
+    if (evento.status === 'rascunho') throw new BadRequestException('Evento ainda em rascunho — edite a data normalmente, não precisa adiar.');
+
+    if (!body.dateStart) throw new BadRequestException('Informe a nova data de início.');
+    const novoInicio = new Date(body.dateStart);
+    const novoFim = body.dateEnd ? new Date(body.dateEnd) : null;
+    if (isNaN(novoInicio.getTime())) throw new BadRequestException('Data de início inválida.');
+    if (novoFim && isNaN(novoFim.getTime())) throw new BadRequestException('Data de fim inválida.');
+    if (novoFim && novoFim < novoInicio) throw new BadRequestException('Data de fim não pode ser antes da data de início.');
+
+    const referencia = novoFim ?? novoInicio;
+    if (referencia < new Date()) {
+      throw new BadRequestException('A nova data ainda está no passado — escolha uma data futura pra adiar de verdade.');
+    }
+
+    await this.prisma.event.update({
+      where: { id: eventoId },
+      data: {
+        dateStart: novoInicio,
+        dateEnd: novoFim,
+        ...(evento.status === 'encerrado' ? { status: 'publicado' } : {}),
+        vendasOnlinePausadas: false,
+      },
+    });
+
+    return { ok: true, reaberto: evento.status === 'encerrado' };
+  }
+
   // ==== encerramento de evento (19-20/08/2026, design combinado — ver
   // project_token_pin_acesso_caixa na memória) ====
 
