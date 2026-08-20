@@ -65,6 +65,11 @@ export class EventosAdminController {
     return this.eventos.removerMembro(user.id, id, staffId);
   }
 
+  @Patch('pausa-venda-automatica')
+  atualizarPausaVendaAutomatica(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: { ativa?: boolean }) {
+    return this.eventos.atualizarPausaVendaAutomatica(user.id, id, !!body.ativa);
+  }
+
   @Get('encerramento/pendencias')
   pendenciasEncerramento(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.eventos.getPendenciasEncerramento(user.id, id);

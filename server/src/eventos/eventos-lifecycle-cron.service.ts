@@ -30,6 +30,10 @@ export class EventosLifecycleCronService {
   ) {}
 
   // A cada 10 minutos — não precisa ser mais fino que isso, o buffer é de 1h.
+  // Só mexe em evento com pausaVendaAutomatica=true — chave do dono (pedido
+  // do usuário, 20/08/2026: nem todo evento quer isso, ex: vender até a
+  // porta). Default true preserva o comportamento que já foi pro ar antes
+  // dessa chave existir.
   @Cron('*/10 * * * *')
   async pausarVendasAutomaticamente() {
     const limite = new Date(Date.now() + BUFFER_PAUSA_VENDA_MS);
@@ -37,6 +41,7 @@ export class EventosLifecycleCronService {
       where: {
         status: 'publicado',
         vendasOnlinePausadas: false,
+        pausaVendaAutomatica: true,
         dateStart: { not: null, lte: limite },
       },
       data: { vendasOnlinePausadas: true },

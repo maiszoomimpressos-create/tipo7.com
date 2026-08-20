@@ -98,6 +98,10 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
   const [fase, setFase] = useState<'carregando' | 'semCaixas' | 'configurando' | 'abertos'>('carregando')
   const [pausado, setPausado]     = useState(false)
   const [requerSenha, setRequerSenha] = useState(false)
+  // Chave do dono (20/08/2026) — liga/desliga o cron que pausa venda online
+  // sozinho perto do início. Ver project_token_pin_acesso_caixa na memória.
+  const [pausaAutomatica, setPausaAutomatica] = useState(true)
+  const [salvandoPausaAuto, setSalvandoPausaAuto] = useState(false)
   const [ativarSaldo, setAtivarSaldo] = useState(false)
   const [caixas, setCaixas]       = useState<CaixaAberto[]>([])
   const [saldoBilheteria, setSaldoBilheteria] = useState<{
@@ -157,6 +161,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
     setCaixas(data.caixas ?? [])
     setPausado(data.vendas_online_pausadas ?? false)
     setRequerSenha(data.transferencia_requer_senha ?? false)
+    setPausaAutomatica(data.pausa_venda_automatica ?? true)
     setSaldoBilheteria(data.saldoBilheteria ?? null)
     const emAndamento = (data.caixas ?? []).filter((c: CaixaAberto) => c.status !== 'fechado')
     setFase(emAndamento.length > 0 ? 'abertos' : 'semCaixas')
@@ -297,6 +302,21 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
     })
     setPausado(false)
     setPausando(false)
+  }
+
+  async function alternarPausaAutomatica() {
+    const novoValor = !pausaAutomatica
+    setSalvandoPausaAuto(true)
+    setPausaAutomatica(novoValor) // otimista
+    try {
+      const res = await apiFetchAuth(`/api/eventos/${eventoId}/pausa-venda-automatica`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ativa: novoValor }),
+      })
+      if (!res.ok) setPausaAutomatica(!novoValor) // desfaz se der erro
+    } finally {
+      setSalvandoPausaAuto(false)
+    }
   }
 
   // ── Carregando ────────────────────────────────────────────────────────────
@@ -718,6 +738,26 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
       )}
 
       <div className="max-w-2xl mx-auto w-full px-5 py-6 flex flex-col gap-6">
+
+        {/* Chave do dono (20/08/2026) — liga/desliga o cron que pausa venda
+            online sozinho perto do início. Nem todo evento quer isso (ex:
+            quer vender até a porta). */}
+        <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+          <div className="flex-1">
+            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Pausar venda online automaticamente
+            </p>
+            <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {pausaAutomatica ? 'Pausa sozinho 1h antes do evento começar' : 'Desligado — venda online continua até você pausar na mão'}
+            </p>
+          </div>
+          <button type="button" onClick={alternarPausaAutomatica} disabled={salvandoPausaAuto}
+            className="w-12 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50"
+            style={{ background: pausaAutomatica ? ACCENT : '#222' }}>
+            <div className="absolute top-1 w-4 h-4 rounded-full bg-white transition-all"
+                 style={{ left: pausaAutomatica ? '26px' : '4px' }} />
+          </button>
+        </div>
 
         {err && (
           <div className="flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10">

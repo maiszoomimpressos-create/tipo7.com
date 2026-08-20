@@ -711,6 +711,15 @@ export class EventosAdminService {
     return { ok: true };
   }
 
+  // PATCH /eventos/:id/pausa-venda-automatica — o dono decide se quer que
+  // o cron pause a venda online sozinho perto do início (pedido do usuário,
+  // 20/08/2026: nem todo evento quer isso, ex: vender até a porta).
+  async atualizarPausaVendaAutomatica(userId: string, eventoId: string, ativa: boolean) {
+    await this.assertOwner(userId, eventoId);
+    await this.prisma.event.update({ where: { id: eventoId }, data: { pausaVendaAutomatica: ativa } });
+    return { ok: true };
+  }
+
   // ==== encerramento de evento (19-20/08/2026, design combinado — ver
   // project_token_pin_acesso_caixa na memória) ====
 

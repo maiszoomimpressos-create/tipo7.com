@@ -313,6 +313,12 @@ model Event {
   // FK -> profiles.id, quem autorizou (dono/organizador)
   encerradoPor              String?                    @map("encerrado_por") @db.Uuid
   encerradoPendenciasSnapshot Json?                     @map("encerrado_pendencias_snapshot")
+  // Pausa automática de venda online perto do início (20/08/2026) — pedido
+  // do usuário: fica a critério do dono ligar ou não, nem todo evento quer
+  // isso (ex: quer vender até a porta). Default true (o cron já estava
+  // rodando pra todo mundo antes dessa chave existir; ligado por padrão
+  // preserva o comportamento que já foi pro ar).
+  pausaVendaAutomatica      Boolean                    @default(true) @map("pausa_venda_automatica")
   paymentGateway            String                     @default("mercadopago") @map("payment_gateway")
   moduloIngressos           Boolean                    @default(true) @map("modulo_ingressos")
   moduloEstacionamento      Boolean                    @default(false) @map("modulo_estacionamento")

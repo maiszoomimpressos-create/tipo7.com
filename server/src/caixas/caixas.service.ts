@@ -119,7 +119,7 @@ export class CaixasService {
   async listPorEvento(userId: string, eventoId: string) {
     const evento = await this.prisma.event.findUnique({
       where: { id: eventoId },
-      select: { organizationId: true, vendasOnlinePausadas: true, transferenciaRequerSenha: true },
+      select: { organizationId: true, vendasOnlinePausadas: true, transferenciaRequerSenha: true, pausaVendaAutomatica: true },
     });
     if (!evento) throw new NotFoundException('Evento não encontrado');
     if (!(await this.orgAdmin.isOrgAdmin(evento.organizationId, userId))) throw new ForbiddenException('Sem permissão');
@@ -222,6 +222,7 @@ export class CaixasService {
       caixas: result,
       vendas_online_pausadas: evento.vendasOnlinePausadas,
       transferencia_requer_senha: evento.transferenciaRequerSenha,
+      pausa_venda_automatica: evento.pausaVendaAutomatica,
       saldoBilheteria,
     };
   }
