@@ -18,6 +18,7 @@ const PERMISSOES = [
   { value: 'gerenciar_checkin',    label: 'Gerenciar check-in'   },
   { value: 'estacionamento_entrada', label: 'Estacionamento — Entrada' },
   { value: 'estacionamento_saida',   label: 'Estacionamento — Saída'   },
+  { value: 'autorizar_sangria',      label: 'Autorizar sangria de caixa' },
 ]
 
 type Template = {
@@ -112,6 +113,7 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
     ver_lista_convidados: 'Ver lista', ver_relatorios: 'Relatórios',
     gerenciar_checkin: 'Check-in',
     estacionamento_entrada: 'Estac. entrada', estacionamento_saida: 'Estac. saída',
+    autorizar_sangria: 'Autoriza sangria',
   }
 
   return (

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
 import { Prisma } from '../../generated/prisma/client';
 import { AuthCoreService } from '../auth-core/auth-core.service';
 import { EventFamilyService } from '../common/event-family.service';
@@ -84,12 +85,32 @@ export class CaixasService {
       else if (o.paymentMethod === 'cartao') totalCartao += v;
     }
 
+    // Dinheiro do estacionamento (achado real, 20/08/2026, ao desenhar
+    // sangria): esse método só somava dinheiro de ingresso — fechar() soma
+    // os dois em código próprio, duplicado. Centralizando aqui também: sem
+    // isso, sangria de um caixa misto (bilheteria + estacionamento) validava
+    // "quanto tem pra sangrar" olhando só metade do dinheiro de verdade.
+    const sessoesEst = await this.prisma.estacionamentoSessao.findMany({
+      where: { caixaId, status: 'pago' },
+      select: { valorCobrado: true, formaPagamento: true },
+    });
+    for (const s of sessoesEst) {
+      if (s.formaPagamento === 'dinheiro') totalDinheiro += Number(s.valorCobrado ?? 0);
+    }
+
+    // Sangria (20/08/2026) — dinheiro retirado da gaveta sem fechar o caixa.
+    // Precisa entrar no cálculo do que "deveria ter na gaveta agora", senão
+    // toda sangria vira uma diferença falsa na hora de fechar/contar.
+    const sangrias = await this.prisma.caixaSangria.findMany({ where: { caixaId }, select: { valor: true } });
+    const totalSangrias = sangrias.reduce((s, x) => s + Number(x.valor), 0);
+
     return {
       controlaIngressosFisicos: controlaFisico,
       saldoIngressos: controlaFisico ? ingressosAlocados + recebidos - enviados - vendidos : null,
       vendidos, recebidos, enviados,
       totalDinheiro, totalPix, totalCartao,
       totalVendas: totalDinheiro + totalPix + totalCartao,
+      totalSangrias,
     };
   }
 
@@ -228,7 +249,7 @@ export class CaixasService {
       fundo_inicial: fundoInicial,
       evento,
       ...saldo,
-      expectedGaveta: Number(fundoInicial) + saldo.totalDinheiro,
+      expectedGaveta: Number(fundoInicial) + saldo.totalDinheiro - saldo.totalSangrias,
     };
   }
 
@@ -645,9 +666,14 @@ export class CaixasService {
       if (s.formaPagamento === 'dinheiro') totalDinheiroEstacionamento += Number(s.valorCobrado ?? 0);
     }
 
+    // Sangria (20/08/2026) — desconta do esperado, senão toda retirada feita
+    // durante o turno aparece como "sumiu dinheiro" na hora de fechar.
+    const sangrias = await this.prisma.caixaSangria.findMany({ where: { caixaId: body.caixaId }, select: { valor: true } });
+    const totalSangrias = sangrias.reduce((s, x) => s + Number(x.valor), 0);
+
     const totalDinheiro = totalDinheiroIngressos + totalDinheiroEstacionamento;
     const ingressosEntregues = caixa.ingressosAlocados + recebidos - enviados;
-    const expectedGaveta = Number(caixa.fundoInicial) + totalDinheiro;
+    const expectedGaveta = Number(caixa.fundoInicial) + totalDinheiro - totalSangrias;
     const diferencaDinheiro = expectedGaveta - body.dinheiro_contado;
     // null quando o caixa não controla ingresso físico — sem estoque de
     // pulseira de verdade, essa conta não tem o que representar (pedido do
@@ -691,6 +717,7 @@ export class CaixasService {
         total_dinheiro: totalDinheiro,
         total_dinheiro_ingressos: totalDinheiroIngressos,
         total_dinheiro_estacionamento: totalDinheiroEstacionamento,
+        total_sangrias: totalSangrias,
         expected_gaveta: expectedGaveta,
         dinheiro_contado: body.dinheiro_contado,
         diferenca_dinheiro: diferencaDinheiro,
@@ -730,5 +757,70 @@ export class CaixasService {
     await this.prisma.caixa.update({ where: { id: body.caixaId }, data: { status: 'fechado', fechadoEm: agora } });
 
     return { ok: true };
+  }
+
+  // POST /caixas/sangria (20/08/2026, design combinado — ver
+  // project_token_pin_acesso_caixa na memória). Retirada parcial de dinheiro
+  // da gaveta sem fechar o caixa. Quem opera a tela (isOwner/isOperador,
+  // mesma checagem de sempre) pode não ser quem literalmente pega o
+  // dinheiro — por isso não usa a sessão logada pra saber "quem retirou",
+  // pede um segundo código (PIN de staff autorizado, ou senha do dono).
+  async sangrar(userId: string, body: { caixaId?: string; valor?: number; motivo?: string; codigo?: string }) {
+    if (!body.caixaId || !body.valor || body.valor <= 0) throw new BadRequestException('Dados inválidos');
+    if (!body.codigo?.trim()) throw new BadRequestException('Informe o código de quem está retirando o dinheiro');
+
+    const caixa = await this.prisma.caixa.findUnique({
+      where: { id: body.caixaId },
+      include: { evento: { select: { organizationId: true } } },
+    });
+    if (!caixa) throw new NotFoundException('Caixa não encontrado');
+    if (caixa.status !== 'aberto') throw new BadRequestException('Só é possível sangrar um caixa aberto');
+
+    const isOwner = await this.orgAdmin.isOrgAdmin(caixa.evento.organizationId, userId);
+    const isOperador = caixa.operadorId === userId;
+    if (!isOwner && !isOperador) throw new ForbiddenException('Sem permissão');
+
+    const saldo = await this.calcularSaldoCaixa(caixa.id, caixa.ingressosAlocados, caixa.controlaIngressosFisicos);
+    const disponivel = Number(caixa.fundoInicial) + saldo.totalDinheiro - saldo.totalSangrias;
+    if (body.valor > disponivel) {
+      throw new BadRequestException(`Saldo insuficiente na gaveta. Disponível: R$ ${disponivel.toFixed(2)}.`);
+    }
+
+    const retiradoPorUserId = await this.resolverAutorizacaoSangria(caixa.eventoId, caixa.evento.organizationId, body.codigo.trim());
+
+    await this.prisma.caixaSangria.create({
+      data: { caixaId: caixa.id, valor: body.valor, motivo: body.motivo?.trim() || null, retiradoPorUserId },
+    });
+
+    const perfil = await this.prisma.profile.findUnique({ where: { id: retiradoPorUserId }, select: { fullName: true } });
+
+    return { ok: true, retirado_por: perfil?.fullName ?? 'Desconhecido', saldo_restante: disponivel - body.valor };
+  }
+
+  // Acha o dono do código digitado: staff ativo do MESMO evento com PIN
+  // batendo E permissão 'autorizar_sangria' na função dele, ou — fallback —
+  // a senha da conta do dono/organizador do evento (mesmo bcrypt.compare de
+  // authCore.verifyPassword, já usado em transferir()). PIN é único por
+  // evento (garantido em trabalhos.service.ts > definirPin()), então o
+  // primeiro match já é decisivo — não precisa continuar comparando.
+  private async resolverAutorizacaoSangria(eventoId: string, organizationId: string, codigo: string): Promise<string> {
+    const staffAtivo = await this.prisma.eventStaff.findMany({
+      where: { eventId: eventoId, status: 'active', pinHash: { not: null } },
+      select: { userId: true, pinHash: true, eventPosition: { select: { eventPositionPermissions: { select: { permission: true } } } } },
+    });
+    for (const s of staffAtivo) {
+      if (s.pinHash && (await bcrypt.compare(codigo, s.pinHash))) {
+        const temPermissao = (s.eventPosition?.eventPositionPermissions ?? []).some((p) => p.permission === 'autorizar_sangria');
+        if (!temPermissao) throw new ForbiddenException('Essa pessoa não tem permissão para autorizar sangria.');
+        return s.userId;
+      }
+    }
+
+    const org = await this.prisma.organization.findUnique({ where: { id: organizationId }, select: { ownerId: true } });
+    if (org?.ownerId && (await this.authCore.verifyPassword(org.ownerId, codigo))) {
+      return org.ownerId;
+    }
+
+    throw new ForbiddenException('Código de autorização inválido.');
   }
 }

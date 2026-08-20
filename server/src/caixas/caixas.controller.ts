@@ -68,4 +68,9 @@ export class CaixasController {
   validar(@CurrentUser() user: AuthenticatedUser, @Body() body: { caixaId: string }) {
     return this.caixas.validar(user.id, body);
   }
+
+  @Post('caixas/sangria')
+  sangrar(@CurrentUser() user: AuthenticatedUser, @Body() body: { caixaId?: string; valor?: number; motivo?: string; codigo?: string }) {
+    return this.caixas.sangrar(user.id, body);
+  }
 }

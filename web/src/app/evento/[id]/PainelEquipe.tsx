@@ -25,6 +25,7 @@ const PERMISSOES = [
   { value: 'validar_ingresso',        label: 'Scanner',              desc: 'Escanear QR na entrada'         },
   { value: 'vender_ingresso',         label: 'Caixa',                desc: 'Vender ingressos presencial'    },
   { value: 'estacionamento_entrada',  label: 'Estacionamento entrada', desc: 'Registrar entrada de veículos' },
+  { value: 'autorizar_sangria',       label: 'Autorizar sangria',    desc: 'Confirmar retirada de dinheiro de um caixa' },
   { value: 'ver_lista_convidados',    label: 'Ver lista',            desc: 'Lista de compradores'           },
   { value: 'ver_relatorios',          label: 'Ver relatórios',       desc: 'Vendas e presença'              },
   { value: 'gerenciar_checkin',       label: 'Gerenciar check-in',   desc: 'Controlar entrada/saída'        },
@@ -445,6 +446,7 @@ export function PainelEquipe({ eventoId }: Props) {
     gerenciar_checkin:       'Check-in',
     estacionamento_entrada:  'Estacionamento (entrada)',
     estacionamento_saida:    'Estacionamento (saída)',
+    autorizar_sangria:       'Autoriza sangria',
   }
 
   return (

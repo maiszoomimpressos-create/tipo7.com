@@ -118,16 +118,34 @@ export class TrabalhosService {
   // Usuário cria (ou recria) o PIN daquele evento específico — por evento,
   // não pessoal fixo (decisão explícita do usuário, 19/08/2026). Só o dono
   // do registro, só depois de aceito (token já existe).
+  //
+  // PIN precisa ser único DENTRO DO EVENTO (achado real, 20/08/2026, durante
+  // o desenho de sangria): bcrypt gera hash diferente pro mesmo PIN toda vez
+  // (salt aleatório), então não dá pra achar "quem tem esse PIN" com uma
+  // query direta — o único jeito é comparar contra cada staff ativo do
+  // evento. Se dois membros pudessem ter o mesmo PIN, a sangria (que resolve
+  // quem retirou o dinheiro SÓ pelo PIN digitado, sem token junto) não
+  // saberia diferenciar um do outro. Union por isso aqui na criação, não lá.
   async definirPin(userId: string, staffId: string | undefined, pin: string | undefined) {
     if (!staffId || !pin) throw new BadRequestException('Dados inválidos');
     if (!/^\d{4}$|^\d{6}$/.test(pin)) throw new BadRequestException('PIN deve ter 4 ou 6 dígitos numéricos');
 
     const registro = await this.prisma.eventStaff.findFirst({
       where: { id: staffId, userId, status: 'active' },
-      select: { id: true, token: true },
+      select: { id: true, token: true, eventId: true },
     });
     if (!registro) throw new NotFoundException('Registro não encontrado');
     if (!registro.token) throw new BadRequestException('Aceite o convite antes de criar o PIN');
+
+    const outrosDoEvento = await this.prisma.eventStaff.findMany({
+      where: { eventId: registro.eventId, status: 'active', pinHash: { not: null }, id: { not: staffId } },
+      select: { pinHash: true },
+    });
+    for (const outro of outrosDoEvento) {
+      if (outro.pinHash && (await bcrypt.compare(pin, outro.pinHash))) {
+        throw new BadRequestException('Esse PIN já está em uso por outro membro da equipe neste evento — escolha outro.');
+      }
+    }
 
     const pinHash = await bcrypt.hash(pin, BCRYPT_COST);
     await this.prisma.eventStaff.update({

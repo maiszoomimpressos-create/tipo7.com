@@ -37,6 +37,7 @@ enum EventPermission {
   gerenciar_estacionamento
   estacionamento_entrada
   estacionamento_saida
+  autorizar_sangria
 
   @@map("event_permission")
 }
@@ -796,6 +797,7 @@ model Caixa {
   estacionamentoId                String?                @map("estacionamento_id") @db.Uuid
   estacionamento                  Estacionamento?        @relation("Caixa_estacionamentoId", fields: [estacionamentoId], references: [id], onDelete: SetNull)
   caixaFechamentos                CaixaFechamento[]      @relation("CaixaFechamento_caixaId")
+  caixaSangrias                   CaixaSangria[]         @relation("CaixaSangria_caixaId")
   caixaTransferenciasCaixaDestino CaixaTransferencia[]   @relation("CaixaTransferencia_caixaDestinoId")
   caixaTransferenciasCaixaOrigem  CaixaTransferencia[]   @relation("CaixaTransferencia_caixaOrigemId")
   estacionamentoSessoes           EstacionamentoSessao[] @relation("EstacionamentoSessao_caixaId")
@@ -842,6 +844,30 @@ model CaixaFechamento {
   validadoEm          DateTime? @map("validado_em") @db.Timestamptz(6)
 
   @@map("caixa_fechamento")
+}
+
+// Sangria de caixa (20/08/2026, design combinado — ver
+// project_token_pin_acesso_caixa na memória): retirada parcial de dinheiro
+// da gaveta SEM fechar o caixa (segurança — ex: operador roubando pelo
+// estacionamento com dinheiro acumulado no bolso). Quem opera a tela (sessão
+// logada) não é necessariamente quem retira o dinheiro de fato — por isso
+// retiradoPorUserId é resolvido por um PIN digitado na hora (de um staff
+// ativo do mesmo evento com a permissão 'autorizar_sangria', ou a senha da
+// conta do dono do evento como fallback), não pela sessão da tela.
+model CaixaSangria {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caixaId          String   @map("caixa_id") @db.Uuid
+  caixa            Caixa    @relation("CaixaSangria_caixaId", fields: [caixaId], references: [id])
+  valor            Decimal  @db.Decimal(10, 2)
+  motivo           String?
+  // FK -> users.id(id), resolvido pelo PIN/senha na hora — não é
+  // necessariamente quem estava logado na tela (mesmo padrão de
+  // fechadoPor/validadoPor em CaixaFechamento acima: raw uuid, sem relação
+  // Prisma formal).
+  retiradoPorUserId String   @map("retirado_por_user_id") @db.Uuid
+  criadoEm         DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  @@map("caixa_sangrias")
 }
 
 model Estacionamento {
