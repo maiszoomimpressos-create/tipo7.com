@@ -455,10 +455,38 @@ model EventTicket {
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime    @default(now()) @map("updated_at") @db.Timestamptz(6)
   orderItems  OrderItem[] @relation("OrderItem_ticketId")
+  lotes       TicketLote[] @relation("TicketLote_ticketId")
 
   @@index([eventDayId])
   @@index([eventId])
   @@map("event_tickets")
+}
+
+// Lote de ingresso (20/08/2026, pedido do usuário) — faixas de preço
+// sucessivas dentro do MESMO tipo de ingresso (Pista 1º lote R$50/30un,
+// 2º lote R$70/50un...). Design deliberadamente conservador: checkout
+// nunca lê essa tabela direto — o preço "ativo" é sempre resolvido e
+// GRAVADO em EventTicket.price (por LotesService, ao mexer num lote, e
+// por um cron periódico pra pegar transição por data/por venda que
+// cruzou a fronteira de quantidade). Ver project_lote_ingressos na
+// memória — decisão consciente de não tocar em checkout.service.ts (5
+// blocos quase-duplicados MP/PagBank × Pix/Cartão lendo ticket.price),
+// preferindo um pequeno atraso (até o próximo tick do cron) a arriscar
+// bug em código de cobrança já em produção.
+model TicketLote {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId   String    @map("ticket_id") @db.Uuid
+  ticket     EventTicket @relation("TicketLote_ticketId", fields: [ticketId], references: [id], onDelete: Cascade)
+  ordem      Int
+  price      Decimal   @db.Decimal(10, 2)
+  quantity   Int
+  // null = sem corte por data, só por quantidade esgotar.
+  dataCorte  DateTime? @map("data_corte") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@index([ticketId])
+  @@map("ticket_lotes")
 }
 
 model EventAttribute {

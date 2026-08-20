@@ -25,6 +25,17 @@ export class IngressosService {
       throw new ForbiddenException('Sem permissão');
     }
 
+    // Uma vez que o ingresso tem lote, preço e quantidade passam a ser
+    // derivados dos lotes (ver LotesService.resincronizar()) — editar direto
+    // aqui ficaria fora de sincronia no próximo tick do cron. Nome continua
+    // editável livremente.
+    if ((body.price !== undefined || body.quantity !== undefined)) {
+      const temLote = await this.prisma.ticketLote.count({ where: { ticketId } });
+      if (temLote > 0) {
+        throw new BadRequestException('Este ingresso tem lotes configurados — edite o preço/quantidade em cada lote, não direto aqui.');
+      }
+    }
+
     if (body.quantity !== undefined) {
       const soldRows = await this.prisma.orderItem.findMany({
         where: { ticketId, order: { status: 'approved' } },
