@@ -106,6 +106,16 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
     onClose()
   }
 
+  // Achado real (20/08/2026): a aba Calculadora não tinha botão de salvar —
+  // dava pra fazer conta, mas não pra usar o resultado como troco inicial.
+  // Pedido do usuário: se o promotor não quiser detalhar cédula por cédula,
+  // deixa ele só digitar o valor total aqui.
+  function salvarCalc() {
+    const valor = parseFloat(disp.replace(',', '.')) || 0
+    onChange?.(valor)
+    onClose()
+  }
+
   /* ── Calculadora normal ── */
   const [disp,   setDisp]   = useState('0')
   const [prev,   setPrev]   = useState<number | null>(null)
@@ -360,7 +370,7 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
                 {disp}
               </p>
             </div>
-            <div className="px-4 pb-8 pt-4 grid grid-cols-4 gap-2 flex-1">
+            <div className="px-4 pt-4 grid grid-cols-4 gap-2 flex-1">
               {CALC_KEYS.map(k => {
                 const isOpKey = ['+', '-', '×', '÷'].includes(k)
                 const isEq    = k === '='
@@ -390,6 +400,20 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
                 )
               })}
             </div>
+
+            {/* Salvar — achado real (20/08/2026): faltava um jeito de usar o
+                resultado da conta como valor final (só dava pra calcular,
+                não pra confirmar). Pedido do usuário: promotor que não quer
+                detalhar cédula por cédula só digita/calcula o valor aqui. */}
+            {onChange && (
+              <div className="px-4 pb-8 pt-3 shrink-0" style={{ borderTop: '1px solid #1a1a1a' }}>
+                <button type="button" onClick={salvarCalc}
+                  className="w-full py-4 rounded-2xl text-base font-bold text-[#070707] hover:brightness-110 active:scale-[0.98] transition-all"
+                  style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                  Salvar — R$ {fmt(parseFloat(disp.replace(',', '.')) || 0)}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
