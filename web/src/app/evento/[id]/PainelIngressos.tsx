@@ -307,6 +307,20 @@ export function PainelIngressos({ eventoId, ingressos, capacity, dias, diaSeleci
   return (
     <div className="flex flex-col gap-4">
 
+      {/* Achado real (20/08/2026, usuário testando o painel novo): só
+          existia um jeito de adicionar ingresso — um link que aparecia SÓ
+          quando a lista estava vazia. Com ingresso já cadastrado, sumia,
+          sem outro jeito de criar mais um tipo. Botão fica sempre visível
+          agora — a criação em si continua na etapa de Ingressos do wizard
+          (ainda não tem um formulário inline aqui). */}
+      <a
+        href={`/criar-evento/${eventoId}/ingressos`}
+        className="self-end flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+        style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}40`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+      >
+        + Adicionar ingresso
+      </a>
+
       {/* Resumo de capacidade */}
       {capacity && (
         <div className="rounded-2xl p-4" style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
