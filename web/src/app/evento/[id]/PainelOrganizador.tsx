@@ -72,14 +72,14 @@ export function PainelOrganizador({ eventoId, ingressos, capacity, dias, diaSele
 
       {/* Cabeçalho do painel */}
       <div className="px-4 pt-4 pb-0 min-w-0">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-y-2 mb-4">
           <div className="flex items-center gap-2">
             <Settings size={14} style={{ color: ACCENT }} />
             <span className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
               Painel do organizador
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <a
               href={`/bilheteria/${eventoId}`}
               className="flex items-center gap-1 text-[#555] text-xs hover:text-white transition-colors"
