@@ -469,6 +469,20 @@ export class CaixasService {
     throw new BadRequestException('Não foi possível gerar o acesso do organizador.');
   }
 
+  // Achado real (20/08/2026): abrir caixa nunca checava se o evento já
+  // passou da data — o cron de encerramento automático dá 2 dias de folga
+  // (pra fechar caixa com calma), mas isso nunca deveria significar "ainda
+  // dá pra abrir caixa NOVO" nesse meio-tempo. Checagem síncrona, não
+  // depende do cron ter rodado. Público — também usado por
+  // EstacionamentoService.abrirCaixa().
+  assertEventoNaoVencido(evento: { status: string; dateStart: Date | null; dateEnd: Date | null }): void {
+    if (evento.status === 'encerrado') throw new BadRequestException('Este evento já foi encerrado — não é possível abrir novos caixas.');
+    const referencia = evento.dateEnd ?? evento.dateStart;
+    if (referencia && referencia < new Date()) {
+      throw new BadRequestException('Este evento já passou da data — não é possível abrir novos caixas. Ajuste a data do evento se ele ainda vai acontecer.');
+    }
+  }
+
   // POST /caixas/abrir
   async abrir(
     userId: string,
@@ -478,9 +492,13 @@ export class CaixasService {
       throw new BadRequestException('Dados inválidos');
     }
 
-    const evento = await this.prisma.event.findUnique({ where: { id: body.eventoId }, select: { organizationId: true } });
+    const evento = await this.prisma.event.findUnique({
+      where: { id: body.eventoId },
+      select: { organizationId: true, status: true, dateStart: true, dateEnd: true },
+    });
     if (!evento) throw new NotFoundException('Evento não encontrado');
     if (!(await this.orgAdmin.isOrgAdmin(evento.organizationId, userId))) throw new ForbiddenException('Sem permissão');
+    this.assertEventoNaoVencido(evento);
 
     const nomesLote = body.caixas.map((c) => c.nome.trim());
     if (new Set(nomesLote).size !== nomesLote.length) throw new BadRequestException('Cada caixa deve ter um nome único.');

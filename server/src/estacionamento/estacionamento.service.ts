@@ -521,6 +521,16 @@ export class EstacionamentoService {
   async abrirCaixa(userId: string, eventoId: string, body: Record<string, any>) {
     if (!(await this.eventPermissions.isEventOwner(userId, eventoId))) throw new ForbiddenException('Sem permissão');
 
+    // Mesma checagem de caixas.service.ts > abrir() — evento vencido não
+    // pode ganhar caixa novo, independente do cron de encerramento já ter
+    // rodado ou não (achado real, 20/08/2026).
+    const evento = await this.prisma.event.findUnique({
+      where: { id: eventoId },
+      select: { status: true, dateStart: true, dateEnd: true },
+    });
+    if (!evento) throw new NotFoundException('Evento não encontrado');
+    this.caixas.assertEventoNaoVencido(evento);
+
     if (!body.nome?.trim()) throw new BadRequestException('Nome do caixa é obrigatório');
 
     let estacionamentoId: string | null = null;
