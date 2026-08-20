@@ -8,12 +8,10 @@ import {
   Ticket, AlertCircle, ExternalLink, Music, Loader2,
   Pencil, X, Check, Camera, Copy, Download, QrCode, Lock,
   Shield, Car, UtensilsCrossed, Beer, Accessibility, Wifi,
-  Baby, HeartPulse, Cigarette,
+  Baby, HeartPulse, Cigarette, Settings, ChevronRight,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { PainelOrganizador } from './PainelOrganizador'
 import { PainelEventosFilhos } from './PainelEventosFilhos'
-import type { IngressoEditavel } from './PainelIngressos'
 import { CheckoutCardPanel } from './CheckoutCardPanel'
 import { CheckoutPagBankCardPanel } from './CheckoutPagBankCardPanel'
 import { apiFetchAuth } from '@/lib/apiFetch'
@@ -1130,26 +1128,28 @@ export function EventoPageClient({ evento, dias, ingressos, isOwner, capacity, s
                 )}
               </div>
 
-              {/* key força remount ao trocar de show — sem isso, o estado
-                  interno do painel (useState(ingressos) etc.) fica preso nos
-                  dados do primeiro evento que ele mostrou, e trocar de aba
-                  não atualiza mais os ingressos exibidos */}
-              <PainelOrganizador
-                key={eventoIdAtivo}
-                eventoId={eventoIdAtivo}
-                capacity={capacity}
-                moduloEstacionamento={evento.moduloEstacionamento}
-                dias={diasAtivo.map(d => ({ id: d.id, dayNumber: d.dayNumber, date: d.date, startTime: d.startTime, endTime: d.endTime }))}
-                diaSelecionadoId={diasAtivo[diaProgramacao]?.id ?? null}
-                ingressos={ingressosAtivo.map((t): IngressoEditavel => ({
-                  id:         t.id,
-                  name:       t.name,
-                  price:      t.price,
-                  quantity:   t.quantity,
-                  sold:       soldByTicket[t.id] ?? 0,
-                  eventDayId: t.eventDayId,
-                }))}
-              />
+              {/* Painel de gestão (Ingressos/Estrutura/Equipe/Estacionamento/
+                  Configurações) virou rota própria (20/08/2026, pedido do
+                  usuário) — ficava espremido numa coluna estreita ao lado do
+                  QR code, sem espaço pra crescer. Página pública agora só
+                  linka pra lá. */}
+              <a
+                href={`/evento/${eventoIdAtivo}/gerenciar`}
+                className="rounded-2xl border border-[#1a1a1a] bg-[#0d0d0d] p-5 mb-4 flex items-center gap-3 transition-colors hover:border-[#E8B84B]/40"
+              >
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${ACCENT}12` }}>
+                  <Settings size={16} style={{ color: ACCENT }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Gerenciar evento
+                  </p>
+                  <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Ingressos, equipe, estacionamento e configurações
+                  </p>
+                </div>
+                <ChevronRight size={16} className="text-[#333] shrink-0" />
+              </a>
               <PainelEventosFilhos eventoId={evento.id} isChild={evento.isChild} />
             </>
           )}

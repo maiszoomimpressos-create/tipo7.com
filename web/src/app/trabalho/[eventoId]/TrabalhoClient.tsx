@@ -70,7 +70,7 @@ function buildAcessos(eventoId: string, permissoes: string[], isOwner: boolean):
       label: 'Painel do evento',
       desc:  'Configurações e gestão completa',
       icon:  Settings,
-      href:  `/evento/${eventoId}`,
+      href:  `/evento/${eventoId}/gerenciar`,
       cor:   '#888',
     })
   }
