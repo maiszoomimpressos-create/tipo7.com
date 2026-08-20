@@ -65,6 +65,11 @@ export class EventosAdminController {
     return this.eventos.removerMembro(user.id, id, staffId);
   }
 
+  @Get('encerramento/pendencias')
+  pendenciasEncerramento(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.eventos.getPendenciasEncerramento(user.id, id);
+  }
+
   @Get('funcoes')
   listFuncoes(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.eventos.listFuncoes(user.id, id);

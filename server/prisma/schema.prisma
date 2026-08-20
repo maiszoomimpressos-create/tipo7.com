@@ -375,6 +375,20 @@ model EventStaff {
   portaoId        String?               @map("portao_id") @db.Uuid
   portao          EstacionamentoPortao? @relation("EventStaff_portaoId", fields: [portaoId], references: [id], onDelete: SetNull)
 
+  // Acesso a caixa via token+PIN (19/08/2026, design combinado — ver
+  // project_token_pin_acesso_caixa na memória). Gerado no momento em que o
+  // staff aceita o convite (trabalhos.service.ts > responder()). token é
+  // numérico, legível, persiste (não é "mostra uma vez só e some" — o
+  // operador revisita em /trabalho quando precisar). pinHash nunca guarda o
+  // PIN em texto puro (bcrypt, mesmo padrão de auth-core.service.ts). PIN é
+  // por evento (recriado a cada convite aceito), não pessoal fixo — decisão
+  // explícita do usuário. Apagados ambos no encerramento do evento (rotina
+  // ainda não construída).
+  token           String?               @unique
+  pinHash         String?               @map("pin_hash")
+  pinTentativas   Int                   @default(0) @map("pin_tentativas")
+  pinBloqueadoAte DateTime?             @map("pin_bloqueado_ate") @db.Timestamptz(6)
+
   @@unique([eventId, userId])
   @@map("event_staff")
 }

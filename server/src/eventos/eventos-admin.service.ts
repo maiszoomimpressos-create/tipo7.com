@@ -709,6 +709,35 @@ export class EventosAdminService {
     return { ok: true };
   }
 
+  // ==== encerramento de evento (19/08/2026, design combinado — ver
+  // project_token_pin_acesso_caixa na memória) ====
+  //
+  // Só a pré-checagem por enquanto — lista o que impede o caminho normal de
+  // encerrar (caixa não fechado, sessão de estacionamento ainda aberta), sem
+  // executar nada. A ação de encerrar em si (com o caminho de exceção via
+  // senha) e o cron automático por dateEnd ainda não foram construídos —
+  // dependem de decisão do usuário sobre o que fazer com pendência (fechar
+  // sozinho vs. travar como registro pendente).
+  async getPendenciasEncerramento(userId: string, eventoId: string) {
+    await this.assertOwner(userId, eventoId);
+
+    const caixasPendentes = await this.prisma.caixa.findMany({
+      where: { eventoId, status: { not: 'fechado' } },
+      select: { id: true, nome: true, status: true },
+    });
+
+    const sessoesAbertas = await this.prisma.estacionamentoSessao.findMany({
+      where: { status: 'aberto', estacionamento: { eventId: eventoId } },
+      select: { id: true, placa: true, estacionamento: { select: { nome: true } } },
+    });
+
+    return {
+      pode_encerrar: caixasPendentes.length === 0 && sessoesAbertas.length === 0,
+      caixas_pendentes: caixasPendentes.map((c) => ({ id: c.id, nome: c.nome, status: c.status })),
+      sessoes_abertas: sessoesAbertas.map((s) => ({ id: s.id, placa: s.placa, estacionamento_nome: s.estacionamento.nome })),
+    };
+  }
+
   // ==== funções ====
 
   async listFuncoes(userId: string, eventoId: string) {

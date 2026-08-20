@@ -18,4 +18,9 @@ export class TrabalhosController {
   responder(@CurrentUser() user: AuthenticatedUser, @Body() body: { staffId?: string; acao?: string }) {
     return this.trabalhos.responder(user.id, body.staffId, body.acao);
   }
+
+  @Post('pin')
+  definirPin(@CurrentUser() user: AuthenticatedUser, @Body() body: { staffId?: string; pin?: string }) {
+    return this.trabalhos.definirPin(user.id, body.staffId, body.pin);
+  }
 }
