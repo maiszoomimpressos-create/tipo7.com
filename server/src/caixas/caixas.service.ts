@@ -422,6 +422,36 @@ export class CaixasService {
     return { ok: true };
   }
 
+  // DELETE /caixas/:caixaId — pedido do usuário (20/08/2026): caixa aberto
+  // por engano (nome errado, teste, evento vencido barrado depois) não tinha
+  // como desfazer sem pedir pra mexer no banco direto. Só apaga de verdade
+  // se o caixa NUNCA teve nenhuma movimentação — senão isso é fechamento de
+  // verdade (histórico financeiro), não exclusão; usa fechar().
+  async excluir(userId: string, caixaId: string) {
+    const caixa = await this.prisma.caixa.findUnique({
+      where: { id: caixaId },
+      include: { evento: { select: { organizationId: true } } },
+    });
+    if (!caixa) throw new NotFoundException('Caixa não encontrado');
+
+    if (!(await this.orgAdmin.isOrgAdmin(caixa.evento.organizationId, userId))) throw new ForbiddenException('Sem permissão');
+    if (caixa.status !== 'aberto') throw new BadRequestException('Só é possível excluir um caixa aberto — um caixa fechado é histórico financeiro.');
+
+    const [orders, sessoes, sangrias, transferencias, fechamentos] = await Promise.all([
+      this.prisma.order.count({ where: { caixaId } }),
+      this.prisma.estacionamentoSessao.count({ where: { caixaId } }),
+      this.prisma.caixaSangria.count({ where: { caixaId } }),
+      this.prisma.caixaTransferencia.count({ where: { OR: [{ caixaOrigemId: caixaId }, { caixaDestinoId: caixaId }] } }),
+      this.prisma.caixaFechamento.count({ where: { caixaId } }),
+    ]);
+    if (orders > 0 || sessoes > 0 || sangrias > 0 || transferencias > 0 || fechamentos > 0) {
+      throw new BadRequestException('Este caixa já tem movimentação — feche-o (com a contagem) em vez de excluir.');
+    }
+
+    await this.prisma.caixa.delete({ where: { id: caixaId } });
+    return { ok: true };
+  }
+
   // Garante que o DONO do evento também tem token pra autorizar sangria, sem
   // precisar virar staff "de verdade" nem passar pelo fluxo de convite
   // (achado real, 20/08/2026: sem isso, só a senha da conta funcionava como

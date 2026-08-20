@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtGuard } from '../auth/guards/supabase-jwt.guard';
 import type { AuthenticatedUser } from '../auth/strategies/supabase-jwt.strategy';
@@ -72,5 +72,10 @@ export class CaixasController {
   @Post('caixas/sangria')
   sangrar(@CurrentUser() user: AuthenticatedUser, @Body() body: { caixaId?: string; valor?: number; motivo?: string; codigo?: string }) {
     return this.caixas.sangrar(user.id, body);
+  }
+
+  @Delete('caixas/:caixaId')
+  excluir(@CurrentUser() user: AuthenticatedUser, @Param('caixaId') caixaId: string) {
+    return this.caixas.excluir(user.id, caixaId);
   }
 }

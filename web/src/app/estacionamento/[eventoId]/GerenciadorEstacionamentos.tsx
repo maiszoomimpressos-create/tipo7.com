@@ -201,6 +201,19 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
     await carregar()
   }
 
+  // Pedido do usuário (20/08/2026): caixa aberto por engano (ex: evento
+  // vencido barrado depois de já ter criado um) não tinha como desfazer sem
+  // mexer no banco. Backend só deixa se o caixa nunca teve movimentação
+  // nenhuma — se tiver, devolve erro explicando que precisa fechar em vez
+  // de excluir.
+  const handleExcluirCaixa = async (caixaId: string, nome: string) => {
+    if (!confirm(`Excluir o caixa "${nome}"? Só funciona se ele nunca teve movimentação — não dá pra desfazer.`)) return
+    const res = await apiFetchAuth(`/api/caixas/${caixaId}`, { method: 'DELETE' })
+    const data = await res.json().catch(() => null) as { error?: string } | null
+    if (!res.ok) { setErro(data?.error ?? 'Erro ao excluir caixa'); return }
+    await carregar()
+  }
+
   const handleValidarCaixa = async (caixaId: string) => {
     const res = await apiFetchAuth('/api/caixas/validar', {
       method:  'POST',
@@ -405,10 +418,16 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
                     </p>
                   </div>
                   {c.status === 'aberto' && (
-                    <button type="button" onClick={() => handleFecharCaixa(c.id)}
-                      className="px-3 py-2 rounded-lg text-xs font-medium border border-[#222] text-[#aaa] hover:border-red-400/40 hover:text-red-400 transition-colors">
-                      Fechar
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => handleExcluirCaixa(c.id, c.nome)}
+                        className="px-3 py-2 rounded-lg text-xs font-medium border border-[#222] text-[#555] hover:border-red-400/40 hover:text-red-400 transition-colors">
+                        Excluir
+                      </button>
+                      <button type="button" onClick={() => handleFecharCaixa(c.id)}
+                        className="px-3 py-2 rounded-lg text-xs font-medium border border-[#222] text-[#aaa] hover:border-[#E8B84B]/40 hover:text-[#E8B84B] transition-colors">
+                        Fechar
+                      </button>
+                    </div>
                   )}
                   {c.status === 'fechamento_pendente' && (
                     <button type="button" onClick={() => handleValidarCaixa(c.id)}

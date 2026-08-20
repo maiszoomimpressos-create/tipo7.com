@@ -880,6 +880,46 @@ function CaixaCard({ caixa, eventoId, fechado = false, onSalvo }: { caixa: Caixa
   const [calcAberta, setCalcAberta] = useState(false)
   const [salvando,  setSalvando]  = useState(false)
   const [erro,      setErro]      = useState<string | null>(null)
+  // Pedido do usuário (20/08/2026): não tinha jeito de fechar/excluir um
+  // caixa direto na lista do organizador — precisava mexer no banco pra
+  // desfazer um caixa aberto por engano.
+  const [modalFechar, setModalFechar]     = useState(false)
+  const [dinheiroContado, setDinheiroContado] = useState('')
+  const [confirmandoExcluir, setConfirmandoExcluir] = useState(false)
+  const [excluindo, setExcluindo]         = useState(false)
+  const [erroAcao, setErroAcao]           = useState<string | null>(null)
+
+  async function excluirCaixa(e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation()
+    setExcluindo(true); setErroAcao(null)
+    try {
+      const res = await apiFetchAuth(`/api/caixas/${caixa.id}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => null) as { error?: string; message?: string } | null
+      if (!res.ok) { setErroAcao(data?.error ?? data?.message ?? 'Erro ao excluir'); return }
+      onSalvo?.()
+    } finally {
+      setExcluindo(false); setConfirmandoExcluir(false)
+    }
+  }
+
+  async function fecharCaixa(e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation()
+    const valor = parseFloat(dinheiroContado.replace(',', '.'))
+    if (isNaN(valor) || valor < 0) { setErroAcao('Informe o valor contado na gaveta'); return }
+    setSalvando(true); setErroAcao(null)
+    try {
+      const res = await apiFetchAuth('/api/caixas/fechar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caixaId: caixa.id, dinheiro_contado: valor, ingressos_devolvidos: 0 }),
+      })
+      const data = await res.json().catch(() => null) as { error?: string; message?: string } | null
+      if (!res.ok) { setErroAcao(data?.error ?? data?.message ?? 'Erro ao fechar caixa'); return }
+      setModalFechar(false); setDinheiroContado('')
+      onSalvo?.()
+    } finally {
+      setSalvando(false)
+    }
+  }
 
   function abrirEdicao(e: React.MouseEvent) {
     e.preventDefault(); e.stopPropagation()
@@ -997,10 +1037,24 @@ function CaixaCard({ caixa, eventoId, fechado = false, onSalvo }: { caixa: Caixa
           )}
         </div>
         {!editando && !fechado && (
-          <button type="button" onClick={abrirEdicao}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-[#444] hover:text-white hover:bg-white/5 transition-colors shrink-0">
-            <Pencil size={12} />
-          </button>
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button type="button" onClick={abrirEdicao}
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-[#444] hover:text-white hover:bg-white/5 transition-colors">
+              <Pencil size={12} />
+            </button>
+            <button type="button" title="Fechar caixa"
+              onClick={e => { e.preventDefault(); e.stopPropagation(); setErroAcao(null); setModalFechar(true) }}
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-[#444] hover:text-[#E8B84B] hover:bg-white/5 transition-colors">
+              <Lock size={12} />
+            </button>
+            {caixa.vendidos === 0 && caixa.totalVendas === 0 && (
+              <button type="button" title="Excluir caixa"
+                onClick={e => { e.preventDefault(); e.stopPropagation(); setErroAcao(null); setConfirmandoExcluir(true) }}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-[#444] hover:text-red-400 hover:bg-white/5 transition-colors">
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
         )}
         {!editando && <ChevronRight size={14} className="text-[#333] shrink-0 mt-0.5" />}
       </div>
@@ -1014,6 +1068,61 @@ function CaixaCard({ caixa, eventoId, fechado = false, onSalvo }: { caixa: Caixa
         />
         <Stat label="Total vendas" value={`R$ ${caixa.totalVendas.toFixed(2).replace('.', ',')}`} muted={fechado} accent={!fechado} />
       </div>
+
+      {erroAcao && !modalFechar && !confirmandoExcluir && (
+        <p className="text-red-400 text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erroAcao}</p>
+      )}
+
+      {modalFechar && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={e => { e.stopPropagation(); setModalFechar(false) }}>
+          <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5" onClick={e => e.stopPropagation()}>
+            <p className="text-white text-sm font-medium mb-1">Fechar &quot;{caixa.nome}&quot;</p>
+            <p className="text-[#666] text-xs mb-4">Quanto tem de dinheiro contado na gaveta agora?</p>
+            <input
+              type="text" inputMode="decimal" placeholder="0,00" autoFocus
+              value={dinheiroContado}
+              onChange={e => setDinheiroContado(e.target.value.replace(/[^\d,.]/g, ''))}
+              className="w-full rounded-lg px-3 py-2.5 text-sm text-white outline-none mb-3"
+              style={{ background: '#111', border: '1px solid #1e1e1e' }}
+            />
+            {erroAcao && <p className="text-red-400 text-xs mb-3">{erroAcao}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setModalFechar(false) }}
+                className="flex-1 py-2.5 rounded-lg text-xs text-[#555] hover:text-white transition-colors"
+                style={{ background: '#111', border: '1px solid #1e1e1e' }}>
+                Cancelar
+              </button>
+              <button type="button" onClick={fecharCaixa} disabled={salvando}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold text-[#070707] disabled:opacity-60"
+                style={{ background: ACCENT }}>
+                {salvando ? <Loader2 size={12} className="animate-spin" /> : 'Fechar caixa'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmandoExcluir && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={e => { e.stopPropagation(); setConfirmandoExcluir(false) }}>
+          <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5" onClick={e => e.stopPropagation()}>
+            <p className="text-white text-sm font-medium mb-1">Excluir &quot;{caixa.nome}&quot;?</p>
+            <p className="text-[#666] text-xs mb-4">Esse caixa não tem nenhuma venda registrada — exclui sem deixar rastro. Não dá pra desfazer.</p>
+            {erroAcao && <p className="text-red-400 text-xs mb-3">{erroAcao}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setConfirmandoExcluir(false) }}
+                className="flex-1 py-2.5 rounded-lg text-xs text-[#555] hover:text-white transition-colors"
+                style={{ background: '#111', border: '1px solid #1e1e1e' }}>
+                Cancelar
+              </button>
+              <button type="button" onClick={excluirCaixa} disabled={excluindo}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60"
+                style={{ background: '#dc2626' }}>
+                {excluindo ? <Loader2 size={12} className="animate-spin" /> : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {calcAberta && (
         <div onClick={e => e.stopPropagation()}>
