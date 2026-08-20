@@ -154,6 +154,8 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/usuarios/buscar',
   '/api/holders',
   '/api/ingressos/:id',
+  '/api/ingressos/:id/lotes',
+  '/api/ingressos/lotes/:loteId',
   '/api/eventos/:id/criar-filho',
   '/api/carrossel',
   '/api/carrossel/segunda-tela/:eventoId',
