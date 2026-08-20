@@ -421,8 +421,8 @@ export class CaixasService {
     return { ok: true };
   }
 
-  // Garante que o DONO do evento também tem token+PIN pra autorizar sangria,
-  // sem precisar virar staff "de verdade" nem passar pelo fluxo de convite
+  // Garante que o DONO do evento também tem token pra autorizar sangria, sem
+  // precisar virar staff "de verdade" nem passar pelo fluxo de convite
   // (achado real, 20/08/2026: sem isso, só a senha da conta funcionava como
   // autorização — o dono pediu menos fricção agora, delegação de verdade
   // por função/supervisor fica pra depois). Mesma tabela EventStaff, só que
@@ -430,32 +430,36 @@ export class CaixasService {
   // dono" como permissão implícita, mesmo padrão de isOwner em todo o resto
   // do sistema. Chamado toda vez que o dono abre um caixa; é barato — só
   // cria de verdade na primeira vez, as próximas só confirmam que já existe.
-  // pinNovo só vem preenchido na primeira vez (depois disso o PIN vira hash,
-  // não tem como mostrar de novo — a UI precisa exibir na hora).
+  //
+  // Token é gerado por nós (não precisa ser memorizável, só bater com o que
+  // tá gravado). PIN é diferente — precisa ser algo que a pessoa escolha e
+  // lembre, vai digitar isso o evento inteiro (correção de rumo, 20/08/2026:
+  // a 1ª versão gerava PIN aleatório também, ficou inconsistente com o resto
+  // do sistema onde é sempre o próprio operador quem escolhe). Por isso não
+  // cria PIN aqui — só devolve o staffId pro front reaproveitar o MESMO
+  // formulário de criar PIN que já existe pra equipe convidada
+  // (POST /trabalhos/pin já aceita esse staffId, já que status vem 'active').
   // Público — também chamado por EstacionamentoService.abrirCaixa() (mesmo
   // caso de uso, evento com estacionamento em vez de bilheteria).
-  async garantirAcessoOwnerParaSangria(eventoId: string, ownerId: string): Promise<{ token: string; pinNovo: string | null }> {
+  async garantirAcessoOwnerParaSangria(eventoId: string, ownerId: string): Promise<{ staffId: string; token: string; precisaCriarPin: boolean }> {
     const existente = await this.prisma.eventStaff.findUnique({
       where: { eventId_userId: { eventId: eventoId, userId: ownerId } },
-      select: { token: true, pinHash: true },
+      select: { id: true, token: true, pinHash: true },
     });
-    if (existente?.token && existente.pinHash) {
-      return { token: existente.token, pinNovo: null };
+    if (existente?.token) {
+      return { staffId: existente.id, token: existente.token, precisaCriarPin: !existente.pinHash };
     }
-
-    const pin = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    const pinHash = await bcrypt.hash(pin, 10);
 
     for (let tentativa = 0; tentativa < 5; tentativa++) {
       try {
-        const token = existente?.token ?? String(randomInt(0, 100_000_000)).padStart(8, '0');
+        const token = String(randomInt(0, 100_000_000)).padStart(8, '0');
         const staff = await this.prisma.eventStaff.upsert({
           where: { eventId_userId: { eventId: eventoId, userId: ownerId } },
-          create: { eventId: eventoId, userId: ownerId, status: 'active', token, pinHash },
-          update: { pinHash, ...(existente?.token ? {} : { token }) },
-          select: { token: true },
+          create: { eventId: eventoId, userId: ownerId, status: 'active', token },
+          update: { token },
+          select: { id: true, token: true },
         });
-        return { token: staff.token ?? token, pinNovo: pin };
+        return { staffId: staff.id, token: staff.token!, precisaCriarPin: true };
       } catch (err) {
         if (isUniqueConstraintError(err) && tentativa < 4) continue;
         throw err;
@@ -543,7 +547,10 @@ export class CaixasService {
 
     const acessoOwner = await this.garantirAcessoOwnerParaSangria(body.eventoId, userId);
 
-    return { caixas: criados, owner_token: acessoOwner.token, owner_pin_novo: acessoOwner.pinNovo };
+    return {
+      caixas: criados,
+      owner_acesso: { staff_id: acessoOwner.staffId, token: acessoOwner.token, precisa_criar_pin: acessoOwner.precisaCriarPin },
+    };
   }
 
   // POST /caixas/pausar

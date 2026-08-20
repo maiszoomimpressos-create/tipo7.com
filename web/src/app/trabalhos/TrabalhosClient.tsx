@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Briefcase, Calendar, MapPin, Shield, Check, X,
-  Loader2, Bell, Clock, KeyRound, Copy, CheckCircle2,
+  Loader2, Bell, Clock, KeyRound, CheckCircle2,
 } from 'lucide-react'
 import { apiFetchAuth } from '@/lib/apiFetch'
+import { BlocoTokenPin } from '@/components/BlocoTokenPin'
 
 const ACCENT = '#E8B84B'
 
@@ -40,106 +41,6 @@ type Registro = {
 
 interface Props {
   registros: Registro[]
-}
-
-// ── Token + PIN (acesso a caixa em PC compartilhado / maquininha) ────────────
-// Mostra o token (persiste, não é "mostra uma vez só e some" — o usuário
-// pode reabrir isso quando quiser) e deixa criar/trocar o PIN daquele
-// evento. Não faz login nenhum aqui — só prepara a credencial que vai ser
-// usada em outro lugar (rota /caixa, ainda não construída).
-function BlocoTokenPin({ registro, onPinAtualizado }: { registro: Registro; onPinAtualizado: () => void }) {
-  const [pin, setPin]           = useState('')
-  const [confirmarPin, setConfirmarPin] = useState('')
-  const [salvando, setSalvando] = useState(false)
-  const [erro, setErro]         = useState<string | null>(null)
-  const [copiado, setCopiado]   = useState(false)
-
-  async function copiarToken() {
-    if (!registro.token) return
-    await navigator.clipboard.writeText(registro.token)
-    setCopiado(true)
-    setTimeout(() => setCopiado(false), 1500)
-  }
-
-  async function salvarPin() {
-    setErro(null)
-    if (!/^\d{4}$|^\d{6}$/.test(pin)) { setErro('PIN deve ter 4 ou 6 dígitos numéricos'); return }
-    if (pin !== confirmarPin) { setErro('Os dois PINs digitados não coincidem'); return }
-    setSalvando(true)
-    try {
-      const res = await apiFetchAuth('/api/trabalhos/pin', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ staffId: registro.id, pin }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setErro(data.error ?? data.message ?? 'Erro ao salvar PIN'); return }
-      setPin(''); setConfirmarPin('')
-      onPinAtualizado()
-    } finally {
-      setSalvando(false)
-    }
-  }
-
-  return (
-    <div className="rounded-xl p-3.5" style={{ background: '#111', border: '1px solid #1e1e1e' }}>
-      <div className="flex items-center gap-2 mb-3">
-        <KeyRound size={13} style={{ color: ACCENT }} />
-        <span className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          Acesso ao caixa (token + PIN)
-        </span>
-      </div>
-      <p className="text-[#666] text-xs mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-        Use isso pra abrir seu caixa em outro aparelho (PC compartilhado, maquininha) sem precisar logar com sua conta.
-      </p>
-
-      <div className="mb-3">
-        <label className="text-[#555] text-[10px] uppercase tracking-wider block mb-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          Seu token deste evento
-        </label>
-        <button
-          type="button"
-          onClick={copiarToken}
-          className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left transition-colors hover:border-[#E8B84B]/40"
-          style={{ background: '#0a0a0a', border: '1px solid #1e1e1e' }}
-        >
-          <span className="text-white text-base font-semibold tracking-[0.2em]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            {registro.token ?? '········'}
-          </span>
-          {copiado ? <CheckCircle2 size={14} className="text-green-400" /> : <Copy size={14} className="text-[#444]" />}
-        </button>
-      </div>
-
-      {registro.pin_definido && (
-        <p className="flex items-center gap-1.5 text-green-400 text-xs mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          <CheckCircle2 size={12} /> PIN já configurado — pode criar um novo abaixo se quiser trocar.
-        </p>
-      )}
-
-      <div className="flex flex-col gap-2">
-        <input
-          type="password" inputMode="numeric" placeholder="Novo PIN (4 ou 6 dígitos)"
-          value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-          className="w-full rounded-lg px-3 py-2.5 text-sm text-white outline-none"
-          style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)' }}
-        />
-        <input
-          type="password" inputMode="numeric" placeholder="Confirme o PIN"
-          value={confirmarPin} onChange={e => setConfirmarPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-          className="w-full rounded-lg px-3 py-2.5 text-sm text-white outline-none"
-          style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)' }}
-        />
-        {erro && <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erro}</p>}
-        <button
-          type="button" onClick={salvarPin} disabled={salvando || !pin || !confirmarPin}
-          className="w-full py-2.5 rounded-lg text-sm font-semibold text-[#070707] disabled:opacity-40 flex items-center justify-center gap-2"
-          style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-        >
-          {salvando ? <Loader2 size={14} className="animate-spin" /> : (registro.pin_definido ? 'Trocar PIN' : 'Criar PIN')}
-        </button>
-      </div>
-    </div>
-  )
 }
 
 // ── Modal de resposta ao convite ──────────────────────────────────────────────
@@ -276,7 +177,10 @@ function ModalConvite({
               <p className="flex items-center gap-1.5 text-green-400 text-sm font-medium mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 <CheckCircle2 size={14} /> Convite aceito!
               </p>
-              <BlocoTokenPin registro={aceito} onPinAtualizado={onPinAtualizado} />
+              <BlocoTokenPin
+                acesso={{ staffId: aceito.id, token: aceito.token, pinDefinido: aceito.pin_definido }}
+                onPinAtualizado={onPinAtualizado}
+              />
               <button
                 type="button" onClick={onFechar}
                 className="w-full mt-3 py-3 rounded-xl text-sm font-medium border transition-colors hover:border-[#E8B84B]/40"
@@ -588,7 +492,7 @@ export function TrabalhosClient({ registros }: Props) {
               {verAcesso.events?.title ?? 'Evento'}
             </p>
             <BlocoTokenPin
-              registro={verAcesso}
+              acesso={{ staffId: verAcesso.id, token: verAcesso.token, pinDefinido: verAcesso.pin_definido }}
               onPinAtualizado={() => { router.refresh(); setVerAcesso(v => v ? { ...v, pin_definido: true } : v) }}
             />
             <button

@@ -583,6 +583,10 @@ export class EstacionamentoService {
     // 20/08/2026).
     const acessoOwner = await this.caixas.garantirAcessoOwnerParaSangria(eventoId, userId);
 
-    return { ok: true, caixa, owner_token: acessoOwner.token, owner_pin_novo: acessoOwner.pinNovo };
+    return {
+      ok: true,
+      caixa,
+      owner_acesso: { staff_id: acessoOwner.staffId, token: acessoOwner.token, precisa_criar_pin: acessoOwner.precisaCriarPin },
+    };
   }
 }
