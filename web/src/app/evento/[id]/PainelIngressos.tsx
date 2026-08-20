@@ -269,11 +269,97 @@ function IngressoCard({
 }
 
 // ---------------------------------------------------------------------------
+// Novo tipo de ingresso (20/08/2026, pedido do usuário) — nome, preço,
+// quantidade. Sem eventDayId aqui: o painel principal já resolve isso (dia
+// selecionado na Programação, ou null se o evento não tem dias/é pacote).
+// ---------------------------------------------------------------------------
+
+function NovoIngressoForm({ onSalvar, onCancelar }: {
+  onSalvar:   (novo: { name: string; price: number; quantity: number }) => Promise<void>
+  onCancelar: () => void
+}) {
+  const [name, setName]         = useState('')
+  const [price, setPrice]       = useState('')
+  const [quantity, setQuantity] = useState('')
+  const [saving, setSaving]     = useState(false)
+  const [err, setErr]           = useState<string | null>(null)
+
+  async function salvar() {
+    if (!name.trim()) { setErr('Dá um nome pro tipo de ingresso (ex: Pista, VIP, Camarote)'); return }
+    const precoNum = Number(price.replace(',', '.')) || 0
+    const qtdNum   = parseInt(quantity, 10) || 0
+    if (qtdNum <= 0) { setErr('Quantidade precisa ser maior que zero'); return }
+    setSaving(true); setErr(null)
+    try {
+      await onSalvar({ name: name.trim(), price: precoNum, quantity: qtdNum })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erro ao criar ingresso')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: '#0d0d0d', border: `1px solid ${ACCENT}40` }}>
+      <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>Novo tipo de ingresso</p>
+      <input
+        value={name} onChange={e => setName(e.target.value)}
+        placeholder="Nome (ex: Pista, VIP, Camarote)" autoFocus
+        className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+        style={{ fontFamily: 'var(--font-dm-sans)' }}
+      />
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <p className="text-[#444] text-[10px] mb-1 uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>Preço</p>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555] text-sm">R$</span>
+            <input
+              type="number" value={price} onChange={e => setPrice(e.target.value)}
+              min="0" step="0.01" placeholder="0,00"
+              className="w-full bg-[#111] border border-[#222] rounded-lg pl-8 pr-3 py-2 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            />
+          </div>
+        </div>
+        <div className="flex-1">
+          <p className="text-[#444] text-[10px] mb-1 uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>Quantidade</p>
+          <input
+            type="number" value={quantity} onChange={e => setQuantity(e.target.value)}
+            min="1" placeholder="0"
+            className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+            style={{ fontFamily: 'var(--font-dm-sans)' }}
+          />
+        </div>
+      </div>
+      {err && (
+        <div className="flex items-center gap-2 text-red-400 text-xs py-2 px-3 rounded-lg bg-red-400/5">
+          <AlertTriangle size={12} className="shrink-0" /> {err}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <button type="button" onClick={onCancelar}
+          className="flex-1 py-2 rounded-xl text-xs text-[#444] border border-[#1e1e1e] hover:text-white hover:border-[#333] transition-colors"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          Cancelar
+        </button>
+        <button type="button" onClick={salvar} disabled={saving}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold text-[#070707] disabled:opacity-60"
+          style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+          {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+          {saving ? 'Criando...' : 'Criar ingresso'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Painel principal
 // ---------------------------------------------------------------------------
 
 export function PainelIngressos({ eventoId, ingressos, capacity, dias, diaSelecionadoId, onUpdate }: Props) {
   const [localIngressos, setLocalIngressos] = useState(ingressos)
+  const [criando, setCriando] = useState(false)
 
   // Mostra a info do dia sempre que o show tiver algum dia (mesmo só 1 —
   // caso comum de Tenda), não só quando há vários dias
@@ -304,22 +390,46 @@ export function PainelIngressos({ eventoId, ingressos, capacity, dias, diaSeleci
     onUpdate(ticketId, fields)
   }
 
+  // Criar um TIPO novo de ingresso (Pista, VIP, Camarote...) — não é editar
+  // quantidade de um que já existe. Achado real (20/08/2026, usuário
+  // testando o painel novo): não tinha nenhum jeito disso ficar direto
+  // aqui — só existia o assistente antigo, fora do painel. Reaproveita o
+  // mesmo endpoint que o assistente usa (POST /eventos/:id/dias): mandar
+  // só o ingresso novo, sem id, não mexe nos que já existem (confirmado no
+  // backend antes de fazer isso — sem id = create, com id = update, o resto
+  // da lista simplesmente não é tocado).
+  async function handleCriar(novo: { name: string; price: number; quantity: number }) {
+    const eventDayId = temDias ? (diaAtual?.id ?? null) : null
+    const res = await apiFetchAuth(`/api/eventos/${eventoId}/dias`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ingressos: [{ ...novo, eventDayId }] }),
+    })
+    if (!res.ok) {
+      const d = await res.json().catch(() => null) as { error?: string } | null
+      throw new Error(d?.error ?? 'Erro ao criar ingresso')
+    }
+    const data = await res.json() as { ingressos: { index: number; id: string; eventDayId: string | null }[] }
+    const criado = data.ingressos[0]
+    setLocalIngressos(prev => [...prev, { id: criado.id, ...novo, sold: 0, eventDayId: criado.eventDayId }])
+    setCriando(false)
+  }
+
   return (
     <div className="flex flex-col gap-4">
 
-      {/* Achado real (20/08/2026, usuário testando o painel novo): só
-          existia um jeito de adicionar ingresso — um link que aparecia SÓ
-          quando a lista estava vazia. Com ingresso já cadastrado, sumia,
-          sem outro jeito de criar mais um tipo. Botão fica sempre visível
-          agora — a criação em si continua na etapa de Ingressos do wizard
-          (ainda não tem um formulário inline aqui). */}
-      <a
-        href={`/criar-evento/${eventoId}/ingressos`}
-        className="self-end flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-        style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}40`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-      >
-        + Adicionar ingresso
-      </a>
+      {criando ? (
+        <NovoIngressoForm onSalvar={handleCriar} onCancelar={() => setCriando(false)} />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setCriando(true)}
+          className="self-end flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+          style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}40`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+        >
+          + Adicionar tipo de ingresso
+        </button>
+      )}
 
       {/* Resumo de capacidade */}
       {capacity && (
