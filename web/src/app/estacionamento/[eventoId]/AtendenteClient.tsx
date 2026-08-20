@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Car, Plus, Loader2, Clock, Banknote, CreditCard, Smartphone, Gift, X, ArrowLeft, DoorOpen,
-  Wallet, Lock, AlertTriangle, CheckCircle2, XCircle,
+  Wallet, Lock, AlertTriangle, CheckCircle2, XCircle, MinusCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
@@ -13,6 +13,7 @@ import { PrintServerPanel } from '@/components/PrintServerPanel'
 import { imprimirTicketPrintServer } from '@/lib/printServerClient'
 import { gerarComandosMultiplos, imprimirViaTipPrint } from '@/lib/rawbtPrint'
 import { apiFetchAuth } from '@/lib/apiFetch'
+import { ModalSangria } from '@/components/ModalSangria'
 
 const ACCENT = '#E8B84B'
 
@@ -117,6 +118,11 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [portaoEntradaSel, setPortaoEntradaSel] = useState('')
   const [portaoSaidaSel,   setPortaoSaidaSel]   = useState('')
   const [modalFecharCaixa, setModalFecharCaixa] = useState(false)
+  // Sangria (20/08/2026) — ver project_token_pin_acesso_caixa na memória.
+  // Especialmente útil aqui: estacionamento normalmente não tem gaveta
+  // fixa (atendente anda pelo pátio com o dinheiro), então sangrar antes de
+  // trocar de posto/função é o jeito combinado de manter o rastro contábil.
+  const [modalSangria, setModalSangria] = useState(false)
   const [dinheiroContado,  setDinheiroContado]  = useState('')
   const [salvandoCaixa,    setSalvandoCaixa]    = useState(false)
   const [erroCaixa,        setErroCaixa]        = useState<string | null>(null)
@@ -506,10 +512,16 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               Estacionamento — {eventoTitle}
             </h1>
             {caixaNome ? (
-              <button type="button" onClick={() => setModalFecharCaixa(true)}
-                className="flex items-center gap-1.5 mt-1 text-xs hover:underline" style={{ color: '#888', fontFamily: 'var(--font-dm-sans)' }}>
-                <Wallet size={11} className="text-green-400" /> Caixa: {caixaNome} · enviar contagem
-              </button>
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                <button type="button" onClick={() => setModalFecharCaixa(true)}
+                  className="flex items-center gap-1.5 text-xs hover:underline" style={{ color: '#888', fontFamily: 'var(--font-dm-sans)' }}>
+                  <Wallet size={11} className="text-green-400" /> Caixa: {caixaNome} · enviar contagem
+                </button>
+                <button type="button" onClick={() => setModalSangria(true)}
+                  className="flex items-center gap-1.5 text-xs hover:underline" style={{ color: '#666', fontFamily: 'var(--font-dm-sans)' }}>
+                  <MinusCircle size={11} className="text-red-400/70" /> Sangrar
+                </button>
+              </div>
             ) : (
               <p className="flex items-center gap-1.5 mt-1 text-xs" style={{ color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
                 <Lock size={11} /> Sem caixa designado — peça pro organizador abrir um pra você
@@ -857,6 +869,10 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
       )}
 
       {/* Modal — enviar contagem do caixa (o organizador valida depois, confere o troco na entrega) */}
+      {modalSangria && caixaId && (
+        <ModalSangria caixaId={caixaId} onFechar={() => setModalSangria(false)} onSangrada={() => {}} />
+      )}
+
       {modalFecharCaixa && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6">

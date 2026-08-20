@@ -4,8 +4,10 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Banknote, Smartphone, CreditCard, Ticket,
   TrendingUp, Wallet, ArrowDownUp, RefreshCw, AlertTriangle,
+  MinusCircle,
 } from 'lucide-react'
 import { apiFetchAuth } from '@/lib/apiFetch'
+import { ModalSangria } from '@/components/ModalSangria'
 
 interface Stats {
   nome:            string
@@ -22,6 +24,8 @@ interface Stats {
   recebidos:       number
   enviados:        number
   expectedGaveta:  number
+  // Sangria (20/08/2026) — ver project_token_pin_acesso_caixa na memória.
+  totalSangrias:   number
 }
 
 const ACCENT = '#E8B84B'
@@ -48,6 +52,7 @@ export function CaixaSidebar({ caixaId }: { caixaId: string }) {
   const [stats,      setStats]      = useState<Stats | null>(null)
   const [loading,    setLoading]    = useState(true)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [sangriaAberta, setSangriaAberta] = useState(false)
 
   const fetchStats = useCallback(async () => {
     const res = await apiFetchAuth(`/api/caixas/${caixaId}`)
@@ -158,6 +163,7 @@ export function CaixaSidebar({ caixaId }: { caixaId: string }) {
         </p>
         <Linha label="Fundo inicial"     value={fmt(Number(stats.fundo_inicial))} />
         <Linha label="+ Vendas dinheiro" value={fmt(stats.totalDinheiro)} />
+        {stats.totalSangrias > 0 && <Linha label="− Sangrias" value={fmt(stats.totalSangrias)} />}
         <div className="border-t border-[#1a1a1a] pt-2">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs text-[#555]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
@@ -168,7 +174,23 @@ export function CaixaSidebar({ caixaId }: { caixaId: string }) {
             </span>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setSangriaAberta(true)}
+          className="w-full mt-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors hover:border-red-400/40 hover:text-red-400"
+          style={{ background: '#111', border: '1px solid #1e1e1e', color: '#666', fontFamily: 'var(--font-dm-sans)' }}
+        >
+          <MinusCircle size={12} /> Sangrar caixa
+        </button>
       </div>
+
+      {sangriaAberta && (
+        <ModalSangria
+          caixaId={caixaId}
+          onFechar={() => setSangriaAberta(false)}
+          onSangrada={fetchStats}
+        />
+      )}
 
       {/* Ingressos — só existe quando o caixa controla ingresso físico
           (pulseira). Sem isso ligado, stats.saldoIngressos vem null do
