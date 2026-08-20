@@ -16,10 +16,11 @@ function isoParaDatetimeLocal(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-// Adiar evento (20/08/2026, pedido do usuário) — só a mecânica: troca a
-// data, reabre o evento se tinha sido encerrado, reativa venda online.
-// Avisar quem já comprou ingresso fica pra depois (escopo maior, não existe
-// notificação em massa hoje).
+// Adiar evento (20/08/2026, pedido do usuário) — troca a data, reabre o
+// evento se tinha sido encerrado, reativa venda online, e opcionalmente
+// avisa quem já comprou ingresso via WhatsApp (Boot Whats). Tipo de
+// mensagem novo ('evento_adiado') — ainda não confirmado que a Boot Whats
+// tem um template pronto pra ele, o primeiro envio real vai revelar isso.
 export function ModalAdiarEvento({ eventoId, onFechar, onAdiado }: {
   eventoId: string
   onFechar: () => void
@@ -28,9 +29,10 @@ export function ModalAdiarEvento({ eventoId, onFechar, onAdiado }: {
   const [carregando, setCarregando] = useState(true)
   const [dateStart, setDateStart]   = useState('')
   const [dateEnd, setDateEnd]       = useState('')
+  const [notificar, setNotificar]   = useState(true)
   const [enviando, setEnviando]     = useState(false)
   const [erro, setErro]             = useState<string | null>(null)
-  const [sucesso, setSucesso]       = useState<{ reaberto: boolean } | null>(null)
+  const [sucesso, setSucesso]       = useState<{ reaberto: boolean; notificados: number } | null>(null)
 
   useEffect(() => {
     (async () => {
@@ -55,11 +57,12 @@ export function ModalAdiarEvento({ eventoId, onFechar, onAdiado }: {
         body:    JSON.stringify({
           dateStart: new Date(dateStart).toISOString(),
           dateEnd:   dateEnd ? new Date(dateEnd).toISOString() : undefined,
+          notificarCompradores: notificar,
         }),
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? data.message ?? 'Erro ao adiar evento'); return }
-      setSucesso({ reaberto: !!data.reaberto })
+      setSucesso({ reaberto: !!data.reaberto, notificados: data.notificados ?? 0 })
       onAdiado()
     } finally {
       setEnviando(false)
@@ -84,6 +87,13 @@ export function ModalAdiarEvento({ eventoId, onFechar, onAdiado }: {
             <p className="text-white text-sm">Evento adiado para a nova data.</p>
             {sucesso.reaberto && (
               <p className="text-[#666] text-xs">O evento estava encerrado — reaberto automaticamente.</p>
+            )}
+            {notificar && (
+              <p className="text-[#666] text-xs">
+                {sucesso.notificados > 0
+                  ? `${sucesso.notificados} comprador${sucesso.notificados > 1 ? 'es' : ''} notificado${sucesso.notificados > 1 ? 's' : ''} por WhatsApp.`
+                  : 'Nenhum comprador com WhatsApp cadastrado pra notificar.'}
+              </p>
             )}
           </div>
         ) : (
@@ -111,6 +121,16 @@ export function ModalAdiarEvento({ eventoId, onFechar, onAdiado }: {
                 />
               </div>
             </div>
+
+            <label className="flex items-center gap-2 mb-4 cursor-pointer">
+              <input
+                type="checkbox" checked={notificar}
+                onChange={e => setNotificar(e.target.checked)}
+                className="w-4 h-4 rounded accent-[#E8B84B]"
+              />
+              <span className="text-[#aaa] text-xs">Avisar quem já comprou ingresso, por WhatsApp</span>
+            </label>
+
             {erro && <p className="text-red-400 text-xs mb-3">{erro}</p>}
             <button
               type="button" onClick={confirmar} disabled={enviando}

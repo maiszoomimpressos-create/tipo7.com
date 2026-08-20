@@ -13,7 +13,13 @@ export type WhatsAppNotificationType =
   | 'ingresso_emitido'
   | 'estacionamento_emitido'
   | 'lista_espera'
-  | 'agendamento_confirmado';
+  | 'agendamento_confirmado'
+  // Adicionado 20/08/2026 (eventos-admin.service.ts > adiar()) — AINDA NÃO
+  // confirmado que a Boot Whats reconhece esse tipo/monta uma mensagem
+  // sensata pra ele. Primeiro envio real vai revelar isso (mesmo padrão de
+  // descoberta por tentativa do 'estacionamento_emitido', ver achados reais
+  // documentados ali).
+  | 'evento_adiado';
 
 interface EnviarParams {
   to: string; // telefone como salvo em profiles.phone (DDD+número, sem "55")

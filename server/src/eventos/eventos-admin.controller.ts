@@ -66,7 +66,11 @@ export class EventosAdminController {
   }
 
   @Post('adiar')
-  adiar(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: { dateStart?: string; dateEnd?: string }) {
+  adiar(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: { dateStart?: string; dateEnd?: string; notificarCompradores?: boolean },
+  ) {
     return this.eventos.adiar(user.id, id, body);
   }
 

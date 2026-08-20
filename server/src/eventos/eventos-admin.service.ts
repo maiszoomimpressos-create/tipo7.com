@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import { CaixasService } from '../caixas/caixas.service';
+import { WhatsAppService } from '../common/whatsapp.service';
 import { OrgAdminService } from '../org-admin/org-admin.service';
 import { EventPermissionsService } from '../event-permissions/event-permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -9,11 +10,14 @@ const PERMISSOES_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_sai
 
 @Injectable()
 export class EventosAdminService {
+  private readonly logger = new Logger(EventosAdminService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly orgAdmin: OrgAdminService,
     private readonly eventPermissions: EventPermissionsService,
     private readonly caixas: CaixasService,
+    private readonly whatsapp: WhatsAppService,
   ) {}
 
   private async assertOwner(userId: string, eventoId: string): Promise<void> {
@@ -731,10 +735,10 @@ export class EventosAdminService {
   // manualmente por outro motivo, precisa pausar de novo depois). Não mexe
   // no histórico de encerramento (encerradoEm etc.) — fica registrado que
   // esse evento já foi encerrado uma vez, mesmo reaberto.
-  async adiar(userId: string, eventoId: string, body: { dateStart?: string; dateEnd?: string }) {
+  async adiar(userId: string, eventoId: string, body: { dateStart?: string; dateEnd?: string; notificarCompradores?: boolean }) {
     const evento = await this.prisma.event.findUnique({
       where: { id: eventoId },
-      select: { organizationId: true, status: true },
+      select: { organizationId: true, status: true, title: true, dateStart: true, venueName: true, city: true, state: true },
     });
     if (!evento) throw new NotFoundException('Evento não encontrado');
     if (!(await this.orgAdmin.isOrgAdmin(evento.organizationId, userId))) throw new ForbiddenException('Sem permissão');
@@ -754,6 +758,8 @@ export class EventosAdminService {
       throw new BadRequestException('A nova data ainda está no passado — escolha uma data futura pra adiar de verdade.');
     }
 
+    const dataAntiga = evento.dateStart;
+
     await this.prisma.event.update({
       where: { id: eventoId },
       data: {
@@ -764,7 +770,64 @@ export class EventosAdminService {
       },
     });
 
-    return { ok: true, reaberto: evento.status === 'encerrado' };
+    let notificados = 0;
+    if (body.notificarCompradores) {
+      notificados = await this.notificarCompradoresAdiamento(eventoId, {
+        titulo: evento.title ?? 'Evento',
+        local: [evento.venueName, evento.city, evento.state].filter(Boolean).join(' - '),
+        dataAntiga,
+        dataNova: novoInicio,
+      });
+    }
+
+    return { ok: true, reaberto: evento.status === 'encerrado', notificados };
+  }
+
+  // Best-effort — nunca trava o adiamento em si (mesmo padrão de qualquer
+  // notificação de WhatsApp no projeto). Notifica o COMPRADOR de cada pedido
+  // aprovado (não cada portador individual de ingresso — esse é um universo
+  // maior, ligado a holder_invite_links, fica pra se precisar depois).
+  private async notificarCompradoresAdiamento(
+    eventoId: string,
+    params: { titulo: string; local: string; dataAntiga: Date | null; dataNova: Date },
+  ): Promise<number> {
+    const orders = await this.prisma.order.findMany({
+      where: { eventId: eventoId, status: 'approved', userId: { not: null } },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    if (orders.length === 0) return 0;
+
+    const compradores = await this.prisma.profile.findMany({
+      where: { id: { in: orders.map((o) => o.userId!) }, phone: { not: null } },
+      select: { id: true, fullName: true, phone: true },
+    });
+
+    const fmtData = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' });
+    const fmtHora = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+
+    let enviados = 0;
+    for (const c of compradores) {
+      if (!c.phone) continue;
+      try {
+        await this.whatsapp.enviar({
+          to: c.phone,
+          recipientName: c.fullName ?? 'Cliente',
+          type: 'evento_adiado',
+          details: {
+            nome_evento: params.titulo,
+            local: params.local,
+            data_antiga: params.dataAntiga ? fmtData(params.dataAntiga) : '',
+            data_nova: fmtData(params.dataNova),
+            horario_novo: fmtHora(params.dataNova),
+          },
+        });
+        enviados++;
+      } catch (err) {
+        this.logger.error(`[adiar] falha ao notificar comprador ${c.id}`, err as Error);
+      }
+    }
+    return enviados;
   }
 
   // ==== encerramento de evento (19-20/08/2026, design combinado — ver
