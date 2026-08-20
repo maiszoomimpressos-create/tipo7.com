@@ -274,24 +274,47 @@ function IngressoCard({
 // selecionado na Programação, ou null se o evento não tem dias/é pacote).
 // ---------------------------------------------------------------------------
 
-function NovoIngressoForm({ onSalvar, onCancelar }: {
-  onSalvar:   (novo: { name: string; price: number; quantity: number }) => Promise<void>
+function NovoIngressoForm({ onSalvar, onCancelar, capacidadeDisponivel, ingressosExistentes }: {
+  onSalvar:   (novo: { name: string; price: number; quantity: number }, transferir?: { deId: string; qtd: number }) => Promise<void>
   onCancelar: () => void
+  // null = evento sem capacidade fixa, não precisa validar nada.
+  capacidadeDisponivel: number | null
+  ingressosExistentes:  IngressoEditavel[]
 }) {
   const [name, setName]         = useState('')
   const [price, setPrice]       = useState('')
   const [quantity, setQuantity] = useState('')
   const [saving, setSaving]     = useState(false)
   const [err, setErr]           = useState<string | null>(null)
+  // Achado real (20/08/2026, usuário testando): quando a capacidade do
+  // evento já está toda alocada, criar um tipo novo precisa tirar vaga de
+  // outro — sem isso, ou o form travava sem explicar por quê, ou deixava
+  // passar do total sem avisar.
+  const [transferirDeId, setTransferirDeId] = useState('')
+
+  const qtdNum = parseInt(quantity, 10) || 0
+  const faltam = capacidadeDisponivel !== null ? Math.max(0, qtdNum - capacidadeDisponivel) : 0
+  const origem = ingressosExistentes.find(t => t.id === transferirDeId)
+  const disponivelNaOrigem = origem ? origem.quantity - origem.sold : 0
 
   async function salvar() {
     if (!name.trim()) { setErr('Dá um nome pro tipo de ingresso (ex: Pista, VIP, Camarote)'); return }
-    const precoNum = Number(price.replace(',', '.')) || 0
-    const qtdNum   = parseInt(quantity, 10) || 0
     if (qtdNum <= 0) { setErr('Quantidade precisa ser maior que zero'); return }
+
+    let transferir: { deId: string; qtd: number } | undefined
+    if (faltam > 0) {
+      if (!origem) { setErr(`Faltam ${faltam} vaga(s) — escolha de qual ingresso tirar.`); return }
+      if (faltam > disponivelNaOrigem) {
+        setErr(`"${origem.name}" só tem ${disponivelNaOrigem} vaga(s) sem venda pra ceder — escolha outro ou reduza a quantidade.`)
+        return
+      }
+      transferir = { deId: origem.id, qtd: faltam }
+    }
+
     setSaving(true); setErr(null)
     try {
-      await onSalvar({ name: name.trim(), price: precoNum, quantity: qtdNum })
+      const precoNum = Number(price.replace(',', '.')) || 0
+      await onSalvar({ name: name.trim(), price: precoNum, quantity: qtdNum }, transferir)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Erro ao criar ingresso')
     } finally {
@@ -329,8 +352,37 @@ function NovoIngressoForm({ onSalvar, onCancelar }: {
             className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-[#E8B84B]/40"
             style={{ fontFamily: 'var(--font-dm-sans)' }}
           />
+          {capacidadeDisponivel !== null && (
+            <p className="text-[#444] text-[10px] mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {capacidadeDisponivel} vaga(s) livre(s) no evento
+            </p>
+          )}
         </div>
       </div>
+
+      {faltam > 0 && (
+        <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background: 'rgba(232,184,75,0.06)', border: `1px solid ${ACCENT}30` }}>
+          <p className="text-xs" style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+            Faltam {faltam} vaga(s) — de qual ingresso quer tirar?
+          </p>
+          <select
+            value={transferirDeId} onChange={e => setTransferirDeId(e.target.value)}
+            className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+            style={{ fontFamily: 'var(--font-dm-sans)' }}
+          >
+            <option value="">Selecione...</option>
+            {ingressosExistentes.map(t => (
+              <option key={t.id} value={t.id}>{t.name} — {t.quantity - t.sold} livre(s)</option>
+            ))}
+          </select>
+          {origem && (
+            <p className="text-[#888] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              &quot;{origem.name}&quot; vai de {origem.quantity} pra {origem.quantity - faltam}
+            </p>
+          )}
+        </div>
+      )}
+
       {err && (
         <div className="flex items-center gap-2 text-red-400 text-xs py-2 px-3 rounded-lg bg-red-400/5">
           <AlertTriangle size={12} className="shrink-0" /> {err}
@@ -398,12 +450,36 @@ export function PainelIngressos({ eventoId, ingressos, capacity, dias, diaSeleci
   // só o ingresso novo, sem id, não mexe nos que já existem (confirmado no
   // backend antes de fazer isso — sem id = create, com id = update, o resto
   // da lista simplesmente não é tocado).
-  async function handleCriar(novo: { name: string; price: number; quantity: number }) {
+  //
+  // transferir (opcional, pedido do usuário 20/08/2026): quando a
+  // capacidade do evento já está toda alocada, criar um tipo novo exige
+  // tirar vaga de outro — manda os dois no MESMO POST (o existente com
+  // quantity reduzida, o novo sem id), então é uma operação atômica, não
+  // duas chamadas separadas que podiam deixar o total inconsistente se a
+  // segunda falhasse.
+  async function handleCriar(
+    novo: { name: string; price: number; quantity: number },
+    transferir?: { deId: string; qtd: number },
+  ) {
     const eventDayId = temDias ? (diaAtual?.id ?? null) : null
+    const ingressosPayload: Array<{ id?: string; name: string; price: number; quantity: number; eventDayId: string | null }> = [
+      { ...novo, eventDayId },
+    ]
+    let origem: IngressoEditavel | undefined
+    if (transferir) {
+      origem = localIngressos.find(t => t.id === transferir.deId)
+      if (origem) {
+        ingressosPayload.push({
+          id: origem.id, name: origem.name, price: origem.price,
+          quantity: origem.quantity - transferir.qtd, eventDayId: origem.eventDayId,
+        })
+      }
+    }
+
     const res = await apiFetchAuth(`/api/eventos/${eventoId}/dias`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ ingressos: [{ ...novo, eventDayId }] }),
+      body:    JSON.stringify({ ingressos: ingressosPayload }),
     })
     if (!res.ok) {
       const d = await res.json().catch(() => null) as { error?: string } | null
@@ -411,7 +487,12 @@ export function PainelIngressos({ eventoId, ingressos, capacity, dias, diaSeleci
     }
     const data = await res.json() as { ingressos: { index: number; id: string; eventDayId: string | null }[] }
     const criado = data.ingressos[0]
-    setLocalIngressos(prev => [...prev, { id: criado.id, ...novo, sold: 0, eventDayId: criado.eventDayId }])
+    setLocalIngressos(prev => {
+      const atualizados = origem && transferir
+        ? prev.map(t => t.id === origem!.id ? { ...t, quantity: origem!.quantity - transferir.qtd } : t)
+        : prev
+      return [...atualizados, { id: criado.id, ...novo, sold: 0, eventDayId: criado.eventDayId }]
+    })
     setCriando(false)
   }
 
@@ -419,7 +500,12 @@ export function PainelIngressos({ eventoId, ingressos, capacity, dias, diaSeleci
     <div className="flex flex-col gap-4">
 
       {criando ? (
-        <NovoIngressoForm onSalvar={handleCriar} onCancelar={() => setCriando(false)} />
+        <NovoIngressoForm
+          onSalvar={handleCriar}
+          onCancelar={() => setCriando(false)}
+          capacidadeDisponivel={capacity !== null ? capacity - totalEmUso : null}
+          ingressosExistentes={localIngressos}
+        />
       ) : (
         <button
           type="button"
