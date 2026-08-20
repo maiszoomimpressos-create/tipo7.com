@@ -579,6 +579,9 @@ function AbrirCaixaModal({ eventoId, estacionamentos, onFechar, onAberto }: {
   const [estacionamentoId, setEstacionamentoId] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  // Sangria (20/08/2026) — ver project_token_pin_acesso_caixa na memória.
+  // Só vem preenchido na 1ª vez que o dono abre um caixa nesse evento.
+  const [acessoOwner, setAcessoOwner] = useState<{ token: string; pin: string } | null>(null)
 
   const salvar = async () => {
     if (!nome.trim()) return
@@ -596,10 +599,42 @@ function AbrirCaixaModal({ eventoId, estacionamentos, onFechar, onAberto }: {
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? 'Erro ao abrir caixa'); return }
-      onAberto()
+      if (data.owner_pin_novo) {
+        setAcessoOwner({ token: data.owner_token, pin: data.owner_pin_novo })
+      } else {
+        onAberto()
+      }
     } finally {
       setSalvando(false)
     }
+  }
+
+  if (acessoOwner) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6">
+          <p className="text-white text-sm font-medium mb-1">Seu acesso pra autorizar sangria</p>
+          <p className="text-[#666] text-xs mb-4">
+            Guarde isso — o PIN só é mostrado essa vez. Você (organizador) usa esse código pra confirmar retiradas de dinheiro de qualquer caixa deste evento.
+          </p>
+          <div className="rounded-xl p-3 mb-2" style={{ background: '#111', border: '1px solid #1e1e1e' }}>
+            <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5">Token</p>
+            <p className="text-white text-base font-semibold tracking-[0.2em]">{acessoOwner.token}</p>
+          </div>
+          <div className="rounded-xl p-3 mb-4" style={{ background: '#111', border: '1px solid #1e1e1e' }}>
+            <p className="text-[#555] text-[10px] uppercase tracking-wider mb-0.5">PIN</p>
+            <p className="text-white text-base font-semibold tracking-[0.2em]">{acessoOwner.pin}</p>
+          </div>
+          <button
+            type="button" onClick={onAberto}
+            className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707]"
+            style={{ background: '#E8B84B' }}
+          >
+            Entendi, guardei
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

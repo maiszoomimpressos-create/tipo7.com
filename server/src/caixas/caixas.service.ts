@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { randomInt } from 'crypto';
 import { Prisma } from '../../generated/prisma/client';
 import { AuthCoreService } from '../auth-core/auth-core.service';
 import { EventFamilyService } from '../common/event-family.service';
@@ -420,6 +421,49 @@ export class CaixasService {
     return { ok: true };
   }
 
+  // Garante que o DONO do evento também tem token+PIN pra autorizar sangria,
+  // sem precisar virar staff "de verdade" nem passar pelo fluxo de convite
+  // (achado real, 20/08/2026: sem isso, só a senha da conta funcionava como
+  // autorização — o dono pediu menos fricção agora, delegação de verdade
+  // por função/supervisor fica pra depois). Mesma tabela EventStaff, só que
+  // sem eventPositionId — resolverAutorizacaoSangria() abaixo trata "é o
+  // dono" como permissão implícita, mesmo padrão de isOwner em todo o resto
+  // do sistema. Chamado toda vez que o dono abre um caixa; é barato — só
+  // cria de verdade na primeira vez, as próximas só confirmam que já existe.
+  // pinNovo só vem preenchido na primeira vez (depois disso o PIN vira hash,
+  // não tem como mostrar de novo — a UI precisa exibir na hora).
+  // Público — também chamado por EstacionamentoService.abrirCaixa() (mesmo
+  // caso de uso, evento com estacionamento em vez de bilheteria).
+  async garantirAcessoOwnerParaSangria(eventoId: string, ownerId: string): Promise<{ token: string; pinNovo: string | null }> {
+    const existente = await this.prisma.eventStaff.findUnique({
+      where: { eventId_userId: { eventId: eventoId, userId: ownerId } },
+      select: { token: true, pinHash: true },
+    });
+    if (existente?.token && existente.pinHash) {
+      return { token: existente.token, pinNovo: null };
+    }
+
+    const pin = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    const pinHash = await bcrypt.hash(pin, 10);
+
+    for (let tentativa = 0; tentativa < 5; tentativa++) {
+      try {
+        const token = existente?.token ?? String(randomInt(0, 100_000_000)).padStart(8, '0');
+        const staff = await this.prisma.eventStaff.upsert({
+          where: { eventId_userId: { eventId: eventoId, userId: ownerId } },
+          create: { eventId: eventoId, userId: ownerId, status: 'active', token, pinHash },
+          update: { pinHash, ...(existente?.token ? {} : { token }) },
+          select: { token: true },
+        });
+        return { token: staff.token ?? token, pinNovo: pin };
+      } catch (err) {
+        if (isUniqueConstraintError(err) && tentativa < 4) continue;
+        throw err;
+      }
+    }
+    throw new BadRequestException('Não foi possível gerar o acesso do organizador.');
+  }
+
   // POST /caixas/abrir
   async abrir(
     userId: string,
@@ -497,7 +541,9 @@ export class CaixasService {
       await this.saldoBilheteria.ativarSaldoBilheteria(body.eventoId, userId);
     }
 
-    return { caixas: criados };
+    const acessoOwner = await this.garantirAcessoOwnerParaSangria(body.eventoId, userId);
+
+    return { caixas: criados, owner_token: acessoOwner.token, owner_pin_novo: acessoOwner.pinNovo };
   }
 
   // POST /caixas/pausar
@@ -810,7 +856,12 @@ export class CaixasService {
     });
     for (const s of staffAtivo) {
       if (s.pinHash && (await bcrypt.compare(codigo, s.pinHash))) {
-        const temPermissao = (s.eventPosition?.eventPositionPermissions ?? []).some((p) => p.permission === 'autorizar_sangria');
+        // Dono do evento sempre pode, mesmo sem função/permissão explícita —
+        // é a linha "invisível" criada por garantirAcessoOwnerParaSangria()
+        // acima, sem eventPositionId. Mesmo padrão de isOwner bypassando
+        // checagem granular em hasEventPermission().
+        const ehDono = await this.orgAdmin.isOrgAdmin(organizationId, s.userId);
+        const temPermissao = ehDono || (s.eventPosition?.eventPositionPermissions ?? []).some((p) => p.permission === 'autorizar_sangria');
         if (!temPermissao) throw new ForbiddenException('Essa pessoa não tem permissão para autorizar sangria.');
         return s.userId;
       }

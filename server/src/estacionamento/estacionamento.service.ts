@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { CaixasService } from '../caixas/caixas.service';
 import { AutosaveService } from '../common/autosave.service';
 import { calcularValorEstacionamento } from '../common/estacionamento-pricing.util';
 import { WhatsAppService } from '../common/whatsapp.service';
@@ -40,6 +41,7 @@ export class EstacionamentoService {
     private readonly eventPermissions: EventPermissionsService,
     private readonly autosave: AutosaveService,
     private readonly whatsapp: WhatsAppService,
+    private readonly caixas: CaixasService,
   ) {}
 
   // ==== CRUD de estacionamentos (dono/admin do evento) ====
@@ -576,6 +578,11 @@ export class EstacionamentoService {
       },
     });
 
-    return { ok: true, caixa };
+    // Mesmo mecanismo de caixas.service.ts > abrir() — dono também precisa
+    // conseguir autorizar sangria sem virar staff de verdade (achado real,
+    // 20/08/2026).
+    const acessoOwner = await this.caixas.garantirAcessoOwnerParaSangria(eventoId, userId);
+
+    return { ok: true, caixa, owner_token: acessoOwner.token, owner_pin_novo: acessoOwner.pinNovo };
   }
 }
