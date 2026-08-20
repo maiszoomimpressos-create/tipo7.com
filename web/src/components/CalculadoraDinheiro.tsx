@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { X } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
@@ -171,6 +171,30 @@ export function CalculadoraDinheiro({ label, onChange, onClose }: Props) {
       }
     }
   }
+
+  // Achado real (20/08/2026): a aba Calculadora só respondia a clique nos
+  // botões da tela — quem está num PC (não numa maquininha/tablet) esperava
+  // digitar pelo teclado físico, e não achava campo nenhum pra isso (não é
+  // um <input>, é um <p> mostrando o visor). Escuta o teclado só enquanto
+  // essa aba está ativa, mapeando pras mesmas teclas visuais.
+  useEffect(() => {
+    if (tab !== 'calc') return
+    function onKeyDown(e: KeyboardEvent) {
+      if (/^[0-9]$/.test(e.key)) { calcPress(e.key); return }
+      if (e.key === ',' || e.key === '.') { calcPress(','); return }
+      if (e.key === 'Backspace') { calcPress('←'); return }
+      if (e.key === 'Escape') { calcPress('C'); return }
+      if (e.key === '+') { calcPress('+'); return }
+      if (e.key === '-') { calcPress('-'); return }
+      if (e.key === '*') { calcPress('×'); return }
+      if (e.key === '/') { e.preventDefault(); calcPress('÷'); return }
+      if (e.key === '%') { calcPress('%'); return }
+      if (e.key === 'Enter' || e.key === '=') { e.preventDefault(); calcPress('='); return }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, disp, prev, op, newNum])
 
   const CALC_KEYS = [
     'C', '←', '%', '÷',
