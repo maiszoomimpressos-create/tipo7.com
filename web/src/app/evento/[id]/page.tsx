@@ -28,7 +28,12 @@ interface DiaApi {
   banner_url: string | null
   event_day_attractions: { name: string; description: string | null; scheduled_time: string | null; order_index: number; image_url: string | null }[]
 }
-interface IngressoApi { id: string; name: string; price: number; quantity: number; event_day_id: string | null }
+interface IngressoApi {
+  id: string; name: string; price: number; quantity: number; event_day_id: string | null
+  // Restante do lote em vigor agora (21/08/2026) — null = sem lote ou todos
+  // esgotados/expirados, comportamento vira idêntico a antes disso existir.
+  lote_ativo: { ordem: number; disponivel: number } | null
+}
 interface FilhoApi {
   title: string; banner_url: string | null; date_start: string | null
   ticket_mode: 'individual' | 'pacote' | 'ambos' | null; package_discount_pct: number | null
@@ -99,6 +104,7 @@ export default async function EventoPage({ params }: Props) {
     price:      t.price         ?? 0,
     quantity:   t.quantity      ?? 0,
     eventDayId: t.event_day_id  ?? null,
+    loteAtivo:  t.lote_ativo    ?? null,
   }))
 
   return (

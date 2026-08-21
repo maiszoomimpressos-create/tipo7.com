@@ -64,6 +64,9 @@ interface Ingresso {
   price:      number
   quantity:   number
   eventDayId: string | null
+  // Restante do lote em vigor agora (21/08/2026) — null = sem lote ou todos
+  // esgotados/expirados.
+  loteAtivo:  { ordem: number; disponivel: number } | null
 }
 
 interface Atracao {
@@ -152,6 +155,14 @@ function TicketRow({
            style={{ color: gratuito ? '#4ade80' : ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
           {formatPrice(displayPrice)}
         </p>
+        {/* Lote (21/08/2026) — avisa ANTES da compra que o preço muda em
+            breve; se a pessoa pedir mais do que resta aqui, o checkout já
+            cobra o excedente no preço do próximo lote automaticamente. */}
+        {ingresso.loteAtivo && (
+          <p className="text-[11px] mt-0.5" style={{ color: '#888', fontFamily: 'var(--font-dm-sans)' }}>
+            {ingresso.loteAtivo.disponivel} disponíve{ingresso.loteAtivo.disponivel === 1 ? 'l' : 'is'} no {ingresso.loteAtivo.ordem}º lote
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <button

@@ -1173,6 +1173,50 @@ export class EventosAdminService {
       }),
     ]);
 
+    // Lote ativo por ingresso (21/08/2026, pedido do usuário) — pro
+    // comprador ver "restam X no 1º lote" na página pública ANTES de
+    // finalizar a compra, não só depois de cruzar a fronteira no checkout.
+    // Mesma regra cumulativa de LotesService.resincronizar(): primeiro
+    // lote, em ordem, que não esgotou nem passou da data de corte.
+    const ticketIds = ingressos.map((t) => t.id);
+    const [lotes, vendidosRows] = ticketIds.length
+      ? await Promise.all([
+          this.prisma.ticketLote.findMany({ where: { ticketId: { in: ticketIds } }, orderBy: { ordem: 'asc' } }),
+          this.prisma.orderItem.findMany({
+            where: { ticketId: { in: ticketIds }, order: { status: 'approved' } },
+            select: { ticketId: true, quantity: true },
+          }),
+        ])
+      : [[], []];
+
+    const vendidosPorTicket = new Map<string, number>();
+    for (const r of vendidosRows) {
+      if (!r.ticketId) continue;
+      vendidosPorTicket.set(r.ticketId, (vendidosPorTicket.get(r.ticketId) ?? 0) + r.quantity);
+    }
+    const lotesPorTicket = new Map<string, typeof lotes>();
+    for (const l of lotes) {
+      const arr = lotesPorTicket.get(l.ticketId) ?? [];
+      arr.push(l);
+      lotesPorTicket.set(l.ticketId, arr);
+    }
+
+    const loteAtivoDoTicket = (ticketId: string): { ordem: number; disponivel: number } | null => {
+      const ls = lotesPorTicket.get(ticketId);
+      if (!ls?.length) return null;
+      const vendidos = vendidosPorTicket.get(ticketId) ?? 0;
+      const agora = new Date();
+      let acumulado = 0;
+      for (const l of ls) {
+        const expirou = l.dataCorte !== null && l.dataCorte <= agora;
+        const jaVendido = Math.max(0, Math.min(l.quantity, vendidos - acumulado));
+        const disponivel = l.quantity - jaVendido;
+        if (!expirou && disponivel > 0) return { ordem: l.ordem, disponivel };
+        acumulado += l.quantity;
+      }
+      return null; // todos os lotes esgotados/expirados
+    };
+
     return {
       dias: dias.map((d) => ({
         id: d.id,
@@ -1198,6 +1242,7 @@ export class EventosAdminService {
         price: Number(t.price),
         quantity: t.quantity,
         order_index: t.orderIndex,
+        lote_ativo: loteAtivoDoTicket(t.id),
       })),
     };
   }
