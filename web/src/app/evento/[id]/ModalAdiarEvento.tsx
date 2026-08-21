@@ -61,7 +61,7 @@ export function ModalAdiarEvento({ eventoId, onFechar, onAdiado }: {
         }),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.error ?? data.message ?? 'Erro ao adiar evento'); return }
+      if (!res.ok) { setErro(data.message ?? data.error ?? 'Erro ao adiar evento'); return }
       setSucesso({ reaberto: !!data.reaberto, notificados: data.notificados ?? 0 })
       onAdiado()
     } finally {

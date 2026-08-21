@@ -53,7 +53,7 @@ export function ModalEncerrarEvento({ eventoId, onFechar, onEncerrado }: {
         body:    JSON.stringify(forcar ? { forcar: true, codigo: codigo.trim() } : {}),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.error ?? data.message ?? 'Erro ao encerrar evento'); return }
+      if (!res.ok) { setErro(data.message ?? data.error ?? 'Erro ao encerrar evento'); return }
       if (data.precisa_forcar) { setForcando(true); return }
       setSucesso(true)
       onEncerrado()

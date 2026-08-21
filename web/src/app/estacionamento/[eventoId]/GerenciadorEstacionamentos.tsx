@@ -109,6 +109,13 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
   const [caixas, setCaixas]                   = useState<Caixa[]>([])
   const [carregando, setCarregando]           = useState(true)
   const [modalAberto, setModalAberto]         = useState(false)
+  // Achado real (21/08/2026, pedido do usuário): o botão de lápis na linha
+  // de cada local estava mapeado pra handleToggleAtivo() (só liga/desliga)
+  // — não existia jeito nenhum de editar preço/vagas depois de criado, só
+  // via banco direto. Agora o lápis abre o EstacionamentoModal em modo
+  // edição (mesmo componente do "Novo", pré-preenchido) e o ativo/inativo
+  // ganhou um botão próprio (cadeado, mesmo padrão já usado nos portões).
+  const [modalEditando, setModalEditando]     = useState<Estacionamento | null>(null)
   const [modalCaixaAberto, setModalCaixaAberto] = useState(false)
   const [erro, setErro]                       = useState<string | null>(null)
   const [portoesAbertos, setPortoesAbertos]   = useState<Set<string>>(new Set())
@@ -134,7 +141,7 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
     if (!confirm('Excluir este estacionamento?')) return
     const res = await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${id}`, { method: 'DELETE' })
     const data = await res.json()
-    if (!res.ok) { setErro(data.error ?? 'Erro ao excluir'); return }
+    if (!res.ok) { setErro(data.message ?? data.error ?? 'Erro ao excluir'); return }
     await carregar()
   }
 
@@ -165,7 +172,7 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
         body:    JSON.stringify({ nome: novoPortaoNome.trim(), tipo: novoPortaoTipo }),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.error ?? 'Erro ao criar portão'); return }
+      if (!res.ok) { setErro(data.message ?? data.error ?? 'Erro ao criar portão'); return }
       setNovoPortaoNome(''); setNovoPortaoTipo('ambos')
       await carregar()
     } finally {
@@ -197,7 +204,7 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
       body:    JSON.stringify({ caixaId, dinheiro_contado: Number(dinheiro) || 0, ingressos_devolvidos: 0 }),
     })
     const data = await res.json()
-    if (!res.ok) { setErro(data.error ?? 'Erro ao fechar caixa'); return }
+    if (!res.ok) { setErro(data.message ?? data.error ?? 'Erro ao fechar caixa'); return }
     await carregar()
   }
 
@@ -209,8 +216,8 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
   const handleExcluirCaixa = async (caixaId: string, nome: string) => {
     if (!confirm(`Excluir o caixa "${nome}"? Só funciona se ele nunca teve movimentação — não dá pra desfazer.`)) return
     const res = await apiFetchAuth(`/api/caixas/${caixaId}`, { method: 'DELETE' })
-    const data = await res.json().catch(() => null) as { error?: string } | null
-    if (!res.ok) { setErro(data?.error ?? 'Erro ao excluir caixa'); return }
+    const data = await res.json().catch(() => null) as { error?: string; message?: string } | null
+    if (!res.ok) { setErro(data?.message ?? data?.error ?? 'Erro ao excluir caixa'); return }
     await carregar()
   }
 
@@ -221,7 +228,7 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
       body:    JSON.stringify({ caixaId }),
     })
     const data = await res.json()
-    if (!res.ok) { setErro(data.error ?? 'Erro ao validar caixa'); return }
+    if (!res.ok) { setErro(data.message ?? data.error ?? 'Erro ao validar caixa'); return }
     await carregar()
   }
 
@@ -293,6 +300,11 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
                       <button type="button" onClick={() => handleToggleAtivo(e)}
                         className="w-8 h-8 rounded-lg flex items-center justify-center text-[#555] hover:text-[#E8B84B] border border-[#1e1e1e] transition-colors"
                         title={e.ativo ? 'Desativar' : 'Ativar'}>
+                        {e.ativo ? <Unlock size={13} className="text-green-400" /> : <Lock size={13} />}
+                      </button>
+                      <button type="button" onClick={() => setModalEditando(e)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-[#555] hover:text-[#E8B84B] border border-[#1e1e1e] transition-colors"
+                        title="Editar preço, vagas e outras configurações">
                         <Pencil size={13} />
                       </button>
                       <button type="button" onClick={() => handleExcluir(e.id)}
@@ -444,10 +456,19 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
       </div>
 
       {modalAberto && (
-        <NovoEstacionamentoModal
+        <EstacionamentoModal
           eventoId={eventoId}
           onFechar={() => setModalAberto(false)}
-          onCriado={async () => { setModalAberto(false); await carregar() }}
+          onSalvo={async () => { setModalAberto(false); await carregar() }}
+        />
+      )}
+
+      {modalEditando && (
+        <EstacionamentoModal
+          eventoId={eventoId}
+          estacionamento={modalEditando}
+          onFechar={() => setModalEditando(null)}
+          onSalvo={async () => { setModalEditando(null); await carregar() }}
         />
       )}
 
@@ -463,15 +484,25 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
   )
 }
 
-function NovoEstacionamentoModal({ eventoId, onFechar, onCriado }: { eventoId: string; onFechar: () => void; onCriado: () => void }) {
-  const [nome, setNome] = useState('')
-  const [cobraModo, setCobraModo] = useState<Estacionamento['cobra_modo']>('gratis')
-  const [precoFixo, setPrecoFixo] = useState('')
-  const [precoPrimeiraHora, setPrecoPrimeiraHora] = useState('')
-  const [precoHoraAdicional, setPrecoHoraAdicional] = useState('')
-  const [tetoDiario, setTetoDiario] = useState('')
-  const [toleranciaMinutos, setToleranciaMinutos] = useState('10')
-  const [vagasTotais, setVagasTotais] = useState('')
+// Criação E edição do local de estacionamento — mesmo formulário nos dois
+// casos (achado real 21/08/2026: só existia criação; editar preço/vagas
+// depois de criado exigia mexer direto no banco). Quando `estacionamento` é
+// passado, pré-preenche os campos e salva via PATCH; sem ele, cria via POST.
+function EstacionamentoModal({ eventoId, estacionamento, onFechar, onSalvo }: {
+  eventoId: string
+  estacionamento?: Estacionamento
+  onFechar: () => void
+  onSalvo: () => void
+}) {
+  const editando = !!estacionamento
+  const [nome, setNome] = useState(estacionamento?.nome ?? '')
+  const [cobraModo, setCobraModo] = useState<Estacionamento['cobra_modo']>(estacionamento?.cobra_modo ?? 'gratis')
+  const [precoFixo, setPrecoFixo] = useState(String(estacionamento?.preco_fixo ?? ''))
+  const [precoPrimeiraHora, setPrecoPrimeiraHora] = useState(String(estacionamento?.preco_primeira_hora ?? ''))
+  const [precoHoraAdicional, setPrecoHoraAdicional] = useState(String(estacionamento?.preco_hora_adicional ?? ''))
+  const [tetoDiario, setTetoDiario] = useState(String(estacionamento?.teto_diario ?? ''))
+  const [toleranciaMinutos, setToleranciaMinutos] = useState(String(estacionamento?.tolerancia_minutos ?? '10'))
+  const [vagasTotais, setVagasTotais] = useState(String(estacionamento?.vagas_totais ?? ''))
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -479,8 +510,10 @@ function NovoEstacionamentoModal({ eventoId, onFechar, onCriado }: { eventoId: s
     if (!nome.trim()) return
     setSalvando(true); setErro(null)
     try {
-      const res = await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos`, {
-        method:  'POST',
+      const url    = editando ? `/api/eventos/${eventoId}/estacionamentos/${estacionamento.id}` : `/api/eventos/${eventoId}/estacionamentos`
+      const method = editando ? 'PATCH' : 'POST'
+      const res = await apiFetchAuth(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           nome:                nome.trim(),
@@ -494,8 +527,8 @@ function NovoEstacionamentoModal({ eventoId, onFechar, onCriado }: { eventoId: s
         }),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.error ?? 'Erro ao criar'); return }
-      onCriado()
+      if (!res.ok) { setErro(data.message ?? data.error ?? (editando ? 'Erro ao salvar' : 'Erro ao criar')); return }
+      onSalvo()
     } finally {
       setSalvando(false)
     }
@@ -505,7 +538,9 @@ function NovoEstacionamentoModal({ eventoId, onFechar, onCriado }: { eventoId: s
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
       <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
-          <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Novo estacionamento</p>
+          <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            {editando ? `Editar ${estacionamento.nome}` : 'Novo estacionamento'}
+          </p>
           <button onClick={onFechar} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
         </div>
 
@@ -579,7 +614,7 @@ function NovoEstacionamentoModal({ eventoId, onFechar, onCriado }: { eventoId: s
         <button type="button" onClick={salvar} disabled={salvando || !nome.trim()}
           className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
           style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-          {salvando ? <Loader2 size={15} className="animate-spin" /> : 'Criar'}
+          {salvando ? <Loader2 size={15} className="animate-spin" /> : (editando ? 'Salvar' : 'Criar')}
         </button>
       </div>
     </div>
@@ -618,7 +653,7 @@ function AbrirCaixaModal({ eventoId, estacionamentos, onFechar, onAberto }: {
         }),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.error ?? 'Erro ao abrir caixa'); return }
+      if (!res.ok) { setErro(data.message ?? data.error ?? 'Erro ao abrir caixa'); return }
       if (data.owner_acesso?.precisa_criar_pin) {
         setAcessoOwner({
           staffId:     data.owner_acesso.staff_id,

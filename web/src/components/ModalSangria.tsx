@@ -35,7 +35,7 @@ export function ModalSangria({ caixaId, onFechar, onSangrada }: { caixaId: strin
         body:    JSON.stringify({ caixaId, valor: valorNum, motivo: motivo.trim() || undefined, codigo: codigo.trim() }),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.error ?? data.message ?? 'Erro ao registrar sangria'); return }
+      if (!res.ok) { setErro(data.message ?? data.error ?? 'Erro ao registrar sangria'); return }
       setSucesso({ retirado_por: data.retirado_por })
       onSangrada()
     } finally {

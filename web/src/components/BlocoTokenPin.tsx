@@ -15,8 +15,8 @@ export interface AcessoCaixa {
 // ── Token + PIN (acesso a caixa em PC compartilhado / maquininha) ────────────
 // Mostra o token (persiste, não é "mostra uma vez só e some" — a pessoa pode
 // reabrir isso quando quiser) e deixa criar/trocar o PIN daquele evento. Não
-// faz login nenhum aqui — só prepara a credencial usada em outro lugar (rota
-// /caixa, ainda não construída, e na sangria).
+// faz login nenhum aqui — só prepara a credencial usada em outro lugar
+// (rota pública /caixa, ver app/caixa/CaixaLoginClient.tsx, e na sangria).
 //
 // Compartilhado entre /trabalhos (equipe convidada) e as telas de abrir
 // caixa da Bilheteria/Estacionamento (dono do evento) — mesmo formulário,
@@ -52,7 +52,7 @@ export function BlocoTokenPin({ acesso, onPinAtualizado }: { acesso: AcessoCaixa
         body:    JSON.stringify({ staffId: acesso.staffId, pin }),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.error ?? data.message ?? 'Erro ao salvar PIN'); return }
+      if (!res.ok) { setErro(data.message ?? data.error ?? 'Erro ao salvar PIN'); return }
       setPin(''); setConfirmarPin('')
       onPinAtualizado()
     } finally {
