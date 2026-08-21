@@ -123,8 +123,6 @@ export class CheckoutService {
       return { ticket, quantity: item.quantity };
     });
 
-    const total = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0);
-
     const resultado = await this.pedidoAtomico.criar(
       userId,
       eventoId,
@@ -134,8 +132,17 @@ export class CheckoutService {
       const ticketName = tickets.find((t) => t.id === resultado.ticket_id)?.name ?? 'Ingresso';
       throw new ConflictException(`Quantidade indisponível para "${ticketName}". Restam ${resultado.disponivel ?? 0}.`);
     }
-    if (resultado.error || !resultado.order_id) throw new InternalServerErrorException('Erro ao criar pedido');
+    if (resultado.error === 'lotes_insuficientes') {
+      const ticketName = tickets.find((t) => t.id === resultado.ticket_id)?.name ?? 'Ingresso';
+      throw new ConflictException(`Configuração de lotes incompleta para "${ticketName}".`);
+    }
+    if (resultado.error || !resultado.order_id || resultado.total === undefined || !resultado.items) {
+      throw new InternalServerErrorException('Erro ao criar pedido');
+    }
     const orderId = resultado.order_id;
+    // Total de verdade, calculado dentro do lock (ver PedidoAtomicoResultado)
+    // — pode diferir do que a gente somaria aqui se a compra cruzou lote.
+    const total = resultado.total;
 
     const config = await this.feeRules.buscarConfigTaxaIngressosOnline();
 
@@ -173,13 +180,20 @@ export class CheckoutService {
 
       const result = await preference.create({
         body: {
-          items: lineItems.map(({ ticket, quantity }) => ({
-            id: ticket.id,
-            title: ticket.name ?? 'Ingresso',
-            quantity,
-            unit_price: Number(ticket.price ?? 0),
-            currency_id: 'BRL',
-          })),
+          // Vem de resultado.items, não de lineItems — se a compra cruzou
+          // fronteira de lote, isso já são 2+ linhas por ticket, cada uma
+          // com o preço certo (é o que a MP usa pra calcular o total real
+          // cobrado no Checkout Pro, não é só decoração).
+          items: resultado.items.map((it) => {
+            const ticket = tickets.find((t) => t.id === it.ticket_id);
+            return {
+              id: it.lote_id ? `${it.ticket_id}-lote${it.lote_ordem}` : it.ticket_id,
+              title: it.lote_ordem ? `${ticket?.name ?? 'Ingresso'} (${it.lote_ordem}º lote)` : (ticket?.name ?? 'Ingresso'),
+              quantity: it.quantity,
+              unit_price: it.unit_price,
+              currency_id: 'BRL',
+            };
+          }),
           payer: {
             email: userEmail ?? '',
             name: firstName ?? '',
@@ -253,8 +267,11 @@ export class CheckoutService {
       return { ticket, quantity: item.quantity };
     });
 
-    const faceValue = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0);
-    if (faceValue <= 0) throw new BadRequestException('PIX não disponível para ingressos gratuitos');
+    // Estimativa pré-lock, só pra rejeitar cedo compra de ingresso grátis
+    // sem gastar uma reserva atômica com isso — o valor de cobrança de
+    // verdade vem de resultado.total, depois do pedido atômico.
+    const faceValueEstimado = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0);
+    if (faceValueEstimado <= 0) throw new BadRequestException('PIX não disponível para ingressos gratuitos');
 
     const profile = await this.prisma.profile.findUnique({ where: { id: userId }, select: { cpf: true, fullName: true } });
     const cpf = profile?.cpf?.replace(/\D/g, '');
@@ -269,22 +286,29 @@ export class CheckoutService {
       const ticketName = tickets.find((t) => t.id === resultado.ticket_id)?.name ?? 'Ingresso';
       throw new ConflictException(`Quantidade indisponível para "${ticketName}". Restam ${resultado.disponivel ?? 0}.`);
     }
-    if (resultado.error || !resultado.order_id) throw new InternalServerErrorException('Erro ao criar pedido');
+    if (resultado.error === 'lotes_insuficientes') {
+      const ticketName = tickets.find((t) => t.id === resultado.ticket_id)?.name ?? 'Ingresso';
+      throw new ConflictException(`Configuração de lotes incompleta para "${ticketName}".`);
+    }
+    if (resultado.error || !resultado.order_id || resultado.total === undefined) throw new InternalServerErrorException('Erro ao criar pedido');
     const orderId = resultado.order_id;
 
     const config = await this.feeRules.buscarConfigTaxaIngressosOnline();
-    const transactionAmount = faceValue;
+    // Valor de verdade pós-lock — só difere da estimativa se a compra cruzou
+    // fronteira de lote.
+    const transactionAmount = resultado.total;
+    if (transactionAmount <= 0) throw new BadRequestException('PIX não disponível para ingressos gratuitos');
 
     let applicationFee = await this.feeRules.calcularTaxaPlataforma({
       eventoId,
       ownerId: donoEvento!,
-      total: faceValue,
+      total: transactionAmount,
       ticketCount: lineItems.reduce((s, i) => s + i.quantity, 0),
       config,
     });
 
     const saldo = await this.saldoBilheteria.buscarSaldoBilheteria(eventoId);
-    if (saldo?.ativo) applicationFee += this.saldoBilheteria.calcularContribuicaoSaldo(faceValue, applicationFee, saldo.retencao_pct);
+    if (saldo?.ativo) applicationFee += this.saldoBilheteria.calcularContribuicaoSaldo(transactionAmount, applicationFee, saldo.retencao_pct);
 
     const nameSource = profile?.fullName ?? fullName ?? '';
     const nameParts = nameSource.trim().split(' ');
@@ -394,8 +418,10 @@ export class CheckoutService {
       return { ticket, quantity: item.quantity };
     });
 
-    const faceValue = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0);
-    if (faceValue <= 0) throw new BadRequestException('Valor inválido para pagamento com cartão');
+    // Estimativa pré-lock, só pra rejeitar cedo — valor de cobrança de
+    // verdade vem de resultado.total, depois do pedido atômico.
+    const faceValueEstimado = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0);
+    if (faceValueEstimado <= 0) throw new BadRequestException('Valor inválido para pagamento com cartão');
 
     const resultado = await this.pedidoAtomico.criar(
       userId,
@@ -406,8 +432,15 @@ export class CheckoutService {
       const ticketName = tickets.find((t) => t.id === resultado.ticket_id)?.name ?? 'Ingresso';
       throw new ConflictException(`Quantidade indisponível para "${ticketName}". Restam ${resultado.disponivel ?? 0}.`);
     }
-    if (resultado.error || !resultado.order_id) throw new InternalServerErrorException('Erro ao criar pedido');
+    if (resultado.error === 'lotes_insuficientes') {
+      const ticketName = tickets.find((t) => t.id === resultado.ticket_id)?.name ?? 'Ingresso';
+      throw new ConflictException(`Configuração de lotes incompleta para "${ticketName}".`);
+    }
+    if (resultado.error || !resultado.order_id || resultado.total === undefined) throw new InternalServerErrorException('Erro ao criar pedido');
     const orderId = resultado.order_id;
+    // Valor de verdade pós-lock — só difere da estimativa se a compra cruzou lote.
+    const faceValue = resultado.total;
+    if (faceValue <= 0) throw new BadRequestException('Valor inválido para pagamento com cartão');
 
     const config = await this.feeRules.buscarConfigTaxaIngressosOnline();
 
@@ -549,12 +582,14 @@ export class CheckoutService {
       return { ticket, quantity: item.quantity };
     });
 
-    const faceValue = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0);
-    if (faceValue <= 0) throw new BadRequestException('PIX não disponível para ingressos gratuitos');
+    // Estimativa pré-lock, só pra rejeitar cedo e resolver o split de comissão
+    // com uma amostra de valor — se a compra cruzar lote, recalcula depois.
+    const faceValueEstimado = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0);
+    if (faceValueEstimado <= 0) throw new BadRequestException('PIX não disponível para ingressos gratuitos');
 
     const { ownerId } = await this.gatewayResolver.resolveEventGateway(eventoId);
-    const centavosTotal = Math.round(faceValue * 100);
-    const splits = ownerId ? await this.pagbankToken.resolvePagBankSplit(ownerId, centavosTotal) : null;
+    const centavosEstimado = Math.round(faceValueEstimado * 100);
+    let splits = ownerId ? await this.pagbankToken.resolvePagBankSplit(ownerId, centavosEstimado) : null;
     if (!splits) {
       throw new ServiceUnavailableException('O promotor deste evento ainda não conectou uma conta PagBank. Pagamento indisponível.');
     }
@@ -568,8 +603,24 @@ export class CheckoutService {
       const ticketName = tickets.find((t) => t.id === resultado.ticket_id)?.name ?? 'Ingresso';
       throw new ConflictException(`Quantidade indisponível para "${ticketName}". Restam ${resultado.disponivel ?? 0}.`);
     }
-    if (resultado.error || !resultado.order_id) throw new InternalServerErrorException('Erro ao criar pedido');
+    if (resultado.error === 'lotes_insuficientes') {
+      const ticketName = tickets.find((t) => t.id === resultado.ticket_id)?.name ?? 'Ingresso';
+      throw new ConflictException(`Configuração de lotes incompleta para "${ticketName}".`);
+    }
+    if (resultado.error || !resultado.order_id || resultado.total === undefined) throw new InternalServerErrorException('Erro ao criar pedido');
     const orderId = resultado.order_id;
+
+    // Valor de verdade pós-lock — só recalcula o split se a compra cruzou
+    // lote (a estimativa acima já bate na grande maioria dos casos).
+    const faceValue = resultado.total;
+    if (faceValue <= 0) throw new BadRequestException('PIX não disponível para ingressos gratuitos');
+    const centavosTotal = Math.round(faceValue * 100);
+    if (centavosTotal !== centavosEstimado) {
+      splits = ownerId ? await this.pagbankToken.resolvePagBankSplit(ownerId, centavosTotal) : null;
+      if (!splits) {
+        throw new ServiceUnavailableException('O promotor deste evento ainda não conectou uma conta PagBank. Pagamento indisponível.');
+      }
+    }
 
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
@@ -691,12 +742,14 @@ export class CheckoutService {
       return { ticket, quantity: item.quantity };
     });
 
-    const faceValue = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0);
-    if (faceValue <= 0) throw new BadRequestException('Valor inválido para pagamento com cartão');
+    // Estimativa pré-lock, só pra rejeitar cedo e resolver o split de comissão
+    // com uma amostra de valor — se a compra cruzar lote, recalcula depois.
+    const faceValueEstimado = lineItems.reduce((sum, { ticket, quantity }) => sum + Number(ticket.price ?? 0) * quantity, 0);
+    if (faceValueEstimado <= 0) throw new BadRequestException('Valor inválido para pagamento com cartão');
 
     const { ownerId } = await this.gatewayResolver.resolveEventGateway(eventoId);
-    const centavosTotal = Math.round(faceValue * 100);
-    const splits = ownerId ? await this.pagbankToken.resolvePagBankSplit(ownerId, centavosTotal) : null;
+    const centavosEstimado = Math.round(faceValueEstimado * 100);
+    let splits = ownerId ? await this.pagbankToken.resolvePagBankSplit(ownerId, centavosEstimado) : null;
     if (!splits) {
       throw new ServiceUnavailableException('O promotor deste evento ainda não conectou uma conta PagBank. Pagamento indisponível.');
     }
@@ -710,10 +763,23 @@ export class CheckoutService {
       const ticketName = tickets.find((t) => t.id === resultado.ticket_id)?.name ?? 'Ingresso';
       throw new ConflictException(`Quantidade indisponível para "${ticketName}". Restam ${resultado.disponivel ?? 0}.`);
     }
-    if (resultado.error || !resultado.order_id) throw new InternalServerErrorException('Erro ao criar pedido');
+    if (resultado.error === 'lotes_insuficientes') {
+      const ticketName = tickets.find((t) => t.id === resultado.ticket_id)?.name ?? 'Ingresso';
+      throw new ConflictException(`Configuração de lotes incompleta para "${ticketName}".`);
+    }
+    if (resultado.error || !resultado.order_id || resultado.total === undefined) throw new InternalServerErrorException('Erro ao criar pedido');
     const orderId = resultado.order_id;
 
-    const centavos = Math.round(faceValue * 100);
+    // Valor de verdade pós-lock — só recalcula o split se a compra cruzou lote.
+    const faceValue = resultado.total;
+    if (faceValue <= 0) throw new BadRequestException('Valor inválido para pagamento com cartão');
+    const centavosTotal = Math.round(faceValue * 100);
+    if (centavosTotal !== centavosEstimado) {
+      splits = ownerId ? await this.pagbankToken.resolvePagBankSplit(ownerId, centavosTotal) : null;
+      if (!splits) {
+        throw new ServiceUnavailableException('O promotor deste evento ainda não conectou uma conta PagBank. Pagamento indisponível.');
+      }
+    }
 
     try {
       const pbResponse = await this.pagbankClient.post<PagBankOrderResponse>(
@@ -725,12 +791,12 @@ export class CheckoutService {
             email: buyerEmail || (userEmail ?? ''),
             tax_id: cleanCpf,
           },
-          items: [{ name: `Ingressos - ${evento?.title ?? 'Evento'}`.slice(0, 255), quantity: 1, unit_amount: centavos }],
+          items: [{ name: `Ingressos - ${evento?.title ?? 'Evento'}`.slice(0, 255), quantity: 1, unit_amount: centavosTotal }],
           charges: [
             {
               reference_id: orderId,
               description: `Ingressos - ${evento?.title ?? 'Evento'}`.slice(0, 100),
-              amount: { value: centavos, currency: 'BRL' },
+              amount: { value: centavosTotal, currency: 'BRL' },
               splits,
               payment_method: {
                 type: 'CREDIT_CARD',

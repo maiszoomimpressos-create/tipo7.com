@@ -484,6 +484,10 @@ model TicketLote {
   dataCorte  DateTime? @map("data_corte") @db.Timestamptz(6)
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  // Cobrança real feita nesse lote (21/08/2026) — ver comentário em
+  // OrderItem.loteId. Só pra relatório/consulta; a função SQL
+  // criar_pedido_atomico é quem decide, no lock, quanto vai pra cada lote.
+  orderItems OrderItem[] @relation("OrderItem_loteId")
 
   @@index([ticketId])
   @@map("ticket_lotes")
@@ -625,9 +629,17 @@ model OrderItem {
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   ticketHolders TicketHolder[] @relation("TicketHolder_orderItemId")
   tickets       Ticket[]       @relation("Ticket_orderItemId")
+  // Qual lote gerou esse preço (21/08/2026) — nullable: ingresso sem lote
+  // nunca preenche isso. Uma compra que cruza fronteira de lote vira MAIS
+  // DE UM OrderItem pro mesmo ticketId (um por lote), cada um com seu
+  // loteId — é o que dá pro promotor o relatório real "quanto vendeu em
+  // cada lote", ver [[project_lote_ingressos]].
+  loteId        String?        @map("lote_id") @db.Uuid
+  lote          TicketLote?    @relation("OrderItem_loteId", fields: [loteId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([ticketId])
+  @@index([loteId])
   @@map("order_items")
 }
 
