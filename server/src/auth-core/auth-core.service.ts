@@ -39,6 +39,13 @@ export interface SessionResult {
   user: PublicUser;
 }
 
+// Login por token+PIN devolve, junto da sessão normal, o evento a que esse
+// acesso pertence — a rota pública /caixa usa isso pra redirecionar direto
+// pra /trabalho/[eventId] sem round-trip extra.
+export interface PinLoginResult extends SessionResult {
+  eventId: string;
+}
+
 export interface RegisterInput {
   email?: string;
   password?: string;
@@ -175,6 +182,63 @@ export class AuthCoreService {
       throw new UnauthorizedException('Email ou senha incorretos.');
     }
     return this.issueSession(profile);
+  }
+
+  // Login alternativo pra PC compartilhado / maquininha sem tela de OAuth
+  // (design combinado 19/08/2026 — ver project_token_pin_acesso_caixa na
+  // memória). Token identifica o EventStaff (gerado ao aceitar convite em
+  // trabalhos.service.ts > responder()), PIN autentica (hash bcrypt, por
+  // evento, criado em trabalhos.service.ts > definirPin()). Emite a MESMA
+  // sessão JWT do login normal — a partir daí zero código novo no resto do
+  // sistema, todas as restrições já construídas (isolamento por
+  // estacionamento, permissão por evento) continuam valendo automático
+  // porque é o userId real por trás do token.
+  private static readonly PIN_MAX_TENTATIVAS = 5;
+  private static readonly PIN_LOCK_MS = 15 * 60 * 1000;
+
+  async loginComTokenPin(tokenRaw: string | undefined, pin: string | undefined): Promise<PinLoginResult> {
+    const token = tokenRaw?.trim();
+    if (!token || !pin) throw new UnauthorizedException('Token ou PIN inválido.');
+
+    const staff = await this.prisma.eventStaff.findUnique({
+      where: { token },
+      select: {
+        id: true, eventId: true, status: true, pinHash: true,
+        pinTentativas: true, pinBloqueadoAte: true,
+        user: { select: { id: true, email: true, fullName: true } },
+      },
+    });
+    // Mesma mensagem genérica pra token inexistente, staff inativo/recusado
+    // ou PIN ainda não configurado — não dar pista de qual parte está errada.
+    if (!staff || staff.status !== 'active' || !staff.pinHash) {
+      throw new UnauthorizedException('Token ou PIN inválido.');
+    }
+
+    if (staff.pinBloqueadoAte && staff.pinBloqueadoAte > new Date()) {
+      const minutos = Math.ceil((staff.pinBloqueadoAte.getTime() - Date.now()) / 60_000);
+      throw new UnauthorizedException(`Muitas tentativas erradas. Tente novamente em ${minutos} min.`);
+    }
+
+    if (!(await bcrypt.compare(pin, staff.pinHash))) {
+      const tentativas = staff.pinTentativas + 1;
+      const bloqueado = tentativas >= AuthCoreService.PIN_MAX_TENTATIVAS;
+      await this.prisma.eventStaff.update({
+        where: { id: staff.id },
+        data: {
+          pinTentativas: bloqueado ? 0 : tentativas,
+          pinBloqueadoAte: bloqueado ? new Date(Date.now() + AuthCoreService.PIN_LOCK_MS) : null,
+        },
+      });
+      throw new UnauthorizedException('Token ou PIN inválido.');
+    }
+
+    await this.prisma.eventStaff.update({
+      where: { id: staff.id },
+      data: { pinTentativas: 0, pinBloqueadoAte: null },
+    });
+
+    const session = await this.issueSession(staff.user);
+    return { ...session, eventId: staff.eventId };
   }
 
   async refresh(rawRefreshToken: string | undefined): Promise<SessionResult> {

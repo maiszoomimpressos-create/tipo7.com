@@ -151,6 +151,10 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/webhooks/autosave',
   '/api/trabalhos',
   '/api/trabalhos/responder',
+  // Faltava — POST /trabalhos/pin (BlocoTokenPin.tsx) dava 404 desde que a
+  // feature de token+PIN foi criada (19/08/2026), achado real 21/08/2026 ao
+  // construir a rota pública /caixa que depende do mesmo PIN.
+  '/api/trabalhos/pin',
   '/api/usuarios/buscar',
   '/api/holders',
   '/api/ingressos/:id',
@@ -174,6 +178,7 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/auth/google',
   '/api/auth/google/callback',
   '/api/auth/google/onetap',
+  '/api/auth/entrar-com-pin',
   '/api/uploads/avatar',
   '/api/uploads/event-image/:eventoId',
   '/api/uploads/organization-logo/:orgId',

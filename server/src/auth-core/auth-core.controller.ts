@@ -4,7 +4,9 @@ import { randomBytes } from 'crypto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtGuard } from '../auth/guards/supabase-jwt.guard';
 import type { AuthenticatedUser } from '../auth/strategies/supabase-jwt.strategy';
-import { AuthCoreService, type RegisterInput, type SessionResult } from './auth-core.service';
+import { RateLimitDbService } from '../common/rate-limit-db.service';
+import { getIp } from '../common/rate-limit.util';
+import { AuthCoreService, type PinLoginResult, type RegisterInput, type SessionResult } from './auth-core.service';
 
 const ACCESS_COOKIE = 'access_token';
 const REFRESH_COOKIE = 'refresh_token';
@@ -25,10 +27,18 @@ function isInternalPath(path: string): boolean {
 // cookie de lá é enviado, aparenta estar deslogado mesmo tendo feito login
 // segundos antes. Com "domain: .tipo7.com" (ponto na frente) o cookie vale
 // pro apex E pra qualquer subdomínio, então não importa qual dos dois o
-// browser decidiu usar. Em dev local (localhost/IP) não faz sentido setar
-// domain explícito — o browser rejeita "domain=localhost" com ponto e não
-// precisa disso pra funcionar de qualquer forma.
+// browser decidiu usar.
+//
+// Achado real #2 (12/08/2026): essa função ainda derivava o host de
+// APP_URL, que server/.env mantém fixo em https://www.tipo7.com mesmo
+// rodando local (ver secureCookies() abaixo — mesmo motivo, redirect_uri do
+// Google). Resultado: local também recebia "Domain=.tipo7.com" no cookie —
+// e isso não é só "não ajuda", é o suficiente pro navegador REJEITAR o
+// cookie inteiro (Domain não bate com o host real que respondeu, localhost).
+// Confirmado direto no header Set-Cookie via curl. Mesmo fix de NODE_ENV:
+// só monta Domain explícito em produção.
 function cookieDomain(): string | undefined {
+  if (process.env.NODE_ENV !== 'production') return undefined;
   try {
     const host = new URL(APP_URL).hostname;
     if (host === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return undefined;
@@ -36,6 +46,29 @@ function cookieDomain(): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+// Achado real (12/08/2026): cookie com "Secure" só é aceito pelo navegador
+// em origem https — em dev local, o Next.js roda em http://localhost, então
+// todo cookie de sessão marcado "secure: true" era descartado silenciosamente
+// assim que o browser recebia a resposta. Sintoma: login parecia funcionar
+// (resposta 200, corpo com os dados do usuário, One Tap até mostra o nome)
+// mas a sessão "desconectava" na próxima navegação — nenhum cookie de fato
+// foi gravado.
+//
+// Primeira tentativa de fix derivava isso de APP_URL (mesmo raciocínio do
+// cookieDomain() acima) — não funcionou: server/.env mantém
+// NEXT_PUBLIC_APP_URL=https://www.tipo7.com MESMO rodando local (é o valor
+// certo pra montar GOOGLE_REDIRECT_URI, que precisa bater com o registrado
+// no Google Cloud Console — só produção tem isso registrado, login Google
+// via redirect completo não funciona local de qualquer forma; só o One Tap,
+// que não usa redirect_uri, funciona nos dois ambientes). Ou seja, usar
+// APP_URL aqui misturava dois sentidos diferentes de "ambiente" que
+// divergem de propósito neste projeto. NODE_ENV é o sinal certo: só o
+// Dockerfile (build de produção) seta NODE_ENV=production; local
+// (`nest start --watch`) não seta nada.
+function secureCookies(): boolean {
+  return process.env.NODE_ENV === 'production';
 }
 
 // Achado real (07/08/2026, mesma sessão do fix de domain acima): quem já
@@ -55,7 +88,7 @@ function clearLegacyHostOnlyCookies(res: Response) {
 
 function setSessionCookies(res: Response, session: SessionResult) {
   clearLegacyHostOnlyCookies(res);
-  const base: CookieOptions = { secure: true, sameSite: 'lax', domain: cookieDomain() };
+  const base: CookieOptions = { secure: secureCookies(), sameSite: 'lax', domain: cookieDomain() };
   // access_token: legível por JS de propósito (vida curta, 1h) — o frontend
   // lê direto do cookie pra hidratar a sessão sem round-trip extra, e o
   // apiFetchAuth continua anexando via Authorization: Bearer como sempre.
@@ -75,7 +108,7 @@ function clearSessionCookies(res: Response) {
   clearLegacyHostOnlyCookies(res);
 }
 
-function toResponseBody(session: SessionResult) {
+function toResponseBody<T extends SessionResult>(session: T): Omit<T, 'refreshToken'> {
   // refreshToken nunca vai no corpo — só existe como cookie httpOnly.
   const { refreshToken: _refreshToken, ...body } = session;
   return body;
@@ -87,7 +120,10 @@ function toResponseBody(session: SessionResult) {
 // tokens (access JWT curto + refresh token opaco revogável).
 @Controller('auth')
 export class AuthCoreController {
-  constructor(private readonly authCore: AuthCoreService) {}
+  constructor(
+    private readonly authCore: AuthCoreService,
+    private readonly rateLimitDb: RateLimitDbService,
+  ) {}
 
   @Post('register')
   async register(@Res({ passthrough: true }) res: Response, @Body() body: RegisterInput) {
@@ -99,6 +135,24 @@ export class AuthCoreController {
   @Post('login')
   async login(@Res({ passthrough: true }) res: Response, @Body() body: { email?: string; password?: string }) {
     const session = await this.authCore.login(body.email, body.password);
+    setSessionCookies(res, session);
+    return toResponseBody(session);
+  }
+
+  // Rota pública /caixa (web) — login alternativo por token+PIN pra PC
+  // compartilhado/maquininha, ver project_token_pin_acesso_caixa na memória.
+  // Rate limit via banco (mesmo padrão de cpf-confirmar): é literalmente
+  // "tentar adivinhar" um PIN curto, precisa valer entre instâncias. O
+  // bloqueio por PIN errado em si (por staff, não por IP) é tratado dentro
+  // de authCore.loginComTokenPin.
+  @Post('entrar-com-pin')
+  async entrarComPin(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() body: { token?: string; pin?: string },
+  ): Promise<Omit<PinLoginResult, 'refreshToken'>> {
+    await this.rateLimitDb.enforce(getIp(req), 'entrar-com-pin', 10, 5 * 60_000);
+    const session = await this.authCore.loginComTokenPin(body.token, body.pin);
     setSessionCookies(res, session);
     return toResponseBody(session);
   }
@@ -159,8 +213,8 @@ export class AuthCoreController {
     const nextPath = isInternal ? rawNext : '/';
 
     const state = randomBytes(16).toString('hex');
-    res.cookie(GOOGLE_STATE_COOKIE, state, { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 600_000, path: '/' });
-    res.cookie(GOOGLE_NEXT_COOKIE, nextPath, { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 600_000, path: '/' });
+    res.cookie(GOOGLE_STATE_COOKIE, state, { httpOnly: true, secure: secureCookies(), sameSite: 'lax', maxAge: 600_000, path: '/' });
+    res.cookie(GOOGLE_NEXT_COOKIE, nextPath, { httpOnly: true, secure: secureCookies(), sameSite: 'lax', maxAge: 600_000, path: '/' });
 
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     url.searchParams.set('client_id', process.env.GOOGLE_CLIENT_ID ?? '');

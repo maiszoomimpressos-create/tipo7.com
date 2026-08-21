@@ -14,7 +14,8 @@ function isUniqueConstraintError(err: unknown): err is Prisma.PrismaClientKnownR
 // Token+PIN (19/08/2026, design combinado — ver project_token_pin_acesso_caixa
 // na memória) adicionado por cima: base pra abrir caixa sem precisar de login
 // completo (PC compartilhado, maquininha). A rota pública que CONSOME
-// token+PIN (login alternativo) ainda não existe — só o que gera e guarda.
+// token+PIN (login alternativo, POST /auth/entrar-com-pin) mora em
+// auth-core.service.ts — aqui só gera e guarda a credencial.
 @Injectable()
 export class TrabalhosService {
   constructor(private readonly prisma: PrismaService) {}
