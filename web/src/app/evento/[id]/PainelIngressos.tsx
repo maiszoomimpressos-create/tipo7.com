@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Ticket, Pencil, Check, X, Loader2, AlertTriangle, TrendingUp, Layers, Plus, Trash2, ChevronDown } from 'lucide-react'
+import { Ticket, Pencil, Check, X, Loader2, AlertTriangle, TrendingUp, Layers, Plus, Trash2, ChevronDown, CalendarDays } from 'lucide-react'
 import { apiFetchAuth } from '@/lib/apiFetch'
 
 export type IngressoEditavel = {
@@ -909,9 +909,18 @@ export function PainelIngressos({ eventoId, ingressos, capacity, dias, diaSeleci
         <div className="flex flex-col gap-5">
           {diaAtual && (
             <div className="flex flex-col gap-3">
-              <p className="text-[#555] text-[11px] font-semibold uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                {formatDiaLabel(diaAtual)}
-              </p>
+              {/* Fixo no topo ao rolar (20/08/2026, pedido do usuário) — em
+                  evento de vários dias/ingressos, o promotor perdia de vista
+                  qual dia estava editando ao descer a lista; essa info é
+                  crucial pro planejamento dele, por isso fica sempre exposta. */}
+              <div className="sticky top-0 z-20 -mt-1 pt-1 pb-2" style={{ background: '#070707' }}>
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}40` }}>
+                  <CalendarDays size={14} style={{ color: ACCENT }} />
+                  <span className="text-sm font-bold" style={{ color: ACCENT, fontFamily: 'var(--font-outfit)' }}>
+                    {formatDiaLabel(diaAtual)}
+                  </span>
+                </div>
+              </div>
               {ticketsDoDia.length > 0
                 ? ticketsDoDia.map(ingresso => renderCard(ingresso))
                 : <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
