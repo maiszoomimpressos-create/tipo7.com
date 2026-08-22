@@ -1,11 +1,13 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   ArrowLeft, Ticket, Layers, Users, Car, ShoppingBag, Settings,
-  ExternalLink, BarChart2,
+  ExternalLink, BarChart2, GraduationCap,
 } from 'lucide-react'
+import { TutorialModal } from './TutorialModal'
 
 const ACCENT = '#E8B84B'
 
@@ -21,6 +23,7 @@ interface Props {
 export function GerenciarSidebar({ eventoId, eventoTitle }: Props) {
   const pathname = usePathname()
   const base = `/evento/${eventoId}/gerenciar`
+  const [tutorialAberto, setTutorialAberto] = useState(false)
 
   const NAV = [
     { href: `${base}/ingressos`,       label: 'Ingressos',      icon: Ticket },
@@ -51,7 +54,18 @@ export function GerenciarSidebar({ eventoId, eventoTitle }: Props) {
         <p className="text-[#444] text-[10px] tracking-widest uppercase mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
           Gerenciar evento
         </p>
+        <button
+          type="button"
+          onClick={() => setTutorialAberto(true)}
+          className="flex items-center gap-1.5 mt-3 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors"
+          style={{ background: `${ACCENT}12`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+        >
+          <GraduationCap size={12} />
+          Tutorial
+        </button>
       </div>
+
+      {tutorialAberto && <TutorialModal onFechar={() => setTutorialAberto(false)} />}
 
       <nav className="flex-1 p-3 flex flex-col gap-0.5">
         {NAV.map(({ href, label, icon: Icon }) => {
