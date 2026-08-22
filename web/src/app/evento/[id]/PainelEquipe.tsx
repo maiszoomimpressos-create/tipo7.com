@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import {
   Users, UserPlus, Trash2, Loader2, Check, AlertTriangle,
-  Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X, DoorOpen, Wallet, Calculator, HelpCircle,
+  Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X, DoorOpen, Wallet, Calculator, AlertCircle,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { apiFetchAuth } from '@/lib/apiFetch'
@@ -105,7 +105,7 @@ function BotaoAjuda({ texto }: { texto: string }) {
         className="w-4 h-4 flex items-center justify-center rounded-full text-[#555] hover:text-[#E8B84B] transition-colors"
         title="O que essa permissão faz"
       >
-        <HelpCircle size={13} />
+        <AlertCircle size={13} />
       </button>
       {aberta && (
         <div
