@@ -15,7 +15,7 @@ interface MeuAcesso {
     venueName: string | null; city: string | null; state: string | null; bannerUrl: string | null
   } | null
   isOwner: boolean
-  staff: { id: string; positionName: string | null; permissions: string[] } | null
+  staff: { id: string; positionName: string | null; permissions: string[]; token: string | null; pinDefinido: boolean } | null
 }
 
 interface IngressoResumo {
@@ -51,7 +51,9 @@ export default async function TrabalhoPage({ params }: Props) {
 
   const permissoes = acesso.isOwner ? PERMISSOES_DONO : (acesso.staff?.permissions ?? [])
 
-  const caixaDesignado = caixaRes.ok ? await caixaRes.json() as { id: string; nome: string } | null : null
+  const caixaDesignado = caixaRes.ok
+    ? await caixaRes.json() as { id: string; nome: string; estacionamentoId: string | null } | null
+    : null
   const { ingressos } = ingressosRes.ok
     ? await ingressosRes.json() as { ingressos: IngressoResumo[] }
     : { ingressos: [] as IngressoResumo[] }
@@ -69,7 +71,8 @@ export default async function TrabalhoPage({ params }: Props) {
         permissoes={permissoes}
         ingressos={ingressos}
         isOwner={acesso.isOwner}
-        caixaDesignado={caixaDesignado ? { id: caixaDesignado.id, nome: caixaDesignado.nome } : null}
+        caixaDesignado={caixaDesignado ? { id: caixaDesignado.id, nome: caixaDesignado.nome, estacionamentoId: caixaDesignado.estacionamentoId } : null}
+        acessoCaixa={acesso.staff ? { staffId: acesso.staff.id, token: acesso.staff.token, pinDefinido: acesso.staff.pinDefinido } : null}
       />
     </div>
   )

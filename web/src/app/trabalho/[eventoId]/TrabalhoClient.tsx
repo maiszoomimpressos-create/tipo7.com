@@ -1,11 +1,13 @@
 'use client'
 
+import { useState } from 'react'
 import {
   ArrowLeft, Calendar, MapPin, Shield,
   ShoppingCart, ScanQrCode, ClipboardList, BarChart2,
-  Settings, CheckCircle2, ChevronRight, Ticket, Car,
+  Settings, CheckCircle2, ChevronRight, Ticket, Car, KeyRound,
 } from 'lucide-react'
 import { TrabalhoDashboard } from './TrabalhoDashboard'
+import { BlocoTokenPin, type AcessoCaixa } from '@/components/BlocoTokenPin'
 
 const ACCENT = '#E8B84B'
 
@@ -98,15 +100,29 @@ interface Props {
   permissoes:     string[]
   ingressos:      Ingresso[]
   isOwner:        boolean
-  caixaDesignado: { id: string; nome: string } | null
+  // estacionamentoId: achado real (21/08/2026) — o card "Seu caixa" sempre
+  // linkava pra tela de VENDER INGRESSO, mesmo quando o caixa é o do
+  // estacionamento (mesma tabela `caixa`, só muda esse campo). Quem só tem
+  // função de estacionamento caía na tela errada. Ver caixaHref abaixo.
+  caixaDesignado: { id: string; nome: string; estacionamentoId: string | null } | null
+  // Token+PIN de acesso (rota /caixa) — null se essa pessoa nunca aceitou
+  // convite nem abriu caixa como dono neste evento (ninguém pra mostrar).
+  acessoCaixa:    AcessoCaixa | null
 }
 
 export function TrabalhoClient({
   eventoId, eventoTitle, eventoDate, eventoLocal, eventoBanner,
-  cargoNome, permissoes, ingressos, isOwner, caixaDesignado,
+  cargoNome, permissoes, ingressos, isOwner, caixaDesignado, acessoCaixa,
 }: Props) {
+  const [pinDefinido, setPinDefinido] = useState(acessoCaixa?.pinDefinido ?? false)
+  const [verAcesso, setVerAcesso]     = useState(false)
+
   const acessos = buildAcessos(eventoId, permissoes, isOwner)
     .filter(a => !(a.perm.includes('vender_ingresso') && caixaDesignado))
+
+  const caixaHref = caixaDesignado
+    ? (caixaDesignado.estacionamentoId ? `/estacionamento/${eventoId}` : `/bilheteria/${eventoId}/caixa/${caixaDesignado.id}`)
+    : null
 
   // Lista de tipos de ingresso só faz sentido pra quem vende (ou pro
   // organizador). Quem é só estacionamento/scanner não precisa ver isso.
@@ -188,10 +204,32 @@ export function TrabalhoClient({
           </div>
         </div>
 
+        {/* Token+PIN de acesso ao caixa (rota /caixa) */}
+        {acessoCaixa && (
+          <button
+            type="button"
+            onClick={() => setVerAcesso(true)}
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-colors hover:brightness-110"
+            style={{ background: '#111', border: '1px solid #1e1e1e' }}
+          >
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${ACCENT}15` }}>
+              <KeyRound size={12} style={{ color: ACCENT }} />
+            </div>
+            <div>
+              <p className="text-[#666] text-[9px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Acesso ao caixa
+              </p>
+              <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Ver token/PIN
+              </p>
+            </div>
+          </button>
+        )}
+
         {/* Caixa designado */}
         {caixaDesignado && (
           <a
-            href={`/bilheteria/${eventoId}/caixa/${caixaDesignado.id}`}
+            href={caixaHref!}
             className="flex items-center justify-between px-3 py-3 rounded-xl transition-all hover:brightness-110 active:scale-[0.98]"
             style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}30` }}
           >
@@ -299,7 +337,7 @@ export function TrabalhoClient({
           {/* Caixa designado */}
           {caixaDesignado && (
             <a
-              href={`/bilheteria/${eventoId}/caixa/${caixaDesignado.id}`}
+              href={caixaHref!}
               className="flex items-center justify-between px-4 py-4 rounded-2xl transition-all hover:brightness-110 active:scale-[0.98]"
               style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}35` }}
             >
@@ -337,6 +375,28 @@ export function TrabalhoClient({
               </p>
             </div>
           </div>
+
+          {/* Token+PIN de acesso ao caixa (rota /caixa, mobile) */}
+          {acessoCaixa && (
+            <button
+              type="button"
+              onClick={() => setVerAcesso(true)}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors hover:brightness-110"
+              style={{ background: '#111', border: '1px solid #1e1e1e' }}
+            >
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${ACCENT}15` }}>
+                <KeyRound size={14} style={{ color: ACCENT }} />
+              </div>
+              <div>
+                <p className="text-[#888] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Acesso ao caixa
+                </p>
+                <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Ver token/PIN
+                </p>
+              </div>
+            </button>
+          )}
 
           {/* Acessos (mobile) */}
           {acessos.length > 0 ? (
@@ -420,6 +480,35 @@ export function TrabalhoClient({
           )}
         </div>
       </div>
+
+      {verAcesso && acessoCaixa && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setVerAcesso(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl overflow-hidden p-5"
+            style={{ background: '#0d0d0d', border: `1px solid ${ACCENT}30` }}
+            onClick={e => e.stopPropagation()}
+          >
+            <p className="text-white text-sm font-medium mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              {eventoTitle}
+            </p>
+            <BlocoTokenPin
+              acesso={{ ...acessoCaixa, pinDefinido }}
+              onPinAtualizado={() => setPinDefinido(true)}
+            />
+            <button
+              type="button" onClick={() => setVerAcesso(false)}
+              className="w-full mt-3 py-3 rounded-xl text-sm font-medium border transition-colors hover:border-[#E8B84B]/40"
+              style={{ borderColor: '#222', color: '#888', fontFamily: 'var(--font-dm-sans)' }}
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

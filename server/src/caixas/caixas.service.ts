@@ -258,10 +258,17 @@ export class CaixasService {
   // GET /eventos/:id/meu-caixa — caixa aberto designado ao usuário logado
   // neste evento (Fase 7.2, G7). Usado por trabalho/bilheteria/estacionamento
   // pra saber se o operador já tem um caixa pra vender/cobrar.
+  //
+  // estacionamentoId no retorno: achado real (21/08/2026) — um caixa vinculado
+  // a estacionamento também bate aqui (mesma tabela, mesmo operadorId), mas
+  // /trabalho/[eventoId] sempre linkava pra tela de VENDER INGRESSO
+  // (/bilheteria/.../caixa/...) sem checar isso. Quem só tem função de
+  // estacionamento caía numa tela errada. Front decide o destino certo com
+  // esse campo.
   async getMeuCaixaAberto(userId: string, eventoId: string) {
     const caixa = await this.prisma.caixa.findFirst({
       where: { eventoId, operadorId: userId, status: 'aberto' },
-      select: { id: true, nome: true },
+      select: { id: true, nome: true, estacionamentoId: true },
     });
     return caixa ?? null;
   }

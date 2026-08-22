@@ -60,19 +60,26 @@ export class EventosAdminService {
     const staffRow = await this.prisma.eventStaff.findFirst({
       where: { eventId: eventoId, userId, status: 'active' },
       select: {
-        id: true, portaoId: true,
+        id: true, portaoId: true, token: true, pinHash: true,
         eventPosition: {
           select: { name: true, eventPositionPermissions: { select: { permission: true } } },
         },
       },
     });
 
+    // token/pinDefinido também cobre o dono: a linha "invisível" que
+    // garantirAcessoOwnerParaSangria() cria na primeira vez que ele abre um
+    // caixa também tem status='active', bate no mesmo findFirst acima. Achado
+    // real (21/08/2026): /trabalho/[eventoId] nunca mostrava o token pra
+    // ninguém reabrir depois — só /trabalhos (lista) tinha o botão de chave.
     const staff = staffRow
       ? {
           id: staffRow.id,
           portaoId: staffRow.portaoId,
           positionName: staffRow.eventPosition?.name ?? null,
           permissions: (staffRow.eventPosition?.eventPositionPermissions ?? []).map((p) => p.permission),
+          token: staffRow.token,
+          pinDefinido: !!staffRow.pinHash,
         }
       : null;
 
