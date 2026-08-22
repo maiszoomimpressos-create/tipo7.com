@@ -26,13 +26,17 @@ export function GerenciarSidebar({ eventoId, eventoTitle }: Props) {
     { href: `${base}/ingressos`,       label: 'Ingressos',      icon: Ticket },
     { href: `${base}/estrutura`,       label: 'Estrutura',      icon: Layers },
     { href: `${base}/equipe`,          label: 'Equipe',         icon: Users  },
-    { href: `${base}/estacionamento`,  label: 'Estacionamento', icon: Car    },
     { href: `${base}/configuracoes`,   label: 'Configurações',  icon: Settings },
   ]
 
-  const EXTERNOS = [
-    { href: `/bilheteria/${eventoId}`,    label: 'Bilheteria (caixas)', icon: ShoppingBag },
-    { href: `/dashboard/${eventoId}`,     label: 'Relatórios',          icon: BarChart2   },
+  // Estacionamento (21/08/2026, pedido do usuário) — movido pra junto de
+  // Bilheteria/Relatórios: as 3 são telas operacionais do dia do evento
+  // (mexem em caixa/dinheiro de verdade), diferente de Ingressos/Estrutura/
+  // Equipe/Configurações, que são só CONFIGURAÇÃO prévia do evento.
+  const OPERACIONAL = [
+    { href: `${base}/estacionamento`,     label: 'Estacionamento',      icon: Car,         externo: false },
+    { href: `/bilheteria/${eventoId}`,    label: 'Bilheteria (caixas)', icon: ShoppingBag, externo: true  },
+    { href: `/dashboard/${eventoId}`,     label: 'Relatórios',          icon: BarChart2,   externo: true  },
   ]
 
   return (
@@ -74,18 +78,43 @@ export function GerenciarSidebar({ eventoId, eventoTitle }: Props) {
           <div className="h-px flex-1" style={{ background: '#1c1c1c' }} />
         </div>
 
-        {EXTERNOS.map(({ href, label, icon: Icon }) => (
-          <a
-            key={href}
-            href={href}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all text-[#555] hover:text-white"
-            style={{ fontFamily: 'var(--font-dm-sans)' }}
-          >
-            <Icon size={14} />
-            <span className="flex-1">{label}</span>
-            <ExternalLink size={11} className="text-[#333]" />
-          </a>
-        ))}
+        {OPERACIONAL.map(({ href, label, icon: Icon, externo }) => {
+          // Estacionamento é rota interna do /gerenciar (Link + destaque de
+          // ativo, mesmo padrão do NAV acima) — Bilheteria/Relatórios são
+          // telas fora do /gerenciar (navegação de página inteira, ícone de
+          // link externo). Mesmo grupo visual, comportamento diferente.
+          if (!externo) {
+            const active = pathname.startsWith(href)
+            return (
+              <Link
+                key={href}
+                href={href}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all"
+                style={{
+                  background: active ? `${ACCENT}12` : 'transparent',
+                  color:      active ? ACCENT : '#555',
+                  fontFamily: 'var(--font-dm-sans)',
+                  fontWeight: active ? 600 : 400,
+                }}
+              >
+                <Icon size={14} />
+                {label}
+              </Link>
+            )
+          }
+          return (
+            <a
+              key={href}
+              href={href}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all text-[#555] hover:text-white"
+              style={{ fontFamily: 'var(--font-dm-sans)' }}
+            >
+              <Icon size={14} />
+              <span className="flex-1">{label}</span>
+              <ExternalLink size={11} className="text-[#333]" />
+            </a>
+          )
+        })}
       </nav>
     </aside>
   )
