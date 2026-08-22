@@ -1,56 +1,39 @@
 'use client'
 
 // Modal de tutorial (22/08/2026, pedido do usuário) — passo a passo de como
-// montar um evento, escrito e editável direto aqui (sem link externo, sem
-// vídeo). Primeira peça do "formato melhor" combinado no fim da sessão de
-// 21/08 — conteúdo deve ser revisado/expandido conforme o usuário for
-// testando e apontando o que falta (mesmo espírito do botão de ajuda "!"
-// já aplicado em PainelEquipe.tsx). Componente compartilhado — usado tanto
-// em GerenciarSidebar.tsx (evento/[id]/gerenciar) quanto em AdminSidebar.tsx
+// montar um evento. Componente compartilhado — usado tanto em
+// GerenciarSidebar.tsx (evento/[id]/gerenciar) quanto em AdminSidebar.tsx
 // (painel da equipe Tipo7, mesmo conteúdo, botão sem destaque visual lá).
-import { X, Layers, Ticket, Users, Car, Settings, ShoppingBag, BarChart2 } from 'lucide-react'
+//
+// Conteúdo editável (22/08/2026, pedido do usuário) SÓ pela tela de admin —
+// Admin > Conteúdo > Tutorial de evento (ConteudoClient.tsx) — reaproveita
+// a mesma tabela/rota `platform_content` já usada pra Termos/Privacidade/
+// LGPD (key='tutorial_evento', content = JSON.stringify de TutorialPasso[]).
+// Busca aqui é best-effort: se a chave ainda não existir ou o fetch falhar,
+// cai no array padrão (TUTORIAL_PASSOS_PADRAO) — nunca quebra o modal.
+import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
+import { apiFetchAuth } from '@/lib/apiFetch'
+import { TUTORIAL_ICONES, TUTORIAL_PASSOS_PADRAO, type TutorialPasso } from '@/lib/tutorialIcons'
 
 const ACCENT = '#E8B84B'
 
-const PASSOS = [
-  {
-    icon: Layers,
-    titulo: 'Estrutura',
-    texto: 'Comece por aqui: nome do evento, data, local, banner e — se o evento tiver mais de um dia — os dias específicos.',
-  },
-  {
-    icon: Ticket,
-    titulo: 'Ingressos',
-    texto: 'Crie os tipos de ingresso (Pista, VIP, Camarote...) com preço e quantidade disponível. Dá pra configurar lotes de preço progressivo dentro do mesmo ingresso, se quiser.',
-  },
-  {
-    icon: Users,
-    titulo: 'Equipe',
-    texto: 'Convide quem vai te ajudar no dia do evento e defina a função de cada um (Scanner, Caixa, Estacionamento...) — a função decide o que a pessoa pode acessar.',
-  },
-  {
-    icon: ShoppingBag,
-    titulo: 'Bilheteria (caixas)',
-    texto: 'No dia do evento, abra os caixas aqui pra vender ingresso presencialmente (dinheiro, PIX ou cartão) e controlar o troco.',
-  },
-  {
-    icon: Car,
-    titulo: 'Estacionamento',
-    texto: 'Se o local do evento tiver estacionamento, configure aqui: preço, quantidade de vagas e portões de entrada/saída. Só use se fizer sentido pro seu evento.',
-  },
-  {
-    icon: Settings,
-    titulo: 'Configurações',
-    texto: 'Ajustes do evento: pausar vendas online automaticamente perto da data, encerrar ou adiar o evento.',
-  },
-  {
-    icon: BarChart2,
-    titulo: 'Relatórios',
-    texto: 'Acompanhe vendas e presença em tempo real, a qualquer momento antes ou durante o evento.',
-  },
-]
-
 export function TutorialModal({ onFechar }: { onFechar: () => void }) {
+  const [passos, setPassos] = useState<TutorialPasso[]>(TUTORIAL_PASSOS_PADRAO)
+
+  useEffect(() => {
+    let cancelado = false
+    apiFetchAuth('/api/admin/conteudo?key=tutorial_evento')
+      .then(res => (res.ok ? res.json() : null))
+      .then((data: { content?: string } | null) => {
+        if (cancelado || !data?.content) return
+        const parsed = JSON.parse(data.content) as TutorialPasso[]
+        if (Array.isArray(parsed) && parsed.length > 0) setPassos(parsed)
+      })
+      .catch(() => { /* mantém o padrão — best-effort */ })
+    return () => { cancelado = true }
+  }, [])
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4"
@@ -72,10 +55,10 @@ export function TutorialModal({ onFechar }: { onFechar: () => void }) {
         </div>
 
         <div className="px-5 py-4 flex flex-col gap-3 overflow-y-auto">
-          {PASSOS.map((p, i) => {
-            const Icon = p.icon
+          {passos.map((p, i) => {
+            const Icon = TUTORIAL_ICONES[p.icone] ?? TUTORIAL_ICONES.Layers
             return (
-              <div key={p.titulo} className="flex items-start gap-3 p-3 rounded-xl" style={{ background: '#111', border: '1px solid #1e1e1e' }}>
+              <div key={i} className="flex items-start gap-3 p-3 rounded-xl" style={{ background: '#111', border: '1px solid #1e1e1e' }}>
                 <div
                   className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 relative"
                   style={{ background: `${ACCENT}15` }}
