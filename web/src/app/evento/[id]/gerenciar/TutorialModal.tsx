@@ -27,6 +27,11 @@ const PASSOS = [
     texto: 'Convide quem vai te ajudar no dia do evento e defina a função de cada um (Scanner, Caixa, Estacionamento...) — a função decide o que a pessoa pode acessar.',
   },
   {
+    icon: ShoppingBag,
+    titulo: 'Bilheteria (caixas)',
+    texto: 'No dia do evento, abra os caixas aqui pra vender ingresso presencialmente (dinheiro, PIX ou cartão) e controlar o troco.',
+  },
+  {
     icon: Car,
     titulo: 'Estacionamento',
     texto: 'Se o local do evento tiver estacionamento, configure aqui: preço, quantidade de vagas e portões de entrada/saída. Só use se fizer sentido pro seu evento.',
@@ -35,11 +40,6 @@ const PASSOS = [
     icon: Settings,
     titulo: 'Configurações',
     texto: 'Ajustes do evento: pausar vendas online automaticamente perto da data, encerrar ou adiar o evento.',
-  },
-  {
-    icon: ShoppingBag,
-    titulo: 'Bilheteria (caixas)',
-    texto: 'No dia do evento, abra os caixas aqui pra vender ingresso presencialmente (dinheiro, PIX ou cartão) e controlar o troco.',
   },
   {
     icon: BarChart2,
