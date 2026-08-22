@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import {
   Users, UserPlus, Trash2, Loader2, Check, AlertTriangle,
-  Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X, DoorOpen, Wallet, Calculator,
+  Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X, DoorOpen, Wallet, Calculator, HelpCircle,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { apiFetchAuth } from '@/lib/apiFetch'
@@ -21,15 +21,28 @@ function formatBRL(v: number) {
 // única. As outras continuam soltas na grade de sempre.
 const GRUPO_BILHETERIA = ['vender_ingresso', 'validar_ingresso', 'estacionamento_entrada']
 
+// `help`: texto mais longo que aparece no botão "?" ao lado de cada
+// permissão (achado real, 21/08/2026 — usuário testando com a equipe
+// confundiu o `desc` curto de baixo do nome com explicação suficiente;
+// pediu um botão de ajuda dedicado, mais fácil de notar, em vez de só o
+// texto pequeno cinza). `desc` continua igual, é o subtítulo que já existia.
 const PERMISSOES = [
-  { value: 'validar_ingresso',        label: 'Scanner',              desc: 'Escanear QR na entrada'         },
-  { value: 'vender_ingresso',         label: 'Caixa',                desc: 'Vender ingressos presencial'    },
-  { value: 'estacionamento_entrada',  label: 'Estacionamento entrada', desc: 'Registrar entrada de veículos' },
-  { value: 'autorizar_sangria',       label: 'Autorizar sangria',    desc: 'Confirmar retirada de dinheiro de um caixa' },
-  { value: 'ver_lista_convidados',    label: 'Ver lista',            desc: 'Lista de compradores'           },
-  { value: 'ver_relatorios',          label: 'Ver relatórios',       desc: 'Vendas e presença'              },
-  { value: 'gerenciar_checkin',       label: 'Gerenciar check-in',   desc: 'Controlar entrada/saída'        },
-  { value: 'estacionamento_saida',    label: 'Estacionamento — Saída',   desc: 'Registrar saída e cobrar'      },
+  { value: 'validar_ingresso',        label: 'Scanner',              desc: 'Escanear QR na entrada',
+    help: 'Libera a tela "Scanner" no evento. Quem tem essa permissão pode escanear o QR code do ingresso na entrada e marcar como usado — impede que o mesmo ingresso entre duas vezes.' },
+  { value: 'vender_ingresso',         label: 'Caixa',                desc: 'Vender ingressos presencial',
+    help: 'Libera a tela de "Bilheteria". Quem tem essa permissão pode abrir/operar um caixa e vender ingresso presencialmente (dinheiro, PIX ou cartão), sem precisar de link de compra.' },
+  { value: 'estacionamento_entrada',  label: 'Estacionamento entrada', desc: 'Registrar entrada de veículos',
+    help: 'Libera a tela de "Estacionamento", só a parte de ENTRADA — registrar placa/modelo/cor do carro que está chegando. Sozinha, não deixa registrar saída nem cobrar.' },
+  { value: 'autorizar_sangria',       label: 'Autorizar sangria',    desc: 'Confirmar retirada de dinheiro de um caixa',
+    help: 'Permite que ESSA função autorize a sangria (retirada parcial de dinheiro) de qualquer caixa do evento, digitando o PIN dela na hora — quem opera a tela não precisa ser a mesma pessoa que retira o dinheiro.' },
+  { value: 'ver_lista_convidados',    label: 'Ver lista',            desc: 'Lista de compradores',
+    help: 'Libera a tela com a lista de quem comprou ingresso pro evento (nome, ingresso, se já entrou) — só consulta, não deixa vender nem escanear.' },
+  { value: 'ver_relatorios',          label: 'Ver relatórios',       desc: 'Vendas e presença',
+    help: 'Libera o dashboard de vendas/presença do evento (quanto vendeu, quantos entraram, por forma de pagamento) — visão gerencial, não operacional.' },
+  { value: 'gerenciar_checkin',       label: 'Gerenciar check-in',   desc: 'Controlar entrada/saída',
+    help: 'Permite marcar manualmente entrada/saída de convidados direto na lista, sem precisar escanear o QR — útil quando o ingresso não tem QR ou o scanner falhou.' },
+  { value: 'estacionamento_saida',    label: 'Estacionamento — Saída',   desc: 'Registrar saída e cobrar',
+    help: 'Libera a tela de "Estacionamento", a parte de SAÍDA — dar baixa no carro e cobrar o valor (se o local for pago). Sozinha, não deixa registrar entrada.' },
 ]
 
 type Funcao = {
@@ -76,12 +89,45 @@ const PERMISSOES_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_sai
 
 // ── Seletor de permissões reutilizável ────────────────────────────────────────
 
+// Botão "?" com tooltip — mesmo princípio do ícone de ajuda já usado em
+// CampoComAjuda (GerenciadorEstacionamentos.tsx), portado pra cá: clique ou
+// hover revela o texto, escondido por padrão. Sempre chama stopPropagation
+// pra não disparar o toggle da permissão por baixo.
+function BotaoAjuda({ texto }: { texto: string }) {
+  const [aberta, setAberta] = useState(false)
+  return (
+    <span className="relative inline-block shrink-0">
+      <button
+        type="button"
+        onClick={e => { e.stopPropagation(); setAberta(v => !v) }}
+        onMouseEnter={() => setAberta(true)}
+        onMouseLeave={() => setAberta(false)}
+        className="w-4 h-4 flex items-center justify-center rounded-full text-[#555] hover:text-[#E8B84B] transition-colors"
+        title="O que essa permissão faz"
+      >
+        <HelpCircle size={13} />
+      </button>
+      {aberta && (
+        <div
+          onClick={e => e.stopPropagation()}
+          className="absolute left-0 top-full mt-1.5 z-30 w-52 p-2.5 rounded-lg text-[10px] leading-snug text-[#ccc] shadow-xl shadow-black/50"
+          style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', fontFamily: 'var(--font-dm-sans)' }}
+        >
+          {texto}
+        </div>
+      )}
+    </span>
+  )
+}
+
 function BotaoPermissao({ p, marcada, onClick }: { p: typeof PERMISSOES[number]; marcada: boolean; onClick: () => void }) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="flex items-start gap-2 p-2.5 rounded-xl text-left transition-colors"
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
+      className="flex items-start gap-2 p-2.5 rounded-xl text-left transition-colors cursor-pointer"
       style={{
         background: marcada ? `${ACCENT}15` : '#111',
         border: `1px solid ${marcada ? ACCENT + '40' : '#1e1e1e'}`,
@@ -96,15 +142,18 @@ function BotaoPermissao({ p, marcada, onClick }: { p: typeof PERMISSOES[number];
       >
         {marcada && <Check size={10} className="text-[#070707]" />}
       </div>
-      <div>
-        <p className="text-white text-[11px] font-medium leading-tight" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          {p.label}
-        </p>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1">
+          <p className="text-white text-[11px] font-medium leading-tight" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            {p.label}
+          </p>
+          <BotaoAjuda texto={p.help} />
+        </div>
         <p className="text-[#444] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
           {p.desc}
         </p>
       </div>
-    </button>
+    </div>
   )
 }
 
