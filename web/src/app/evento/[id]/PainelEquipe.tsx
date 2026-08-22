@@ -103,7 +103,6 @@ function BotaoAjuda({ texto }: { texto: string }) {
         onMouseEnter={() => setAberta(true)}
         onMouseLeave={() => setAberta(false)}
         className="w-4 h-4 flex items-center justify-center rounded-full text-[#555] hover:text-[#E8B84B] transition-colors"
-        title="O que essa permissão faz"
       >
         <AlertCircle size={13} />
       </button>
