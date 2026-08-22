@@ -6,9 +6,10 @@ import Link from 'next/link'
 import {
   LayoutDashboard, UsersRound, Users, UserCheck, Building2, Calendar, DollarSign,
   Shield, FileText, ChevronDown, Landmark, ReceiptText, Layers, Clapperboard, Megaphone,
-  Globe, Ticket, Tent, SquareParking, Webhook,
+  Globe, Ticket, Tent, SquareParking, Webhook, GraduationCap,
 } from 'lucide-react'
 import type { AdminRole } from '@/lib/adminAuth'
+import { TutorialModal } from '@/components/TutorialModal'
 
 const ACCENT = '#E8B84B'
 
@@ -51,6 +52,7 @@ interface Props {
 
 export function AdminSidebar({ role, permissions, acessoRestrito, userName }: Props) {
   const pathname = usePathname()
+  const [tutorialAberto, setTutorialAberto] = useState(false)
 
   // Área restrita (Equipe/Financeiro/API) — role='admin' sozinho não basta
   // mais, precisa ser super_admin ou ter o acesso concedido explicitamente.
@@ -94,7 +96,21 @@ export function AdminSidebar({ role, permissions, acessoRestrito, userName }: Pr
         <p className="text-[#444] text-[10px] tracking-widest uppercase mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
           Painel Admin
         </p>
+        {/* Sem destaque de propósito (pedido do usuário, 22/08/2026) — mesmo
+            conteúdo do Tutorial de GerenciarSidebar.tsx, mas aqui é só
+            consulta ocasional da equipe, não precisa chamar atenção. */}
+        <button
+          type="button"
+          onClick={() => setTutorialAberto(true)}
+          className="flex items-center gap-1.5 mt-2 text-[11px] text-[#444] hover:text-[#888] transition-colors"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}
+        >
+          <GraduationCap size={12} />
+          Tutorial
+        </button>
       </div>
+
+      {tutorialAberto && <TutorialModal onFechar={() => setTutorialAberto(false)} />}
 
       {/* Nav */}
       <nav className="flex-1 p-3 flex flex-col gap-0.5">

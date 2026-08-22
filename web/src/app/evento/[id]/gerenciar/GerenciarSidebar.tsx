@@ -7,7 +7,7 @@ import {
   ArrowLeft, Ticket, Layers, Users, Car, ShoppingBag, Settings,
   ExternalLink, BarChart2, GraduationCap,
 } from 'lucide-react'
-import { TutorialModal } from './TutorialModal'
+import { TutorialModal } from '@/components/TutorialModal'
 
 const ACCENT = '#E8B84B'
 

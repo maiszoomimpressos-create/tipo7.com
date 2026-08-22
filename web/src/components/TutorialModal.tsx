@@ -5,7 +5,9 @@
 // vídeo). Primeira peça do "formato melhor" combinado no fim da sessão de
 // 21/08 — conteúdo deve ser revisado/expandido conforme o usuário for
 // testando e apontando o que falta (mesmo espírito do botão de ajuda "!"
-// já aplicado em PainelEquipe.tsx).
+// já aplicado em PainelEquipe.tsx). Componente compartilhado — usado tanto
+// em GerenciarSidebar.tsx (evento/[id]/gerenciar) quanto em AdminSidebar.tsx
+// (painel da equipe Tipo7, mesmo conteúdo, botão sem destaque visual lá).
 import { X, Layers, Ticket, Users, Car, Settings, ShoppingBag, BarChart2 } from 'lucide-react'
 
 const ACCENT = '#E8B84B'
