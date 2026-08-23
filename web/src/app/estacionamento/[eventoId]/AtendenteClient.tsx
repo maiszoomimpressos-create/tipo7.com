@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Car, Plus, Loader2, Clock, Banknote, CreditCard, Smartphone, Gift, X, ArrowLeft, DoorOpen,
-  Wallet, Lock, AlertTriangle, CheckCircle2, XCircle, MinusCircle,
+  Wallet, Lock, AlertTriangle, CheckCircle2, XCircle, MinusCircle, Search,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
@@ -134,6 +134,14 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [saidaAlvo, setSaidaAlvo] = useState<Sessao | null>(null)
   const [formaPagamento, setFormaPagamento] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
   const [confirmandoSaida, setConfirmandoSaida] = useState(false)
+
+  // Busca por placa na saída (22/08/2026, pedido do usuário) — mesmo padrão
+  // de UX que já existe pra entrada (campo "Placa *" com autofoco): digitar
+  // acha o carro na hora em vez de rolar a lista "Carros estacionados"
+  // procurando visualmente. Achando exatamente 1 correspondência com 3+
+  // caracteres, já abre a confirmação de saída sozinho — mesmo fluxo que a
+  // lista já fazia ao clicar, só que sem precisar rolar/clicar.
+  const [buscaSaida, setBuscaSaida] = useState('')
 
   // Pedido do usuário (17/08/2026): sinal visual grande no terminal do
   // caixa depois de validar o pagamento (dinheiro/PIX hoje, cartão entra
@@ -424,6 +432,31 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     setPortaoSaidaSel(filtrados.length === 1 ? filtrados[0].id : '')
   }
 
+  const fecharConfirmarSaida = () => {
+    setSaidaAlvo(null)
+    setBuscaSaida('')
+  }
+
+  // Filtra "Carros estacionados" pela busca — placa não precisa bater
+  // exata, só conter o que foi digitado (facilita achar mesmo lembrando só
+  // parte da placa).
+  const sessoesFiltradas = useMemo(() => {
+    const q = buscaSaida.trim().toUpperCase()
+    if (!q) return sessoes
+    return sessoes.filter(s => s.placa.toUpperCase().includes(q))
+  }, [sessoes, buscaSaida])
+
+  // Achou exatamente 1 carro com a busca (3+ caracteres, pra não abrir sozinho
+  // digitando a 1ª letra) — abre a confirmação direto, sem precisar clicar
+  // na lista. Só dispara se não tiver outra sessão já aberta na tela.
+  useEffect(() => {
+    const q = buscaSaida.trim()
+    if (q.length >= 3 && sessoesFiltradas.length === 1 && !saidaAlvo) {
+      abrirConfirmarSaida(sessoesFiltradas[0])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buscaSaida, sessoesFiltradas])
+
   // Portões de saída disponíveis pro estacionamento da sessão em confirmação —
   // o carro pode sair por qualquer portão tipo saída/ambos, não precisa ser
   // o mesmo por onde entrou.
@@ -470,7 +503,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
         return
       }
       setStatusAcesso({ tipo: 'liberado', titulo: 'LIBERADO', detalhe: `${saidaAlvo.placa} — saída registrada` })
-      setSaidaAlvo(null)
+      fecharConfirmarSaida()
       await carregarSessoes()
     } catch {
       const msg = 'Erro ao registrar saída. Tente novamente.'
@@ -758,11 +791,32 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               <p className="text-[#666] text-xs uppercase tracking-widest font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 Carros estacionados {!carregando && `(${sessoes.length})`}
               </p>
+
+              {/* Busca por placa (22/08/2026) — mesmo campo/estilo da placa
+                  de entrada (`inp`), achando 1 resultado já abre a
+                  confirmação de saída sozinho (ver useEffect acima). */}
+              {!carregando && sessoes.length > 0 && (
+                <div className="relative">
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#444]" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por placa"
+                    value={buscaSaida}
+                    onChange={e => setBuscaSaida(e.target.value.toUpperCase())}
+                    className={cn(inp, 'pl-9')}
+                    style={{ fontFamily: 'var(--font-dm-sans)', textTransform: 'uppercase' }}
+                  />
+                </div>
+              )}
+
               {carregando && <Loader2 size={18} className="animate-spin text-[#E8B84B] mx-auto my-6" />}
               {!carregando && sessoes.length === 0 && (
                 <p className="text-[#444] text-sm text-center py-6">Nenhum carro estacionado no momento.</p>
               )}
-              {sessoes.map(s => (
+              {!carregando && sessoes.length > 0 && sessoesFiltradas.length === 0 && (
+                <p className="text-[#444] text-sm text-center py-4">Nenhum carro com essa placa.</p>
+              )}
+              {sessoesFiltradas.map(s => (
                 <div key={s.id} className="flex items-center justify-between gap-3 bg-[#0d0d0d] border border-[#1a1a1a] rounded-xl px-4 py-3">
                   <div>
                     <p className="text-white text-sm font-semibold tracking-wide" style={{ fontFamily: 'var(--font-dm-sans)' }}>{s.placa}</p>
@@ -793,7 +847,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                 Saída — {saidaAlvo.placa}
               </p>
-              <button onClick={() => setSaidaAlvo(null)} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
+              <button onClick={fecharConfirmarSaida} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
             </div>
 
             <div className="text-center py-4 mb-4 rounded-xl" style={{ background: '#111' }}>
@@ -860,7 +914,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
               {confirmandoSaida ? <Loader2 size={15} className="animate-spin" /> : 'Confirmar saída'}
             </button>
-            <button type="button" onClick={() => setSaidaAlvo(null)}
+            <button type="button" onClick={fecharConfirmarSaida}
               className="w-full text-center text-[#444] hover:text-[#777] text-xs mt-3 flex items-center justify-center gap-1.5">
               <ArrowLeft size={12} /> Cancelar
             </button>
