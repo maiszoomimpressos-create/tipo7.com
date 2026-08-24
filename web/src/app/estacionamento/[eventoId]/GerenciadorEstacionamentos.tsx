@@ -103,6 +103,137 @@ function CampoComAjuda({ label, ajuda, children }: { label: string; ajuda: strin
   )
 }
 
+// Editor de portões — lista + adicionar/ativar/excluir. Extraído (24/08/2026,
+// achado do usuário: editar um estacionamento existente não deixava mexer
+// nos portões, só a criação tinha esse fluxo) pra ser reaproveitado tanto na
+// lista principal (seção expansível "Portões") quanto dentro do modal de
+// Editar — assim editar um local sempre cobre TUDO, portões inclusos, sem
+// precisar fechar o modal e ir procurar em outro lugar da tela. Mantém sua
+// própria lista local (`portoesIniciais` só serve de valor de partida) e já
+// atualiza otimisticamente a cada ação — `onMudou` é só um aviso pro
+// componente pai atualizar o fundo dele, não é de onde a lista é lida.
+function PortoesEditor({
+  eventoId, estacionamentoId, portoesIniciais, onMudou,
+}: {
+  eventoId: string
+  estacionamentoId: string
+  portoesIniciais: Portao[]
+  onMudou?: () => void
+}) {
+  const [portoes, setPortoes] = useState<Portao[]>(portoesIniciais)
+  const [novoNome, setNovoNome] = useState('')
+  const [novoTipo, setNovoTipo] = useState<Portao['tipo']>('ambos')
+  const [salvando, setSalvando] = useState(false)
+
+  const criar = async () => {
+    if (!novoNome.trim()) return
+    setSalvando(true)
+    try {
+      const res = await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ nome: novoNome.trim(), tipo: novoTipo }),
+      })
+      const data = await res.json()
+      if (res.ok && data.portao) {
+        setPortoes(prev => [...prev, data.portao])
+        setNovoNome(''); setNovoTipo('ambos')
+        onMudou?.()
+      }
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  const excluir = async (portaoId: string) => {
+    if (!confirm('Excluir este portão?')) return
+    await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes/${portaoId}`, { method: 'DELETE' })
+    setPortoes(prev => prev.filter(p => p.id !== portaoId))
+    onMudou?.()
+  }
+
+  const toggleAtivo = async (portao: Portao) => {
+    await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes/${portao.id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ativo: !portao.ativo }),
+    })
+    setPortoes(prev => prev.map(p => p.id === portao.id ? { ...p, ativo: !p.ativo } : p))
+    onMudou?.()
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-[#444] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+        Portões — carros podem sair por qualquer um do tipo saída/ambos, não precisa ser o mesmo da entrada
+      </p>
+
+      {portoes.length === 0 && (
+        <p className="text-[#444] text-xs py-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          Nenhum portão cadastrado — sem portões, qualquer atendente com permissão pode operar livremente.
+        </p>
+      )}
+
+      {portoes.map(p => {
+        const Icon = TIPO_PORTAO_ICON[p.tipo]
+        return (
+          <div key={p.id} className="flex items-center justify-between gap-2 bg-[#111] border border-[#1c1c1c] rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Icon size={13} className="text-[#E8B84B] shrink-0" />
+              <div className="min-w-0">
+                <p className="text-white text-xs truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  {p.nome} {!p.ativo && <span className="text-[#444]">(inativo)</span>}
+                </p>
+                <p className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  {TIPO_PORTAO_LABEL[p.tipo]}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button type="button" onClick={() => toggleAtivo(p)}
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#1a1a1a] transition-colors"
+                title={p.ativo ? 'Desativar' : 'Ativar'}>
+                {p.ativo ? <Unlock size={11} className="text-green-400" /> : <Lock size={11} className="text-[#555]" />}
+              </button>
+              <button type="button" onClick={() => excluir(p.id)}
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#1a1a1a] transition-colors">
+                <Trash2 size={11} className="text-[#444] hover:text-red-400" />
+              </button>
+            </div>
+          </div>
+        )
+      })}
+
+      <div className="flex flex-col gap-1.5 mt-1">
+        <input type="text" placeholder="Nome do portão (ex: Portão A)" value={novoNome}
+          onChange={ev => setNovoNome(ev.target.value)}
+          className="bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-white text-xs outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
+          style={{ fontFamily: 'var(--font-dm-sans)' }} />
+        <div className="grid grid-cols-3 gap-1.5">
+          {([
+            { value: 'entrada' as const, label: 'Só entrada' },
+            { value: 'saida'   as const, label: 'Só saída'   },
+            { value: 'ambos'   as const, label: 'Ambos'      },
+          ]).map(({ value, label }) => (
+            <button key={value} type="button" onClick={() => setNovoTipo(value)}
+              className={cn(
+                'py-2 rounded-lg border text-[11px] font-medium transition-all',
+                novoTipo === value ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white' : 'bg-[#111] border-[#1c1c1c] text-[#777]'
+              )}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <button type="button" onClick={criar} disabled={salvando || !novoNome.trim()}
+          className="flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-[#070707] disabled:opacity-30"
+          style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+          {salvando ? <Loader2 size={13} className="animate-spin" /> : <><Plus size={13} /> Adicionar portão</>}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
   const router = useRouter()
   const [estacionamentos, setEstacionamentos] = useState<Estacionamento[]>([])
@@ -119,9 +250,6 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
   const [modalCaixaAberto, setModalCaixaAberto] = useState(false)
   const [erro, setErro]                       = useState<string | null>(null)
   const [portoesAbertos, setPortoesAbertos]   = useState<Set<string>>(new Set())
-  const [novoPortaoNome, setNovoPortaoNome]   = useState('')
-  const [novoPortaoTipo, setNovoPortaoTipo]   = useState<Portao['tipo']>('ambos')
-  const [salvandoPortao, setSalvandoPortao]   = useState(false)
 
   const carregar = useCallback(async () => {
     const [resEst, resCaixas] = await Promise.all([
@@ -160,39 +288,6 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
       if (next.has(estId)) next.delete(estId); else next.add(estId)
       return next
     })
-  }
-
-  const handleCriarPortao = async (estacionamentoId: string) => {
-    if (!novoPortaoNome.trim()) return
-    setSalvandoPortao(true); setErro(null)
-    try {
-      const res = await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ nome: novoPortaoNome.trim(), tipo: novoPortaoTipo }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setErro(data.message ?? data.error ?? 'Erro ao criar portão'); return }
-      setNovoPortaoNome(''); setNovoPortaoTipo('ambos')
-      await carregar()
-    } finally {
-      setSalvandoPortao(false)
-    }
-  }
-
-  const handleExcluirPortao = async (estacionamentoId: string, portaoId: string) => {
-    if (!confirm('Excluir este portão?')) return
-    await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes/${portaoId}`, { method: 'DELETE' })
-    await carregar()
-  }
-
-  const handleTogglePortaoAtivo = async (estacionamentoId: string, portao: Portao) => {
-    await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes/${portao.id}`, {
-      method:  'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ ativo: !portao.ativo }),
-    })
-    await carregar()
   }
 
   const handleFecharCaixa = async (caixaId: string) => {
@@ -315,75 +410,13 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
                   </div>
 
                   {portoesAberto && (
-                    <div className="px-4 pb-4 pt-1 flex flex-col gap-2" style={{ borderTop: '1px solid #1a1a1a' }}>
-                      <p className="text-[#444] text-[10px] uppercase tracking-wider mt-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        Portões — carros podem sair por qualquer um do tipo saída/ambos, não precisa ser o mesmo da entrada
-                      </p>
-
-                      {portoes.length === 0 && (
-                        <p className="text-[#444] text-xs py-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                          Nenhum portão cadastrado — sem portões, qualquer atendente com permissão pode operar livremente.
-                        </p>
-                      )}
-
-                      {portoes.map(p => {
-                        const Icon = TIPO_PORTAO_ICON[p.tipo]
-                        return (
-                          <div key={p.id} className="flex items-center justify-between gap-2 bg-[#111] border border-[#1c1c1c] rounded-lg px-3 py-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Icon size={13} className="text-[#E8B84B] shrink-0" />
-                              <div className="min-w-0">
-                                <p className="text-white text-xs truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                                  {p.nome} {!p.ativo && <span className="text-[#444]">(inativo)</span>}
-                                </p>
-                                <p className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                                  {TIPO_PORTAO_LABEL[p.tipo]}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button type="button" onClick={() => handleTogglePortaoAtivo(e.id, p)}
-                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#1a1a1a] transition-colors"
-                                title={p.ativo ? 'Desativar' : 'Ativar'}>
-                                {p.ativo ? <Unlock size={11} className="text-green-400" /> : <Lock size={11} className="text-[#555]" />}
-                              </button>
-                              <button type="button" onClick={() => handleExcluirPortao(e.id, p.id)}
-                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#1a1a1a] transition-colors">
-                                <Trash2 size={11} className="text-[#444] hover:text-red-400" />
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })}
-
-                      <div className="flex flex-col gap-1.5 mt-1">
-                        <div className="flex gap-1.5">
-                          <input type="text" placeholder="Nome do portão (ex: Portão A)" value={novoPortaoNome}
-                            onChange={ev => setNovoPortaoNome(ev.target.value)}
-                            className="flex-1 bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-white text-xs outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
-                            style={{ fontFamily: 'var(--font-dm-sans)' }} />
-                        </div>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {([
-                            { value: 'entrada' as const, label: 'Só entrada' },
-                            { value: 'saida'   as const, label: 'Só saída'   },
-                            { value: 'ambos'   as const, label: 'Ambos'      },
-                          ]).map(({ value, label }) => (
-                            <button key={value} type="button" onClick={() => setNovoPortaoTipo(value)}
-                              className={cn(
-                                'py-2 rounded-lg border text-[11px] font-medium transition-all',
-                                novoPortaoTipo === value ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white' : 'bg-[#111] border-[#1c1c1c] text-[#777]'
-                              )}>
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                        <button type="button" onClick={() => handleCriarPortao(e.id)} disabled={salvandoPortao || !novoPortaoNome.trim()}
-                          className="flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-[#070707] disabled:opacity-30"
-                          style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-                          {salvandoPortao ? <Loader2 size={13} className="animate-spin" /> : <><Plus size={13} /> Adicionar portão</>}
-                        </button>
-                      </div>
+                    <div className="px-4 pb-4 pt-1" style={{ borderTop: '1px solid #1a1a1a' }}>
+                      <PortoesEditor
+                        eventoId={eventoId}
+                        estacionamentoId={e.id}
+                        portoesIniciais={portoes}
+                        onMudou={carregar}
+                      />
                     </div>
                   )}
                 </div>
@@ -460,6 +493,7 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
           eventoId={eventoId}
           onFechar={() => setModalAberto(false)}
           onSalvo={async () => { setModalAberto(false); await carregar() }}
+          onPortaoMudou={carregar}
         />
       )}
 
@@ -469,6 +503,7 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
           estacionamento={modalEditando}
           onFechar={() => setModalEditando(null)}
           onSalvo={async () => { setModalEditando(null); await carregar() }}
+          onPortaoMudou={carregar}
         />
       )}
 
@@ -488,11 +523,19 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
 // casos (achado real 21/08/2026: só existia criação; editar preço/vagas
 // depois de criado exigia mexer direto no banco). Quando `estacionamento` é
 // passado, pré-preenche os campos e salva via PATCH; sem ele, cria via POST.
-function EstacionamentoModal({ eventoId, estacionamento, onFechar, onSalvo }: {
+function EstacionamentoModal({ eventoId, estacionamento, onFechar, onSalvo, onPortaoMudou }: {
   eventoId: string
   estacionamento?: Estacionamento
   onFechar: () => void
   onSalvo: () => void
+  // Achado do usuário (24/08/2026): editar um local existente não deixava
+  // mexer nos portões dele, só a criação tinha isso — quem quisesse
+  // adicionar/tirar portão de um estacionamento já criado tinha que fechar
+  // o modal e ir procurar na seção expansível da lista principal. Agora o
+  // modal de editar já mostra o PortoesEditor embutido; esse callback
+  // avisa o componente pai (fora do modal) pra atualizar o fundo dele
+  // também, sem fechar o modal a cada portão mexido (diferente de onSalvo).
+  onPortaoMudou?: () => void
 }) {
   const editando = !!estacionamento
   const [nome, setNome] = useState(estacionamento?.nome ?? '')
@@ -697,6 +740,18 @@ function EstacionamentoModal({ eventoId, estacionamento, onFechar, onSalvo }: {
                   ))}
                 </div>
               )}
+            </>
+          )}
+
+          {editando && (
+            <>
+              <div className="h-px bg-[#1c1c1c] my-1" />
+              <PortoesEditor
+                eventoId={eventoId}
+                estacionamentoId={estacionamento.id}
+                portoesIniciais={estacionamento.estacionamento_portoes}
+                onMudou={onPortaoMudou}
+              />
             </>
           )}
         </div>
