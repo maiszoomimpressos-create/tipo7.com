@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   Users, UserPlus, Trash2, Loader2, Check, AlertTriangle,
   Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X, DoorOpen, Wallet, Calculator, AlertCircle,
+  ScanQrCode,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { apiFetchAuth } from '@/lib/apiFetch'
@@ -14,24 +15,38 @@ function formatBRL(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-// Pedido do usuário (10/08/2026): as 3 permissões operacionais "do dia do
-// evento" (vender no caixa, escanear na entrada, registrar entrada de
-// carro) ficam agrupadas visualmente dentro de "Bilheteria" — que virou o
-// nome do MENU (expande/recolhe), não mais o rótulo de uma permissão
-// única. As outras continuam soltas na grade de sempre.
-const GRUPO_BILHETERIA = ['vender_ingresso', 'validar_ingresso', 'estacionamento_entrada']
+// Redesenho por módulo (24/08/2026, ver docs/plano-terminais-caixa-pwa.md,
+// Fase E) — a grade solta de 8 checkboxes confundia quem só queria montar
+// um cargo simples. Reorganizado em "módulos com ponto": Caixa (onde ela
+// vende — Bilheteria ou Estacionamento) e Scanner (onde ela escaneia —
+// Portaria ou Estacionamento), espelhando a mesma distinção que já existe
+// por trás na hora de decidir o link certo (web/src/lib/buildAcessos.ts,
+// `estacionamentoId` no registro do Caixa). Puramente reorganização visual
+// das permissões que já existiam — nenhum enum novo no banco. Alimentação
+// entra como módulo próprio quando a permissão dedicada for criada (Fase D
+// do plano, ainda não implementada).
+const MODULOS: { id: string; label: string; icon: typeof Wallet; pontos: string[] }[] = [
+  { id: 'caixa',   label: 'Caixa',   icon: Wallet,     pontos: ['vender_ingresso', 'estacionamento_saida'] },
+  { id: 'scanner', label: 'Scanner', icon: ScanQrCode, pontos: ['validar_ingresso', 'estacionamento_entrada'] },
+]
+// Permissões que não pertencem a um módulo operacional — transversais,
+// ficam soltas na grade de sempre (fora dos cards de módulo).
+const EXTRAS = ['autorizar_sangria', 'ver_lista_convidados', 'ver_relatorios', 'gerenciar_checkin']
 
 // `help`: texto mais longo que aparece no botão "?" ao lado de cada
 // permissão (achado real, 21/08/2026 — usuário testando com a equipe
 // confundiu o `desc` curto de baixo do nome com explicação suficiente;
 // pediu um botão de ajuda dedicado, mais fácil de notar, em vez de só o
 // texto pequeno cinza). `desc` continua igual, é o subtítulo que já existia.
+// `label` dos pontos de módulo (Bilheteria/Portaria/Estacionamento) foi
+// renomeado 24/08 pra não repetir o nome do módulo (antes: "Caixa ▾ Caixa",
+// "Scanner ▾ Scanner") — agora o rótulo identifica ONDE, o módulo já diz O QUÊ.
 const PERMISSOES = [
-  { value: 'validar_ingresso',        label: 'Scanner',              desc: 'Escanear QR na entrada',
+  { value: 'validar_ingresso',        label: 'Portaria',             desc: 'Escanear QR na entrada',
     help: 'Libera a tela "Scanner" no evento. Quem tem essa permissão pode escanear o QR code do ingresso na entrada e marcar como usado — impede que o mesmo ingresso entre duas vezes.' },
-  { value: 'vender_ingresso',         label: 'Caixa',                desc: 'Vender ingressos presencial',
+  { value: 'vender_ingresso',         label: 'Bilheteria',           desc: 'Vender ingressos presencial',
     help: 'Libera a tela de "Bilheteria". Quem tem essa permissão pode abrir/operar um caixa e vender ingresso presencialmente (dinheiro, PIX ou cartão), sem precisar de link de compra.' },
-  { value: 'estacionamento_entrada',  label: 'Estacionamento entrada', desc: 'Registrar entrada de veículos',
+  { value: 'estacionamento_entrada',  label: 'Estacionamento',       desc: 'Registrar entrada de veículos',
     help: 'Libera a tela de "Estacionamento", só a parte de ENTRADA — registrar placa/modelo/cor do carro que está chegando. Sozinha, não deixa registrar saída nem cobrar.' },
   { value: 'autorizar_sangria',       label: 'Autorizar sangria',    desc: 'Confirmar retirada de dinheiro de um caixa',
     help: 'Permite que ESSA função autorize a sangria (retirada parcial de dinheiro) de qualquer caixa do evento, digitando o PIN dela na hora — quem opera a tela não precisa ser a mesma pessoa que retira o dinheiro.' },
@@ -41,9 +56,11 @@ const PERMISSOES = [
     help: 'Libera o dashboard de vendas/presença do evento (quanto vendeu, quantos entraram, por forma de pagamento) — visão gerencial, não operacional.' },
   { value: 'gerenciar_checkin',       label: 'Gerenciar check-in',   desc: 'Controlar entrada/saída',
     help: 'Permite marcar manualmente entrada/saída de convidados direto na lista, sem precisar escanear o QR — útil quando o ingresso não tem QR ou o scanner falhou.' },
-  { value: 'estacionamento_saida',    label: 'Estacionamento — Saída',   desc: 'Registrar saída e cobrar',
+  { value: 'estacionamento_saida',    label: 'Estacionamento',       desc: 'Registrar saída e cobrar',
     help: 'Libera a tela de "Estacionamento", a parte de SAÍDA — dar baixa no carro e cobrar o valor (se o local for pago). Sozinha, não deixa registrar entrada.' },
 ]
+
+type PermInfo = typeof PERMISSOES[number]
 
 type Funcao = {
   id: string
@@ -165,11 +182,13 @@ function SeletorPermissoes({
   onChange: (p: string[]) => void
   temEstacionamento: boolean
 }) {
-  // Aberto de cara se já tiver algo do grupo marcado (ex: editando uma
-  // função que já usa Caixa/Scanner) — senão começa fechado.
-  const [bilheteriaAberta, setBilheteriaAberta] = useState(
-    () => GRUPO_BILHETERIA.some(v => selecionadas.includes(v))
-  )
+  // Cada módulo aberto de cara se já tiver algum ponto dele marcado (ex:
+  // editando uma função que já vende na Bilheteria) — senão começa fechado.
+  const [modulosAbertos, setModulosAbertos] = useState<Record<string, boolean>>(() => {
+    const inicial: Record<string, boolean> = {}
+    for (const m of MODULOS) inicial[m.id] = m.pontos.some(v => selecionadas.includes(v))
+    return inicial
+  })
 
   function toggle(value: string) {
     onChange(
@@ -184,46 +203,60 @@ function SeletorPermissoes({
   // atribuir. (Futuro: trocar o gatilho por "contratou o plano de estacionamento".)
   const visivel = (v: string) => temEstacionamento || !PERMISSOES_ESTACIONAMENTO.includes(v)
 
-  const permissoesBilheteria = PERMISSOES.filter(p => GRUPO_BILHETERIA.includes(p.value) && visivel(p.value))
-  const permissoesSoltas     = PERMISSOES.filter(p => !GRUPO_BILHETERIA.includes(p.value) && visivel(p.value))
-  const qtdMarcadasBilheteria = permissoesBilheteria.filter(p => selecionadas.includes(p.value)).length
+  const extras = EXTRAS.map(v => PERMISSOES.find(p => p.value === v)).filter((p): p is PermInfo => !!p && visivel(p.value))
 
   return (
     <div className="flex flex-col gap-1.5">
-      {/* Menu "Bilheteria" — expande/recolhe as permissões operacionais do dia do evento */}
-      <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #1e1e1e' }}>
-        <button
-          type="button"
-          onClick={() => setBilheteriaAberta(v => !v)}
-          className="w-full flex items-center justify-between px-2.5 py-2 transition-colors"
-          style={{ background: '#0d0d0d' }}
-        >
-          <div className="flex items-center gap-1.5">
-            <span className="text-white text-[11px] font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              Bilheteria
-            </span>
-            {qtdMarcadasBilheteria > 0 && (
-              <span
-                className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
-                style={{ background: `${ACCENT}20`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-              >
-                {qtdMarcadasBilheteria}
-              </span>
+      {MODULOS.map(modulo => {
+        const pontos = modulo.pontos
+          .map(v => PERMISSOES.find(p => p.value === v))
+          .filter((p): p is PermInfo => !!p && visivel(p.value))
+        // Ex: módulo Scanner some inteiro se o único ponto dele além de
+        // Portaria (estacionamento_entrada) estiver oculto por falta de pátio
+        // — mas só se sobrar 0 ponto de verdade (Portaria continua sempre visível).
+        if (pontos.length === 0) return null
+
+        const Icon = modulo.icon
+        const aberto = modulosAbertos[modulo.id] ?? false
+        const qtdMarcada = pontos.filter(p => selecionadas.includes(p.value)).length
+
+        return (
+          <div key={modulo.id} className="rounded-xl overflow-hidden" style={{ border: '1px solid #1e1e1e' }}>
+            <button
+              type="button"
+              onClick={() => setModulosAbertos(s => ({ ...s, [modulo.id]: !s[modulo.id] }))}
+              className="w-full flex items-center justify-between px-2.5 py-2 transition-colors"
+              style={{ background: '#0d0d0d' }}
+            >
+              <div className="flex items-center gap-1.5">
+                <Icon size={12} style={{ color: ACCENT }} />
+                <span className="text-white text-[11px] font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  {modulo.label}
+                </span>
+                {qtdMarcada > 0 && (
+                  <span
+                    className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                    style={{ background: `${ACCENT}20`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+                  >
+                    {qtdMarcada}
+                  </span>
+                )}
+              </div>
+              {aberto ? <ChevronUp size={13} className="text-[#555]" /> : <ChevronDown size={13} className="text-[#555]" />}
+            </button>
+            {aberto && (
+              <div className="grid grid-cols-2 gap-1.5 p-2 pt-0" style={{ background: '#0a0a0a' }}>
+                {pontos.map(p => (
+                  <BotaoPermissao key={p.value} p={p} marcada={selecionadas.includes(p.value)} onClick={() => toggle(p.value)} />
+                ))}
+              </div>
             )}
           </div>
-          {bilheteriaAberta ? <ChevronUp size={13} className="text-[#555]" /> : <ChevronDown size={13} className="text-[#555]" />}
-        </button>
-        {bilheteriaAberta && (
-          <div className="grid grid-cols-2 gap-1.5 p-2 pt-0" style={{ background: '#0a0a0a' }}>
-            {permissoesBilheteria.map(p => (
-              <BotaoPermissao key={p.value} p={p} marcada={selecionadas.includes(p.value)} onClick={() => toggle(p.value)} />
-            ))}
-          </div>
-        )}
-      </div>
+        )
+      })}
 
       <div className="grid grid-cols-2 gap-1.5">
-        {permissoesSoltas.map(p => (
+        {extras.map(p => (
           <BotaoPermissao key={p.value} p={p} marcada={selecionadas.includes(p.value)} onClick={() => toggle(p.value)} />
         ))}
       </div>

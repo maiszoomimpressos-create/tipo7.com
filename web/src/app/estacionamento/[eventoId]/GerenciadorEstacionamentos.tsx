@@ -506,6 +506,31 @@ function EstacionamentoModal({ eventoId, estacionamento, onFechar, onSalvo }: {
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
+  // Pedido do usuário (24/08/2026): antes, criar o local e criar os portões
+  // eram 2 momentos separados — salvava o estacionamento, depois tinha que
+  // abrir de novo (seção "Locais configurados") e clicar "Novo portão" um
+  // de cada vez. Agora pergunta de cara, só na CRIAÇÃO (`!editando` — um
+  // local já existente continua tendo os portões geridos na lista
+  // principal, não faz sentido duplicar aqui): "quantos portões esse local
+  // vai ter?" — 1 nem pergunta o tipo (só faz sentido ser entrada+saída no
+  // mesmo portão); 2+ mostra uma linha por portão, nome + tipo, já dentro
+  // deste formulário.
+  const [qtdPortoes, setQtdPortoes] = useState(1)
+  const [portoesNovos, setPortoesNovos] = useState<{ nome: string; tipo: Portao['tipo'] }[]>([
+    { nome: 'Portão único', tipo: 'ambos' },
+  ])
+
+  function mudarQtdPortoes(qtd: number) {
+    setQtdPortoes(qtd)
+    setPortoesNovos(prev => {
+      if (qtd === 1) return [{ nome: 'Portão único', tipo: 'ambos' }]
+      const base = prev.length === 1 && prev[0].nome === 'Portão único' ? [] : prev
+      const next = [...base]
+      while (next.length < qtd) next.push({ nome: `Portão ${next.length + 1}`, tipo: 'ambos' })
+      return next.slice(0, qtd)
+    })
+  }
+
   const salvar = async () => {
     if (!nome.trim()) return
     setSalvando(true); setErro(null)
@@ -528,6 +553,22 @@ function EstacionamentoModal({ eventoId, estacionamento, onFechar, onSalvo }: {
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.message ?? data.error ?? (editando ? 'Erro ao salvar' : 'Erro ao criar')); return }
+
+      // Só na criação: já cria os portões definidos acima, em paralelo.
+      // Falha em criar um portão não desfaz o local (já foi salvo) — só
+      // deixa de mostrar erro pra não travar o fluxo; o usuário sempre pode
+      // adicionar/corrigir portões depois na lista principal.
+      if (!editando && data.estacionamento?.id) {
+        const novosValidos = portoesNovos.filter(p => p.nome.trim())
+        await Promise.all(novosValidos.map(p =>
+          apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${data.estacionamento.id}/portoes`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ nome: p.nome.trim(), tipo: p.tipo }),
+          }).catch(() => null)
+        ))
+      }
+
       onSalvo()
     } finally {
       setSalvando(false)
@@ -607,6 +648,57 @@ function EstacionamentoModal({ eventoId, estacionamento, onFechar, onSalvo }: {
               onChange={e => setVagasTotais(e.target.value)} min="1"
               className={inp} style={{ fontFamily: 'var(--font-dm-sans)' }} />
           </CampoComAjuda>
+
+          {!editando && (
+            <>
+              <p className="text-[#444] text-[11px] uppercase tracking-wider">Quantos portões esse local vai ter?</p>
+              <div className="grid grid-cols-4 gap-2">
+                {[1, 2, 3, 4].map(qtd => (
+                  <button key={qtd} type="button" onClick={() => mudarQtdPortoes(qtd)}
+                    className={cn(
+                      'py-2.5 rounded-xl border text-xs font-medium transition-all',
+                      qtdPortoes === qtd ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white' : 'bg-[#111] border-[#1c1c1c] text-[#777]'
+                    )}>
+                    {qtd}
+                  </button>
+                ))}
+              </div>
+
+              {qtdPortoes === 1 ? (
+                <p className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Um portão só — entrada e saída juntas nele, não precisa escolher tipo.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {portoesNovos.map((p, i) => (
+                    <div key={i} className="flex flex-col gap-1.5 bg-[#111] border border-[#1c1c1c] rounded-lg p-2.5">
+                      <input type="text" value={p.nome}
+                        onChange={e => setPortoesNovos(prev => prev.map((x, j) => j === i ? { ...x, nome: e.target.value } : x))}
+                        placeholder={`Nome do portão ${i + 1}`}
+                        className="bg-[#0d0d0d] border border-[#222] rounded-lg px-3 py-2 text-white text-xs outline-none focus:border-[#E8B84B]/40"
+                        style={{ fontFamily: 'var(--font-dm-sans)' }} />
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {([
+                          { value: 'entrada' as const, label: 'Só entrada' },
+                          { value: 'saida'   as const, label: 'Só saída'   },
+                          { value: 'ambos'   as const, label: 'Ambos'      },
+                        ]).map(({ value, label }) => (
+                          <button key={value} type="button"
+                            onClick={() => setPortoesNovos(prev => prev.map((x, j) => j === i ? { ...x, tipo: value } : x))}
+                            className={cn(
+                              'py-1.5 rounded-lg border text-[10px] font-medium transition-all',
+                              p.tipo === value ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white' : 'bg-[#0d0d0d] border-[#1c1c1c] text-[#777]'
+                            )}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}

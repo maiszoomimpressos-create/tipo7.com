@@ -11,8 +11,44 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { KeyRound, Loader2, AlertCircle, ArrowRight } from 'lucide-react'
 import { setSessionFromAccessToken } from '@/lib/auth/session'
+import { apiFetchAuth } from '@/lib/apiFetch'
+import { buildAcessos } from '@/lib/buildAcessos'
 
 const ACCENT = '#E8B84B'
+
+// Fase A do plano de redirect inteligente (ver docs/plano-terminais-caixa-pwa.md,
+// 24/08/2026): em vez de sempre cair no hub `/trabalho/[eventoId]`, decide
+// pra onde mandar direto, olhando (nessa ordem):
+//   1. Caixa ABERTO agora (bilheteria ou estacionamento) — é onde a pessoa
+//      está trabalhando neste minuto, prioridade sobre qualquer outra coisa.
+//   2. Sem caixa aberto: dono do evento sempre cai no hub (quer ver o painel
+//      geral, não ser jogado numa tela operacional).
+//   3. Sem caixa aberto, não é dono: se ela só tem 1 ferramenta possível
+//      (buildAcessos), cai direto nela. Se tem mais de uma (ou nenhuma),
+//      cai no hub — só aí que sobra ambiguidade real pra resolver na mão.
+// Qualquer erro nessas checagens cai no hub também — nunca trava o login.
+async function decidirDestino(eventId: string): Promise<string> {
+  const hub = `/trabalho/${eventId}`
+  try {
+    const resCaixa = await apiFetchAuth(`/api/eventos/${eventId}/meu-caixa`)
+    if (resCaixa.ok) {
+      const caixa = await resCaixa.json() as { id: string; estacionamentoId: string | null } | null
+      if (caixa) {
+        return caixa.estacionamentoId ? `/estacionamento/${eventId}` : `/bilheteria/${eventId}/caixa/${caixa.id}`
+      }
+    }
+
+    const resAcesso = await apiFetchAuth(`/api/eventos/${eventId}/meu-acesso`)
+    if (!resAcesso.ok) return hub
+    const acesso = await resAcesso.json() as { isOwner: boolean; staff: { permissions: string[] } | null }
+    if (acesso.isOwner) return hub
+
+    const acessos = buildAcessos(eventId, acesso.staff?.permissions ?? [], false)
+    return acessos.length === 1 ? acessos[0].href : hub
+  } catch {
+    return hub
+  }
+}
 
 export function CaixaLoginClient() {
   const router = useRouter()
@@ -40,7 +76,8 @@ export function CaixaLoginClient() {
         return
       }
       setSessionFromAccessToken(data.accessToken)
-      router.push(`/trabalho/${data.eventId}`)
+      const destino = await decidirDestino(data.eventId)
+      router.push(destino)
     } catch {
       setErro('Erro de conexão. Tente novamente.')
     } finally {
