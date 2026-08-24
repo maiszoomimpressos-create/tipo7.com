@@ -7,19 +7,18 @@ import {
   Pencil, X, ToggleLeft, ToggleRight,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { PERMISSOES_INFO, BotaoPermissao } from '@/components/PermissaoCard'
 
 const ACCENT = '#E8B84B'
 
-const PERMISSOES = [
-  { value: 'validar_ingresso',     label: 'Validar ingresso'     },
-  { value: 'vender_ingresso',      label: 'Bilheteria'           },
-  { value: 'ver_lista_convidados', label: 'Ver lista'            },
-  { value: 'ver_relatorios',       label: 'Ver relatórios'       },
-  { value: 'gerenciar_checkin',    label: 'Gerenciar check-in'   },
-  { value: 'estacionamento_entrada', label: 'Estacionamento — Entrada' },
-  { value: 'estacionamento_saida',   label: 'Estacionamento — Saída'   },
-  { value: 'autorizar_sangria',      label: 'Autorizar sangria de caixa' },
-]
+// Pedido do usuário (26/08/2026): os cards de permissão aqui só mostravam o
+// nome cru, sem explicar o que cada uma libera — quem tá montando uma
+// função nova (ex: "Segurança do portão") não tinha como saber a diferença
+// entre "Estacionamento — Entrada" e "Estacionamento — Saída" sem ir testar.
+// Agora reaproveita o mesmo card com desc + tooltip de ajuda que já existia
+// só no seletor por evento (PainelEquipe.tsx) — fonte única em
+// components/PermissaoCard.tsx.
+const PERMISSOES = PERMISSOES_INFO
 
 type Template = {
   id: string
@@ -214,27 +213,7 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
             </p>
             <div className="grid grid-cols-2 gap-1.5">
               {PERMISSOES.map(p => (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => togglePerm(p.value)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-left transition-colors"
-                  style={{
-                    background: perms.includes(p.value) ? `${ACCENT}15` : '#111',
-                    border: `1px solid ${perms.includes(p.value) ? ACCENT + '40' : '#1e1e1e'}`,
-                  }}
-                >
-                  <div
-                    className="w-4 h-4 rounded flex items-center justify-center shrink-0"
-                    style={{
-                      background: perms.includes(p.value) ? ACCENT : '#1a1a1a',
-                      border: `1px solid ${perms.includes(p.value) ? ACCENT : '#333'}`,
-                    }}
-                  >
-                    {perms.includes(p.value) && <Check size={10} className="text-[#070707]" />}
-                  </div>
-                  <span className="text-white text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{p.label}</span>
-                </button>
+                <BotaoPermissao key={p.value} p={p} marcada={perms.includes(p.value)} onClick={() => togglePerm(p.value)} />
               ))}
             </div>
           </div>
