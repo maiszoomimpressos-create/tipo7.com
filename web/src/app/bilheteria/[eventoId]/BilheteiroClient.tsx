@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Ticket, User, Phone, CreditCard, Calendar, Printer, ChevronDown,
   Loader2, Check, AlertTriangle, ShoppingBag, ArrowLeft, Banknote,
@@ -115,6 +116,7 @@ const QTDS_RAPIDAS = [1, 2, 3, 4, 5]
 const BATCH_SIZE_IMPRESSAO = 2
 
 export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos, controlaIngressosFisicos, isOwner, eventoTitle, eventoDate, eventoLocal, ingressos, operadorName }: Props) {
+  const router = useRouter()
   const [etapa,             setEtapa]             = useState<Etapa>('venda')
   const [ticketId,          setTicketId]          = useState(ingressos[0]?.id ?? '')
   const [dropdownAberto,    setDropdownAberto]    = useState(false)
@@ -1405,14 +1407,19 @@ if exist "%CHROME%" (
                 Cancelar
               </button>
             ) : (
-              <Link
-                href={`/dashboard/${eventoId}`}
+              // Achado do usuário (26/08/2026): link fixo pro dashboard do
+              // evento — errava quando a entrada não foi por lá (ex:
+              // Gerenciar > Bilheteria). router.back() volta pra onde a
+              // pessoa realmente estava, mesmo padrão do resto do sistema.
+              <button
+                type="button"
+                onClick={() => router.back()}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
                 style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
               >
                 <ArrowLeft size={13} />
                 Voltar
-              </Link>
+              </button>
             )}
           </div>
         </div>
@@ -1782,12 +1789,12 @@ if exist "%CHROME%" (
               Fechar
             </button>
           ) : (
-            <Link href={`/dashboard/${eventoId}`}
+            <button type="button" onClick={() => router.back()}
               className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
               style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
               <ArrowLeft size={12} />
               Voltar
-            </Link>
+            </button>
           )}
         </div>
       </div>
