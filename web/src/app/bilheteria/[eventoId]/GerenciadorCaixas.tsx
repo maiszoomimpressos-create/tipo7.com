@@ -120,39 +120,44 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
   // Só vem preenchido na 1ª vez que o dono abre um caixa nesse evento.
   const [acessoOwner, setAcessoOwner] = useState<AcessoCaixa | null>(null)
 
-  useEffect(() => {
-    apiFetchAuth(`/api/eventos/${eventoId}/equipe`)
-      .then(r => r.ok ? r.json() : { staff: [] })
-      .then(d => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const membros: MembroEquipe[] = (d.staff ?? [])
-          .filter((s: any) => {
-            if (s.status !== 'active') return false
-            const pos  = Array.isArray(s.event_positions) ? s.event_positions[0] : s.event_positions
-            const perms: { permission: string }[] = pos?.event_position_permissions ?? []
-            // Achado real (17/08/2026): esse caixa é compartilhado entre
-            // bilheteria e estacionamento (mesmo model no banco — ver
-            // AtendenteClient.tsx, que só libera registrar entrada/saída
-            // paga se tiver caixa designado) — só filtrava vender_ingresso
-            // antes, então quem só tinha função de estacionamento nunca
-            // aparecia aqui pra ser escolhido como operador.
-            return perms.some(p =>
-              p.permission === 'vender_ingresso' ||
-              p.permission === 'estacionamento_entrada' ||
-              p.permission === 'estacionamento_saida',
-            )
-          })
-          .map((s: any) => ({
-            userId:   s.user_id,
-            nome:     (Array.isArray(s.profiles) ? s.profiles[0] : s.profiles)?.full_name ?? s.email ?? null,
-            cargo:    (Array.isArray(s.event_positions) ? s.event_positions[0] : s.event_positions)?.name ?? null,
-            email:    s.email ?? null,
-            userCode: s.userCode ?? null,
-          }))
-        setEquipe(membros)
-      })
-      .catch(() => {})
+  const [carregandoEquipe, setCarregandoEquipe] = useState(false)
+
+  const carregarEquipe = useCallback(async () => {
+    setCarregandoEquipe(true)
+    try {
+      const r = await apiFetchAuth(`/api/eventos/${eventoId}/equipe`)
+      const d = r.ok ? await r.json() : { staff: [] }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const membros: MembroEquipe[] = (d.staff ?? [])
+        .filter((s: any) => {
+          if (s.status !== 'active') return false
+          const pos  = Array.isArray(s.event_positions) ? s.event_positions[0] : s.event_positions
+          const perms: { permission: string }[] = pos?.event_position_permissions ?? []
+          // Achado real (17/08/2026): esse caixa é compartilhado entre
+          // bilheteria e estacionamento (mesmo model no banco — ver
+          // AtendenteClient.tsx, que só libera registrar entrada/saída
+          // paga se tiver caixa designado) — só filtrava vender_ingresso
+          // antes, então quem só tinha função de estacionamento nunca
+          // aparecia aqui pra ser escolhido como operador.
+          return perms.some(p =>
+            p.permission === 'vender_ingresso' ||
+            p.permission === 'estacionamento_entrada' ||
+            p.permission === 'estacionamento_saida',
+          )
+        })
+        .map((s: any) => ({
+          userId:   s.user_id,
+          nome:     (Array.isArray(s.profiles) ? s.profiles[0] : s.profiles)?.full_name ?? s.email ?? null,
+          cargo:    (Array.isArray(s.event_positions) ? s.event_positions[0] : s.event_positions)?.name ?? null,
+          email:    s.email ?? null,
+          userCode: s.userCode ?? null,
+        }))
+      setEquipe(membros)
+    } catch { /* silencioso */ }
+    finally { setCarregandoEquipe(false) }
   }, [eventoId])
+
+  useEffect(() => { carregarEquipe() }, [carregarEquipe])
 
   const carregarCaixas = useCallback(async () => {
     const res  = await apiFetchAuth(`/api/eventos/${eventoId}/caixas`)
@@ -595,9 +600,31 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
                         })}
                       </div>
                     ) : (
-                      <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                        Nenhum membro com função de caixa (bilheteria ou estacionamento) encontrado. Adicione alguém com uma dessas permissões em Gestão da Equipe.
-                      </p>
+                      <div className="flex flex-col gap-2">
+                        <p className="text-[#444] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                          Nenhum membro com função de caixa (bilheteria ou estacionamento) encontrado. Adicione alguém com uma dessas permissões em{' '}
+                          <Link
+                            href={`/evento/${eventoId}/gerenciar/equipe`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline hover:no-underline"
+                            style={{ color: ACCENT }}
+                          >
+                            Gestão da Equipe
+                          </Link>{' '}
+                          (abre em outra aba — o que você já preencheu aqui não se perde).
+                        </p>
+                        <button
+                          type="button"
+                          onClick={carregarEquipe}
+                          disabled={carregandoEquipe}
+                          className="flex items-center gap-1.5 text-[11px] w-fit disabled:opacity-50"
+                          style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+                        >
+                          {carregandoEquipe ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                          Já adicionei — atualizar lista
+                        </button>
+                      </div>
                     )
                   )}
 
