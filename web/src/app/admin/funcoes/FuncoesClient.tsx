@@ -41,8 +41,18 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
   const [removendo,  setRemovendo]  = useState<string | null>(null)
   const [err,        setErr]        = useState<string | null>(null)
 
+  // `estacionamento_entrada` concede sempre os 2 valores do banco juntos
+  // (entrada + saída) — mesma regra de PainelEquipe.tsx (26/08/2026): a
+  // tela virou 1 permissão só, o portão vinculado é quem decide o que a
+  // pessoa realmente faz.
+  const PAR_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_saida']
   function togglePerm(v: string) {
-    setPerms(p => p.includes(v) ? p.filter(x => x !== v) : [...p, v])
+    const grupo = v === 'estacionamento_entrada' ? PAR_ESTACIONAMENTO : [v]
+    setPerms(p =>
+      p.includes(v)
+        ? p.filter(x => !grupo.includes(x))
+        : [...p.filter(x => !grupo.includes(x)), ...grupo]
+    )
   }
 
   async function salvar() {
@@ -111,8 +121,22 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
     validar_ingresso: 'Validar', vender_ingresso: 'Bilheteria',
     ver_lista_convidados: 'Ver lista', ver_relatorios: 'Relatórios',
     gerenciar_checkin: 'Check-in',
-    estacionamento_entrada: 'Estac. entrada', estacionamento_saida: 'Estac. saída',
+    estacionamento_entrada: 'Estacionamento',
     autorizar_sangria: 'Autoriza sangria',
+  }
+
+  // `estacionamento_saida` sempre vem junto de `estacionamento_entrada`
+  // agora (ver togglePerm() acima) — sem isso, o chip "Estacionamento"
+  // apareceria duplicado (um por valor do banco).
+  function chipsUnicos(perms: { permission: string }[]): string[] {
+    const vistos = new Set<string>()
+    const labels: string[] = []
+    for (const p of perms) {
+      if (p.permission === 'estacionamento_saida') continue
+      const label = permLabel[p.permission] ?? p.permission
+      if (!vistos.has(label)) { vistos.add(label); labels.push(label) }
+    }
+    return labels
   }
 
   return (
@@ -140,13 +164,13 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
                 <div className="flex flex-wrap gap-1 mt-1">
                   {f.staff_function_template_permissions.length === 0 ? (
                     <span className="text-[#333] text-[10px]">Sem permissões</span>
-                  ) : f.staff_function_template_permissions.map(p => (
+                  ) : chipsUnicos(f.staff_function_template_permissions).map(label => (
                     <span
-                      key={p.permission}
+                      key={label}
                       className="px-1.5 py-0.5 rounded text-[10px]"
                       style={{ background: `${ACCENT}10`, color: '#888', fontFamily: 'var(--font-dm-sans)' }}
                     >
-                      {permLabel[p.permission] ?? p.permission}
+                      {label}
                     </span>
                   ))}
                 </div>

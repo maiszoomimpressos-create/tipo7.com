@@ -46,12 +46,19 @@ export default async function EstacionamentoPage({ params }: Props) {
     return <GerenciadorEstacionamentos eventoId={eventoId} eventoTitle={acesso.evento.title ?? 'Evento'} />
   }
 
+  // Achado do usuário (26/08/2026): antes, podeEntrada/podeSaida vinham
+  // direto das 2 permissões soltas do staff — redundante com o portão que
+  // ele já é vinculado (que sozinho já diz se é entrada/saída/ambos,
+  // decidido lá na criação do local). As permissões continuam existindo no
+  // banco (sempre concedidas juntas agora, ver PermissaoCard.tsx) só pra
+  // decidir SE a pessoa acessa a tela — o que ela pode fazer DENTRO dela
+  // agora vem do portão vinculado, quando houver um.
   const permissoes = acesso.staff?.permissions ?? []
-  const podeEntrada = permissoes.includes('estacionamento_entrada')
-  const podeSaida = permissoes.includes('estacionamento_saida')
+  const podeEntradaPerm = permissoes.includes('estacionamento_entrada')
+  const podeSaidaPerm = permissoes.includes('estacionamento_saida')
   const portaoRestrito = acesso.staff?.portaoId ?? null
 
-  if (!podeEntrada && !podeSaida) {
+  if (!podeEntradaPerm && !podeSaidaPerm) {
     return <SemPermissao mensagem="Você não tem permissão para acessar o estacionamento deste evento." />
   }
 
@@ -64,6 +71,15 @@ export default async function EstacionamentoPage({ params }: Props) {
   const { estacionamentos: estacionamentosRaw } = estacionamentosRes.ok
     ? await estacionamentosRes.json() as { estacionamentos: EstacionamentoApi[] }
     : { estacionamentos: [] as EstacionamentoApi[] }
+
+  // Sem portão vinculado (ex: local com portão único, ou pessoa sem
+  // restrição) cai no fallback das permissões soltas — igual sempre foi.
+  // Com portão vinculado, o `tipo` dele manda: só ele decide o que aparece.
+  const portaoVinculado = portaoRestrito
+    ? estacionamentosRaw.flatMap(e => e.estacionamentoPortoes).find(p => p.id === portaoRestrito)
+    : null
+  const podeEntrada = portaoVinculado ? ['entrada', 'ambos'].includes(portaoVinculado.tipo) : podeEntradaPerm
+  const podeSaida   = portaoVinculado ? ['saida', 'ambos'].includes(portaoVinculado.tipo)   : podeSaidaPerm
 
   // Remapeia camelCase (Prisma) pra snake_case (shape que AtendenteClient já espera)
   const estacionamentos = estacionamentosRaw.map(e => ({

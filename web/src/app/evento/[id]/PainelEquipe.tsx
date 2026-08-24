@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   Users, UserPlus, Trash2, Loader2, Check, AlertTriangle,
   Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X, DoorOpen, Wallet, Calculator,
-  ScanQrCode,
+  ScanQrCode, Car,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { apiFetchAuth } from '@/lib/apiFetch'
@@ -26,9 +26,16 @@ function formatBRL(v: number) {
 // das permissões que já existiam — nenhum enum novo no banco. Alimentação
 // entra como módulo próprio quando a permissão dedicada for criada (Fase D
 // do plano, ainda não implementada).
+// Redesenho 26/08/2026: "Estacionamento" saiu de dentro de Caixa/Scanner e
+// virou módulo próprio de 1 ponto só — antes ocupava um ponto em CADA um
+// dos dois (achado do usuário: isso duplicava a mesma permissão em 2
+// cards, e ainda dava pra marcar "saída" numa pessoa vinculada a um
+// portão só de entrada). Agora entrada/saída não são mais escolha da
+// pessoa aqui — vêm do tipo do portão vinculado (SeletorPortao, abaixo).
 const MODULOS: { id: string; label: string; icon: typeof Wallet; pontos: string[] }[] = [
-  { id: 'caixa',   label: 'Caixa',   icon: Wallet,     pontos: ['vender_ingresso', 'estacionamento_saida'] },
-  { id: 'scanner', label: 'Scanner', icon: ScanQrCode, pontos: ['validar_ingresso', 'estacionamento_entrada'] },
+  { id: 'caixa',          label: 'Caixa',          icon: Wallet,     pontos: ['vender_ingresso'] },
+  { id: 'scanner',        label: 'Scanner',        icon: ScanQrCode, pontos: ['validar_ingresso'] },
+  { id: 'estacionamento', label: 'Estacionamento', icon: Car,        pontos: ['estacionamento_entrada'] },
 ]
 // Permissões que não pertencem a um módulo operacional — transversais,
 // ficam soltas na grade de sempre (fora dos cards de módulo).
@@ -103,11 +110,19 @@ function SeletorPermissoes({
     return inicial
   })
 
+  // `estacionamento_entrada` concede sempre os 2 valores do banco juntos
+  // (entrada + saída) — a tela mostra só 1 permissão, mas o que ela
+  // realmente autoriza depende do portão vinculado, não de qual dos 2
+  // valores foi marcado (ver nota em PermissaoCard.tsx). Sem isso, o
+  // backend rejeitaria sair() pra quem não tivesse literalmente
+  // `estacionamento_saida` concedida.
+  const PAR_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_saida']
   function toggle(value: string) {
+    const grupo = value === 'estacionamento_entrada' ? PAR_ESTACIONAMENTO : [value]
     onChange(
       selecionadas.includes(value)
-        ? selecionadas.filter(p => p !== value)
-        : [...selecionadas, value]
+        ? selecionadas.filter(p => !grupo.includes(p))
+        : [...selecionadas.filter(p => !grupo.includes(p)), ...grupo]
     )
   }
 
@@ -124,9 +139,9 @@ function SeletorPermissoes({
         const pontos = modulo.pontos
           .map(v => PERMISSOES.find(p => p.value === v))
           .filter((p): p is PermInfo => !!p && visivel(p.value))
-        // Ex: módulo Scanner some inteiro se o único ponto dele além de
-        // Portaria (estacionamento_entrada) estiver oculto por falta de pátio
-        // — mas só se sobrar 0 ponto de verdade (Portaria continua sempre visível).
+        // Ex: módulo Estacionamento some inteiro se estiver oculto por
+        // falta de pátio cadastrado no evento — o único ponto dele é
+        // justamente uma permissão de estacionamento.
         if (pontos.length === 0) return null
 
         const Icon = modulo.icon
@@ -158,7 +173,7 @@ function SeletorPermissoes({
               {aberto ? <ChevronUp size={13} className="text-[#555]" /> : <ChevronDown size={13} className="text-[#555]" />}
             </button>
             {aberto && (
-              <div className="grid grid-cols-2 gap-1.5 p-2 pt-0" style={{ background: '#0a0a0a' }}>
+              <div className={`grid gap-1.5 p-2 pt-0 ${pontos.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`} style={{ background: '#0a0a0a' }}>
                 {pontos.map(p => (
                   <BotaoPermissao key={p.value} p={p} marcada={selecionadas.includes(p.value)} onClick={() => toggle(p.value)} />
                 ))}
@@ -438,9 +453,22 @@ export function PainelEquipe({ eventoId }: Props) {
     ver_lista_convidados:    'Ver lista',
     ver_relatorios:          'Relatórios',
     gerenciar_checkin:       'Check-in',
-    estacionamento_entrada:  'Estacionamento (entrada)',
-    estacionamento_saida:    'Estacionamento (saída)',
+    estacionamento_entrada:  'Estacionamento',
     autorizar_sangria:       'Autoriza sangria',
+  }
+
+  // `estacionamento_saida` sempre vem junto de `estacionamento_entrada`
+  // agora (ver toggle() acima) — sem isso, função/membro com estacionamento
+  // mostraria "Estacionamento" duas vezes (um chip por valor do banco).
+  function labelsUnicos(perms: { permission: string }[]): string[] {
+    const vistos = new Set<string>()
+    const labels: string[] = []
+    for (const p of perms) {
+      if (p.permission === 'estacionamento_saida') continue
+      const label = permLabel[p.permission] ?? p.permission
+      if (!vistos.has(label)) { vistos.add(label); labels.push(label) }
+    }
+    return labels
   }
 
   return (
@@ -549,13 +577,13 @@ export function PainelEquipe({ eventoId }: Props) {
                           <span className="text-[#333] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                             Sem permissões
                           </span>
-                        ) : f.event_position_permissions.map(p => (
+                        ) : labelsUnicos(f.event_position_permissions).map(label => (
                           <span
-                            key={p.permission}
+                            key={label}
                             className="px-1.5 py-0.5 rounded text-[9px]"
                             style={{ background: `${ACCENT}10`, color: '#888', fontFamily: 'var(--font-dm-sans)' }}
                           >
-                            {permLabel[p.permission] ?? p.permission}
+                            {label}
                           </span>
                         ))}
                       </div>
@@ -603,7 +631,7 @@ export function PainelEquipe({ eventoId }: Props) {
                         onClick={() => importarTemplate(t)}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] transition-colors hover:border-[#E8B84B]/30 hover:text-white"
                         style={{ background: '#111', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
-                        title={t.staff_function_template_permissions.map(p => permLabel[p.permission] ?? p.permission).join(', ')}
+                        title={labelsUnicos(t.staff_function_template_permissions).join(', ')}
                       >
                         <Plus size={10} />
                         {t.name}
@@ -732,7 +760,7 @@ export function PainelEquipe({ eventoId }: Props) {
                       <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                         {f.event_position_permissions.length === 0
                           ? 'Sem permissões'
-                          : f.event_position_permissions.map(p => permLabel[p.permission] ?? p.permission).join(', ')
+                          : labelsUnicos(f.event_position_permissions).join(', ')
                         }
                       </p>
                     </div>
@@ -948,7 +976,7 @@ export function PainelEquipe({ eventoId }: Props) {
                             <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                               {f.event_position_permissions.length === 0
                                 ? 'Sem permissões'
-                                : f.event_position_permissions.map(p => permLabel[p.permission] ?? p.permission).join(', ')
+                                : labelsUnicos(f.event_position_permissions).join(', ')
                               }
                             </p>
                           </div>

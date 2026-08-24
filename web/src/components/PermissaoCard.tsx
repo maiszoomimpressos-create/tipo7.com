@@ -24,8 +24,17 @@ export const PERMISSOES_INFO: PermissaoInfo[] = [
     help: 'Libera a tela "Scanner" no evento. Quem tem essa permissão pode escanear o QR code do ingresso na entrada e marcar como usado — impede que o mesmo ingresso entre duas vezes.' },
   { value: 'vender_ingresso',         label: 'Bilheteria',           desc: 'Vender ingressos presencial',
     help: 'Libera a tela de "Bilheteria". Quem tem essa permissão pode abrir/operar um caixa e vender ingresso presencialmente (dinheiro, PIX ou cartão), sem precisar de link de compra.' },
-  { value: 'estacionamento_entrada',  label: 'Estacionamento',       desc: 'Registrar entrada de veículos',
-    help: 'Libera a tela de "Estacionamento", só a parte de ENTRADA — registrar placa/modelo/cor do carro que está chegando. Sozinha, não deixa registrar saída nem cobrar.' },
+  // Achado do usuário (26/08/2026): antes existiam 2 permissões soltas
+  // (entrada/saída) que a pessoa escolhia igual — mas isso é redundante
+  // com o PORTÃO que ela já é vinculada (SeletorPortao, tipo
+  // entrada/saída/ambos, decidido lá na criação do local). Virou 1
+  // permissão só, "acesso à tela de Estacionamento" — o que ela realmente
+  // faz lá (registrar entrada, cobrar saída, ou os dois) é o portão quem
+  // decide. Continua concedendo os 2 valores do banco por baixo dos panos
+  // (ver toggle() em PainelEquipe.tsx e togglePerm() em FuncoesClient.tsx)
+  // pra não precisar migração — só a tela ficou mais simples.
+  { value: 'estacionamento_entrada',  label: 'Estacionamento',       desc: 'Trabalhar num portão do estacionamento',
+    help: 'Libera a tela de "Estacionamento". O que a pessoa faz lá dentro — registrar entrada, cobrar/liberar saída, ou os dois — depende do portão vinculado a ela logo abaixo, não desta permissão.' },
   { value: 'autorizar_sangria',       label: 'Autorizar sangria',    desc: 'Confirmar retirada de dinheiro de um caixa',
     help: 'Permite que ESSA função autorize a sangria (retirada parcial de dinheiro) de qualquer caixa do evento, digitando o PIN dela na hora — quem opera a tela não precisa ser a mesma pessoa que retira o dinheiro.' },
   { value: 'ver_lista_convidados',    label: 'Ver lista',            desc: 'Lista de compradores',
@@ -34,8 +43,6 @@ export const PERMISSOES_INFO: PermissaoInfo[] = [
     help: 'Libera o dashboard de vendas/presença do evento (quanto vendeu, quantos entraram, por forma de pagamento) — visão gerencial, não operacional.' },
   { value: 'gerenciar_checkin',       label: 'Gerenciar check-in',   desc: 'Controlar entrada/saída',
     help: 'Permite marcar manualmente entrada/saída de convidados direto na lista, sem precisar escanear o QR — útil quando o ingresso não tem QR ou o scanner falhou.' },
-  { value: 'estacionamento_saida',    label: 'Estacionamento',       desc: 'Registrar saída e cobrar',
-    help: 'Libera a tela de "Estacionamento", a parte de SAÍDA — dar baixa no carro e cobrar o valor (se o local for pago). Sozinha, não deixa registrar entrada.' },
 ]
 
 // Botão "?" com tooltip — clique ou hover revela o texto, escondido por
