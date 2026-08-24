@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { KeyRound, Copy, CheckCircle2, Loader2 } from 'lucide-react'
+import { KeyRound, Copy, CheckCircle2, Loader2, Download, MessageCircle, AlertCircle, X, Share } from 'lucide-react'
 import { apiFetchAuth } from '@/lib/apiFetch'
+import { usePwaInstall, isIOSSafari } from '@/lib/pwaInstall'
 
 const ACCENT = '#E8B84B'
 
@@ -117,6 +118,125 @@ export function BlocoTokenPin({ acesso, onPinAtualizado }: { acesso: AcessoCaixa
           {salvando ? <Loader2 size={14} className="animate-spin" /> : (acesso.pinDefinido ? 'Trocar PIN' : 'Criar PIN')}
         </button>
       </div>
+
+      {/* Instalar / enviar link — só depois do PIN já configurado (Fase B
+          do plano, 24/08/2026, ver docs/plano-terminais-caixa-pwa.md).
+          Token/PIN continuam nunca ficando salvos em lugar nenhum — só o
+          atalho de acesso (ícone instalado, ou o link puro no WhatsApp,
+          sem token/PIN embutidos) fica salvo. */}
+      {acesso.pinDefinido && <AcessoRapido />}
+    </div>
+  )
+}
+
+// Botão "Instalar neste aparelho" — comportamento muda por plataforma:
+// Android/Chrome/Edge/desktop instala de verdade com 1 clique
+// (beforeinstallprompt, ver web/src/lib/pwaInstall.ts); iOS Safari não tem
+// API pra isso (limitação da Apple), então mostra o passo manual em vez de
+// fingir que instala. Se nenhum dos dois casos se aplica (já instalado, ou
+// navegador sem suporte), o botão nem aparece — não adianta oferecer algo
+// que não faz nada.
+function AcessoRapido() {
+  const { disponivel, jaInstalado, instalar } = usePwaInstall()
+  const [instrucaoIOS, setInstrucaoIOS] = useState(false)
+  const [enviandoWhats, setEnviandoWhats] = useState(false)
+  const [telefone, setTelefone] = useState('')
+
+  const ios = isIOSSafari()
+  const mostrarInstalar = disponivel || (ios && !jaInstalado)
+
+  function enviarPorWhatsapp() {
+    const digits = telefone.replace(/\D/g, '')
+    if (digits.length < 10) return
+    const numero = digits.startsWith('55') ? digits : `55${digits}`
+    const link = `${window.location.origin}/caixa`
+    const texto = `Acesso ao caixa Tipo7: ${link}\nDigite seu token e PIN pra entrar.`
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`, '_blank')
+    setEnviandoWhats(false)
+  }
+
+  return (
+    <div className="flex flex-col gap-2 mt-3 pt-3" style={{ borderTop: '1px solid #1e1e1e' }}>
+      <div className="flex gap-2">
+        {mostrarInstalar && (
+          <button
+            type="button"
+            onClick={() => ios ? setInstrucaoIOS(true) : instalar()}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-medium border transition-colors hover:border-[#E8B84B]/40"
+            style={{ borderColor: '#222', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}
+          >
+            <Download size={13} style={{ color: ACCENT }} />
+            Instalar neste aparelho
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setEnviandoWhats(true)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-medium border transition-colors hover:border-[#E8B84B]/40"
+          style={{ borderColor: '#222', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}
+        >
+          <MessageCircle size={13} className="text-green-400" />
+          Enviar link por WhatsApp
+        </button>
+      </div>
+
+      {/* Instrução manual iOS — não existe API pra instalar por código lá */}
+      {instrucaoIOS && (
+        <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setInstrucaoIOS(false)}>
+          <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-white text-sm font-medium flex items-center gap-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <AlertCircle size={14} style={{ color: ACCENT }} /> Instalar no iPhone
+              </p>
+              <button onClick={() => setInstrucaoIOS(false)}><X size={16} className="text-[#444]" /></button>
+            </div>
+            <p className="text-[#aaa] text-xs leading-relaxed mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              O iPhone não deixa instalar direto pelo botão — é rapidinho na mão:
+            </p>
+            <ol className="text-[#ccc] text-xs flex flex-col gap-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              <li className="flex items-center gap-2"><Share size={13} style={{ color: ACCENT }} /> Toque no botão Compartilhar do Safari</li>
+              <li>2. Escolha &quot;Adicionar à Tela de Início&quot;</li>
+              <li>3. Toque em &quot;Adicionar&quot;</li>
+            </ol>
+          </div>
+        </div>
+      )}
+
+      {/* Enviar link por WhatsApp — pede o número, abre o WhatsApp com a
+          mensagem pronta (wa.me), a pessoa confirma o envio ela mesma. Sem
+          integração de backend nova — mais rápido de entregar e sem
+          depender de coordenação externa (a integração de WhatsApp que já
+          existe, Boot Whats, só manda textos por template fixo dela, não
+          texto livre). */}
+      {enviandoWhats && (
+        <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setEnviandoWhats(false)}>
+          <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-white text-sm font-medium flex items-center gap-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <MessageCircle size={14} className="text-green-400" /> Enviar link por WhatsApp
+              </p>
+              <button onClick={() => setEnviandoWhats(false)}><X size={16} className="text-[#444]" /></button>
+            </div>
+            <p className="text-[#888] text-xs mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Manda só o link — token e PIN você digita na hora, no aparelho novo.
+            </p>
+            <input
+              type="tel" inputMode="numeric" placeholder="DDD + número"
+              value={telefone} onChange={e => setTelefone(e.target.value.replace(/\D/g, ''))}
+              autoFocus
+              className="w-full rounded-lg px-3 py-2.5 text-sm text-white outline-none mb-3"
+              style={{ background: '#111', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)' }}
+            />
+            <button
+              type="button" onClick={enviarPorWhatsapp} disabled={telefone.replace(/\D/g, '').length < 10}
+              className="w-full py-2.5 rounded-lg text-sm font-semibold text-[#070707] disabled:opacity-40"
+              style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
+            >
+              Abrir WhatsApp
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

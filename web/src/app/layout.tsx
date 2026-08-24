@@ -1,6 +1,6 @@
 // Layout raiz da aplicação — envolve todas as páginas
 // Define fontes, metadados e estrutura base do HTML
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Syne, DM_Sans, Outfit } from 'next/font/google'
 import { Providers } from '@/components/layout/Providers'
 import './globals.css'
@@ -35,6 +35,13 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
   title: 'Tipo7 — Ingressos para os melhores eventos',
   description: 'Compre e venda ingressos para shows, festas, festivais e muito mais.',
+}
+
+// `themeColor` em `metadata` foi descontinuado a favor de `viewport`
+// (Next 14+) — cor da barra de status/navegador quando instalado como PWA
+// (ver src/app/manifest.ts, Fase B do plano em docs/plano-terminais-caixa-pwa.md).
+export const viewport: Viewport = {
+  themeColor: '#070707',
 }
 
 export default function RootLayout({

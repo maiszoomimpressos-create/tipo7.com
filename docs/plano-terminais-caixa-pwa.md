@@ -152,9 +152,9 @@ adquirente/gateway de pagamento (item 4).
 | `caixaHref` (decide bilheteria vs estacionamento por `estacionamentoId`) | ✅ existe, só usado no hub hoje |
 | Fechamento de caixa self-service | ✅ existe |
 | Redirect inteligente pós-login (reaproveitando `caixaHref`) | ❌ falta trocar o redirect fixo de `CaixaLoginClient.tsx:43` |
-| PWA (manifest, ícones, service worker) | ❌ não existe, zero configuração |
-| Botão instalar PWA (com tratamento Android vs iOS) | ❌ falta |
-| Botão enviar link por WhatsApp (com token na URL) | ❌ falta |
+| PWA (manifest, ícones) | ✅ feito 24/08 — `app/manifest.ts` + `app/apple-icon.png` + ícones em `public/icons/` |
+| Botão instalar PWA (com tratamento Android vs iOS) | ✅ feito 24/08 — `web/src/lib/pwaInstall.ts` + `BlocoTokenPin.tsx` |
+| Botão enviar link por WhatsApp | ✅ feito 24/08, via `wa.me` (ver nota abaixo) — link puro, sem token |
 | Permissão + caixa de Alimentação/Tenda | ❌ não existe (nem permissão nem vínculo no `Caixa`) |
 | Vínculo de ponto/portão no Scanner | ❌ não existe |
 | UI de módulos (substituindo grade de 8 checkboxes) | ✅ feito 24/08 (`PainelEquipe.tsx`) — só com as permissões que já existem, ver Fase E |
@@ -223,6 +223,46 @@ tela, sem token na URL.
 3. Adquirente/gateway de pagamento pra maquininha (Stone/GetNet/Cielo/
    PagBank) — ainda não decidido, bloqueia só a Fase de cobrança de cartão
    em si (não bloqueia A/B/C/D/E acima).
+
+## Fase B — PWA ✅ feita (24/08/2026)
+
+Implementado na mesma sessão, logo depois da Fase A + módulos:
+
+- **`web/src/app/manifest.ts`** — manifest gerado pelo Next (rota
+  `/manifest.webmanifest`, convenção de arquivo do App Router). `start_url:
+  '/caixa'` — o PWA instalado abre direto na porta de acesso, não no site
+  inteiro. `name`/`short_name`: "Tipo7 — Caixa" / "Tipo7 Caixa".
+- **Ícones** — gerados com `sharp` (não havia nenhum logo em PNG no
+  projeto, só o `Ticket` do lucide + wordmark via CSS no Header) — fundo
+  escuro `#070707`, "7" dourado `#E8B84B`, em `public/icons/` (192, 512,
+  512 maskable) + `web/src/app/apple-icon.png` (convenção de arquivo do
+  Next, gera o `<link rel="apple-touch-icon">` sozinho).
+- **`viewport.themeColor`** em `layout.tsx` — `metadata.themeColor` está
+  descontinuado desde o Next 14, o jeito certo agora é o export `viewport`.
+- **`web/src/lib/pwaInstall.ts`** — hook `usePwaInstall()`. Captura o
+  evento `beforeinstallprompt` num módulo top-level (fora do ciclo de vida
+  de componente) porque ele dispara cedo, antes do `BlocoTokenPin` sequer
+  existir na árvore (só monta depois da pessoa criar o PIN) — um listener
+  local perderia o evento. `isIOSSafari()` detecta a exceção (Apple não
+  expõe API de instalação nenhuma).
+- **`BlocoTokenPin.tsx`** — depois do PIN configurado, aparecem os 2
+  botões: "Instalar neste aparelho" (1 clique real no Android/Chrome/Edge;
+  no iPhone abre um modal com o passo manual — Compartilhar → Adicionar à
+  Tela de Início) e "Enviar link por WhatsApp".
+
+**Mudança de rumo em relação ao desenho original**: o botão de WhatsApp
+**não** usa a integração Boot Whats já existente no projeto — descobri ao
+implementar que ela só manda mensagens por **template fixo dela**
+(`type: 'compra_confirmada' | 'ingresso_emitido' | ...`), sem texto livre;
+adicionar um tipo novo exigiria coordenação com o time externo da Boot
+Whats (mesmo padrão do `docs/boot-whats-details.md`), o que não cabia no
+prazo da semana. Solução adotada: link **`wa.me`** — abre o WhatsApp já com
+o número e a mensagem preenchidos, a pessoa confirma o envio ela mesma
+(1 toque a mais que um envio automático, mas zero dependência externa).
+Continua batendo com a regra de segurança: só o link puro vai na mensagem,
+sem token — token+PIN sempre digitados no aparelho novo.
+
+Build de produção rodado e limpo depois de cada mudança.
 
 ## Extra — criação guiada de portões ✅ feito (24/08/2026)
 
