@@ -315,52 +315,75 @@ pior, deixava marcar "saída" numa pessoa vinculada a um portão só de
 entrada, sem nada impedir isso na tela (o backend já rejeitava certo na
 hora H, ver abaixo, mas a UI mentia).
 
-**Decisão**: 1 permissão só na tela ("Estacionamento", ícone `Car`, módulo
-próprio — antes vivia dividida dentro de Caixa e Scanner). O que a pessoa
-realmente faz — registrar entrada, cobrar/liberar saída, ou os dois — passa
-a vir do portão vinculado a ela, não de checkbox.
+**Decisão (passou por 3 formatos na mesma sessão até fechar)**:
 
-**Pontos 3 e 4 (ticket online) ficam de fora desta fase** — não existe venda
-de estacionamento online ainda, não tem o que tratar. Fica pra quando essa
-feature existir.
+1. Primeira tentativa: 1 permissão só ("Estacionamento", módulo próprio),
+   concedendo os 2 valores do banco sempre juntos, derivando entrada/saída
+   do portão. Usuário corrigiu: perdia a distinção real entre "verificar
+   veículo" (entrada) e "cobrar" (saída) — são operações diferentes de
+   verdade, faz sentido continuarem sendo 2 permissões.
+2. Segunda tentativa: "Caixa" e "Scanner" como módulos de topo,
+   Bilheteria/Portaria/Estacionamento como pontos dentro deles (formato
+   que já existia desde a Fase E, 24/08). Usuário corrigiu de novo: isso
+   inverte a relação real. "Caixa é uma ATRIBUIÇÃO da função que ela vai
+   desenvolver — na Bilheteria ela TEM um caixa, não o Caixa TEM
+   Bilheteria."
+3. **Formato final**: o **LOCAL** é o agrupador (Bilheteria, Portaria,
+   Estacionamento — futuro: Praça de Alimentação), cada um com seu(s)
+   atributo(s) dentro:
+   - Bilheteria → tem **Caixa** (`vender_ingresso`)
+   - Portaria → tem **Scanner** (`validar_ingresso`)
+   - Estacionamento → **Entrada** (`estacionamento_entrada`, verificar
+     veículo/registro) e **Saída** (`estacionamento_saida`, Caixa/cobra) —
+     os 2 continuam permissões independentes, cada uma com sua própria
+     caixinha, só que agrupadas visualmente dentro do card
+     "Estacionamento" em vez de soltas numa grade sem contexto (era isso
+     que gerava a confusão original do print).
 
-### Como foi implementado (sem migração de banco)
+O portão vinculado à pessoa (`SeletorPortao`) continua narrowing por
+cima disso — a função dá o teto do que ela pode fazer (ex: pode Entrada
+E Saída), o portão específico restringe pra 1 instância física de gate.
+Não é redundante: são 2 camadas diferentes (o que o CARGO pode fazer vs.
+qual PORTÃO essa pessoa especificamente opera).
 
-O enum `EventPermission` no Postgres continua com os 2 valores
-(`estacionamento_entrada` e `estacionamento_saida`) — trocar isso seria
-migração + risco maior que o necessário pro que foi pedido. Em vez disso:
+**Pontos 3 e 4 (escanear ticket online, validar ticket online) ficam de
+fora desta fase** — não existe venda de estacionamento online ainda, não
+tem o que tratar. Fica pra quando essa feature existir.
 
-- **UI concede os 2 juntos, sempre em par.** `toggle()` em
-  `PainelEquipe.tsx` e `togglePerm()` em `FuncoesClient.tsx`: marcar/
-  desmarcar `estacionamento_entrada` faz o mesmo com `estacionamento_saida`
-  por baixo, atomicamente. Pra quem só vê a tela, é 1 permissão; pro banco,
-  continuam sendo 2 — só nunca mais ficam dessincronizadas.
-- **A tela de operação (`/estacionamento/[eventoId]/page.tsx`) é quem
-  mudou de verdade**: antes, `podeEntrada`/`podeSaida` vinham direto das 2
-  permissões soltas. Agora, quando a pessoa tem um portão vinculado
-  (`portaoRestrito`), essas duas flags passam a vir do `tipo` do portão
-  (`['entrada','ambos'].includes(tipo)` / `['saida','ambos'].includes(tipo)`)
-  — só cai de volta nas permissões soltas quando **não** há portão
-  vinculado (ex: local com portão único, onde não faz sentido restringir).
+### Como foi implementado
+
+Sem migração de banco — o enum `EventPermission` já tinha os 2 valores
+(`estacionamento_entrada`/`estacionamento_saida`), só precisou reagrupar a
+UI:
+
+- **`components/PermissaoCard.tsx` virou a fonte única** de label/desc/
+  help por permissão (`PERMISSOES_INFO`) **e** do agrupamento por local
+  (`MODULOS`, `EXTRAS`, `PERMISSOES_ESTACIONAMENTO`) **e** do componente
+  de seleção pronto (`SeletorPermissoesAgrupado`) — reaproveitado tal e
+  qual em `PainelEquipe.tsx` (seletor por evento) e `FuncoesClient.tsx`
+  (modelos de função do admin), que antes tinham cada um sua própria
+  implementação da mesma grade (drift entre as duas era o motivo de
+  `/admin/funcoes` não ter as descrições/agrupamento que o seletor do
+  evento já tinha).
+- Label de cada permissão agora é o ATRIBUTO, não o local: `vender_
+  ingresso` → "Caixa" (antes "Bilheteria"), `validar_ingresso` →
+  "Scanner" (antes "Portaria") — o local virou o título do card que
+  agrupa, não precisa repetir no nome da permissão.
+- **`/estacionamento/[eventoId]/page.tsx`** ganhou a melhoria de verdade,
+  que sobrevive independente do agrupamento da tela: quando a pessoa tem
+  um portão vinculado (`portaoRestrito`), `podeEntrada`/`podeSaida` passam
+  a vir do `tipo` do portão (`['entrada','ambos'].includes(tipo)` /
+  `['saida','ambos'].includes(tipo)`) em vez de só das 2 permissões soltas
+  — só cai de volta nas permissões quando **não** há portão vinculado (ex:
+  local com portão único).
 - **Backend não mudou** (`estacionamento.service.ts`) — os métodos
-  `entrada()`/`sair()` **já validavam** o `tipo` do portão contra a ação
-  (`['entrada','ambos'].includes(portao.tipo)` etc.) e cruzavam com
-  `getStaffPortao()` antes desta mudança — a segurança de verdade sempre
-  esteve ali, correta. O que estava errado era só a UI/gate de tela em
-  cima, que este fix resolve. Concedendo os 2 valores sempre juntos, o
-  gate simples de permissão (`hasEventPermission(..., 'estacionamento_
-  saida')` em `sair()`) continua satisfeito sem precisar tocar nele.
-- **Chips/labels duplicados**: como os 2 valores sempre andam juntos agora,
-  qualquer lista que mostrava as permissões de uma função (cards em
-  `/admin/funcoes`, lista de Funções em `PainelEquipe.tsx`) passaria a
-  mostrar "Estacionamento" 2 vezes. Resolvido com `labelsUnicos()` /
-  `chipsUnicos()` — dedupe que ignora `estacionamento_saida` na exibição
-  (sempre implícito quando `estacionamento_entrada` está presente).
+  `entrada()`/`sair()` já validavam o `tipo` do portão contra a ação e
+  cruzavam com `getStaffPortao()` antes disso — a segurança de verdade
+  sempre esteve ali, correta.
 
-Arquivos tocados: `components/PermissaoCard.tsx` (fonte única de
-label/desc/help, ver commit 607e1ac), `PainelEquipe.tsx`, `FuncoesClient.tsx`,
-`estacionamento/[eventoId]/page.tsx`. Typecheck e `npm run build` rodados e
-limpos.
+Arquivos tocados: `components/PermissaoCard.tsx`, `PainelEquipe.tsx`,
+`FuncoesClient.tsx`, `estacionamento/[eventoId]/page.tsx`. Typecheck e
+`npm run build` rodados e limpos a cada iteração.
 
 **Falta ainda** (fora do escopo desta fase, de propósito): pontos 3 e 4 da
 lista acima (ticket online) só fazem sentido quando "vender estacionamento

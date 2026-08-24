@@ -4,11 +4,10 @@ import { useState, useEffect } from 'react'
 import {
   Users, UserPlus, Trash2, Loader2, Check, AlertTriangle,
   Shield, Link2, Plus, ChevronDown, ChevronUp, Pencil, X, DoorOpen, Wallet, Calculator,
-  ScanQrCode, Car,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { apiFetchAuth } from '@/lib/apiFetch'
-import { PERMISSOES_INFO, BotaoPermissao, type PermissaoInfo } from '@/components/PermissaoCard'
+import { SeletorPermissoesAgrupado, PERMISSOES_ESTACIONAMENTO } from '@/components/PermissaoCard'
 
 const ACCENT = '#E8B84B'
 
@@ -16,38 +15,11 @@ function formatBRL(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-// Redesenho por módulo (24/08/2026, ver docs/plano-terminais-caixa-pwa.md,
-// Fase E) — a grade solta de 8 checkboxes confundia quem só queria montar
-// um cargo simples. Reorganizado em "módulos com ponto": Caixa (onde ela
-// vende — Bilheteria ou Estacionamento) e Scanner (onde ela escaneia —
-// Portaria ou Estacionamento), espelhando a mesma distinção que já existe
-// por trás na hora de decidir o link certo (web/src/lib/buildAcessos.ts,
-// `estacionamentoId` no registro do Caixa). Puramente reorganização visual
-// das permissões que já existiam — nenhum enum novo no banco. Alimentação
-// entra como módulo próprio quando a permissão dedicada for criada (Fase D
-// do plano, ainda não implementada).
-// Redesenho 26/08/2026: "Estacionamento" saiu de dentro de Caixa/Scanner e
-// virou módulo próprio de 1 ponto só — antes ocupava um ponto em CADA um
-// dos dois (achado do usuário: isso duplicava a mesma permissão em 2
-// cards, e ainda dava pra marcar "saída" numa pessoa vinculada a um
-// portão só de entrada). Agora entrada/saída não são mais escolha da
-// pessoa aqui — vêm do tipo do portão vinculado (SeletorPortao, abaixo).
-const MODULOS: { id: string; label: string; icon: typeof Wallet; pontos: string[] }[] = [
-  { id: 'caixa',          label: 'Caixa',          icon: Wallet,     pontos: ['vender_ingresso'] },
-  { id: 'scanner',        label: 'Scanner',        icon: ScanQrCode, pontos: ['validar_ingresso'] },
-  { id: 'estacionamento', label: 'Estacionamento', icon: Car,        pontos: ['estacionamento_entrada'] },
-]
-// Permissões que não pertencem a um módulo operacional — transversais,
-// ficam soltas na grade de sempre (fora dos cards de módulo).
-const EXTRAS = ['autorizar_sangria', 'ver_lista_convidados', 'ver_relatorios', 'gerenciar_checkin']
-
-// Texto de label/desc/help de cada permissão agora vive em
-// PermissaoCard.tsx (26/08/2026) — reaproveitado também nos modelos de
-// função do admin (/admin/funcoes), que antes só mostravam o nome cru sem
-// explicar o que cada uma fazia.
-const PERMISSOES = PERMISSOES_INFO
-
-type PermInfo = PermissaoInfo
+// Agrupamento por LOCAL (Bilheteria/Portaria/Estacionamento) — mesma
+// lógica usada nos modelos de função do admin (/admin/funcoes) — extraída
+// pra `components/PermissaoCard.tsx` (26/08/2026, ver comentário lá:
+// passou por 3 formatos na mesma sessão até chegar nesse). Fonte única,
+// nenhuma duplicação daqui pra lá.
 
 type Funcao = {
   id: string
@@ -86,110 +58,6 @@ type CaixaResumo = { id: string; operadorId: string | null; status: 'aberto' | '
 
 interface Props {
   eventoId: string
-}
-
-// Permissões que tornam relevante escolher um portão específico pro membro
-const PERMISSOES_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_saida']
-
-// ── Seletor de permissões reutilizável ────────────────────────────────────────
-
-function SeletorPermissoes({
-  selecionadas,
-  onChange,
-  temEstacionamento,
-}: {
-  selecionadas: string[]
-  onChange: (p: string[]) => void
-  temEstacionamento: boolean
-}) {
-  // Cada módulo aberto de cara se já tiver algum ponto dele marcado (ex:
-  // editando uma função que já vende na Bilheteria) — senão começa fechado.
-  const [modulosAbertos, setModulosAbertos] = useState<Record<string, boolean>>(() => {
-    const inicial: Record<string, boolean> = {}
-    for (const m of MODULOS) inicial[m.id] = m.pontos.some(v => selecionadas.includes(v))
-    return inicial
-  })
-
-  // `estacionamento_entrada` concede sempre os 2 valores do banco juntos
-  // (entrada + saída) — a tela mostra só 1 permissão, mas o que ela
-  // realmente autoriza depende do portão vinculado, não de qual dos 2
-  // valores foi marcado (ver nota em PermissaoCard.tsx). Sem isso, o
-  // backend rejeitaria sair() pra quem não tivesse literalmente
-  // `estacionamento_saida` concedida.
-  const PAR_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_saida']
-  function toggle(value: string) {
-    const grupo = value === 'estacionamento_entrada' ? PAR_ESTACIONAMENTO : [value]
-    onChange(
-      selecionadas.includes(value)
-        ? selecionadas.filter(p => !grupo.includes(p))
-        : [...selecionadas.filter(p => !grupo.includes(p)), ...grupo]
-    )
-  }
-
-  // Permissões de estacionamento só aparecem se o evento tiver estacionamento
-  // configurado — é um produto à parte. Sem pátio cadastrado, nem faz sentido
-  // atribuir. (Futuro: trocar o gatilho por "contratou o plano de estacionamento".)
-  const visivel = (v: string) => temEstacionamento || !PERMISSOES_ESTACIONAMENTO.includes(v)
-
-  const extras = EXTRAS.map(v => PERMISSOES.find(p => p.value === v)).filter((p): p is PermInfo => !!p && visivel(p.value))
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      {MODULOS.map(modulo => {
-        const pontos = modulo.pontos
-          .map(v => PERMISSOES.find(p => p.value === v))
-          .filter((p): p is PermInfo => !!p && visivel(p.value))
-        // Ex: módulo Estacionamento some inteiro se estiver oculto por
-        // falta de pátio cadastrado no evento — o único ponto dele é
-        // justamente uma permissão de estacionamento.
-        if (pontos.length === 0) return null
-
-        const Icon = modulo.icon
-        const aberto = modulosAbertos[modulo.id] ?? false
-        const qtdMarcada = pontos.filter(p => selecionadas.includes(p.value)).length
-
-        return (
-          <div key={modulo.id} className="rounded-xl overflow-hidden" style={{ border: '1px solid #1e1e1e' }}>
-            <button
-              type="button"
-              onClick={() => setModulosAbertos(s => ({ ...s, [modulo.id]: !s[modulo.id] }))}
-              className="w-full flex items-center justify-between px-2.5 py-2 transition-colors"
-              style={{ background: '#0d0d0d' }}
-            >
-              <div className="flex items-center gap-1.5">
-                <Icon size={12} style={{ color: ACCENT }} />
-                <span className="text-white text-[11px] font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  {modulo.label}
-                </span>
-                {qtdMarcada > 0 && (
-                  <span
-                    className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
-                    style={{ background: `${ACCENT}20`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-                  >
-                    {qtdMarcada}
-                  </span>
-                )}
-              </div>
-              {aberto ? <ChevronUp size={13} className="text-[#555]" /> : <ChevronDown size={13} className="text-[#555]" />}
-            </button>
-            {aberto && (
-              <div className={`grid gap-1.5 p-2 pt-0 ${pontos.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`} style={{ background: '#0a0a0a' }}>
-                {pontos.map(p => (
-                  <BotaoPermissao key={p.value} p={p} marcada={selecionadas.includes(p.value)} onClick={() => toggle(p.value)} />
-                ))}
-              </div>
-            )}
-          </div>
-        )
-      })}
-
-      <div className="grid grid-cols-2 gap-1.5">
-        {extras.map(p => (
-          <BotaoPermissao key={p.value} p={p} marcada={selecionadas.includes(p.value)} onClick={() => toggle(p.value)} />
-        ))}
-      </div>
-    </div>
-  )
 }
 
 // ── Seletor de portão reutilizável — só relevante quando a função escolhida
@@ -448,27 +316,14 @@ export function PainelEquipe({ eventoId }: Props) {
   }
 
   const permLabel: Record<string, string> = {
-    validar_ingresso:        'Scanner',
-    vender_ingresso:         'Caixa',
+    validar_ingresso:        'Portaria (Scanner)',
+    vender_ingresso:         'Bilheteria (Caixa)',
     ver_lista_convidados:    'Ver lista',
     ver_relatorios:          'Relatórios',
     gerenciar_checkin:       'Check-in',
-    estacionamento_entrada:  'Estacionamento',
+    estacionamento_entrada:  'Estacionamento (entrada)',
+    estacionamento_saida:    'Estacionamento (saída)',
     autorizar_sangria:       'Autoriza sangria',
-  }
-
-  // `estacionamento_saida` sempre vem junto de `estacionamento_entrada`
-  // agora (ver toggle() acima) — sem isso, função/membro com estacionamento
-  // mostraria "Estacionamento" duas vezes (um chip por valor do banco).
-  function labelsUnicos(perms: { permission: string }[]): string[] {
-    const vistos = new Set<string>()
-    const labels: string[] = []
-    for (const p of perms) {
-      if (p.permission === 'estacionamento_saida') continue
-      const label = permLabel[p.permission] ?? p.permission
-      if (!vistos.has(label)) { vistos.add(label); labels.push(label) }
-    }
-    return labels
   }
 
   return (
@@ -577,13 +432,13 @@ export function PainelEquipe({ eventoId }: Props) {
                           <span className="text-[#333] text-[10px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                             Sem permissões
                           </span>
-                        ) : labelsUnicos(f.event_position_permissions).map(label => (
+                        ) : f.event_position_permissions.map(p => (
                           <span
-                            key={label}
+                            key={p.permission}
                             className="px-1.5 py-0.5 rounded text-[9px]"
                             style={{ background: `${ACCENT}10`, color: '#888', fontFamily: 'var(--font-dm-sans)' }}
                           >
-                            {label}
+                            {permLabel[p.permission] ?? p.permission}
                           </span>
                         ))}
                       </div>
@@ -631,7 +486,7 @@ export function PainelEquipe({ eventoId }: Props) {
                         onClick={() => importarTemplate(t)}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] transition-colors hover:border-[#E8B84B]/30 hover:text-white"
                         style={{ background: '#111', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
-                        title={labelsUnicos(t.staff_function_template_permissions).join(', ')}
+                        title={t.staff_function_template_permissions.map(p => permLabel[p.permission] ?? p.permission).join(', ')}
                       >
                         <Plus size={10} />
                         {t.name}
@@ -656,7 +511,7 @@ export function PainelEquipe({ eventoId }: Props) {
                   className="w-full bg-[#0d0d0d] border border-[#222] rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]"
                   style={{ fontFamily: 'var(--font-dm-sans)' }}
                 />
-                <SeletorPermissoes selecionadas={permsFuncao} onChange={setPermsFuncao} temEstacionamento={estacionamentosList.length > 0} />
+                <SeletorPermissoesAgrupado selecionadas={permsFuncao} onChange={setPermsFuncao} temEstacionamento={estacionamentosList.length > 0} />
                 {errFuncao && (
                   <p className="text-red-400 text-xs flex items-center gap-1">
                     <AlertTriangle size={11} /> {errFuncao}
@@ -760,7 +615,7 @@ export function PainelEquipe({ eventoId }: Props) {
                       <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                         {f.event_position_permissions.length === 0
                           ? 'Sem permissões'
-                          : labelsUnicos(f.event_position_permissions).join(', ')
+                          : f.event_position_permissions.map(p => permLabel[p.permission] ?? p.permission).join(', ')
                         }
                       </p>
                     </div>
@@ -976,7 +831,7 @@ export function PainelEquipe({ eventoId }: Props) {
                             <p className="text-[#444] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                               {f.event_position_permissions.length === 0
                                 ? 'Sem permissões'
-                                : labelsUnicos(f.event_position_permissions).join(', ')
+                                : f.event_position_permissions.map(p => permLabel[p.permission] ?? p.permission).join(', ')
                               }
                             </p>
                           </div>

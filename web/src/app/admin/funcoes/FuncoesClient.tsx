@@ -7,18 +7,24 @@ import {
   Pencil, X, ToggleLeft, ToggleRight,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { PERMISSOES_INFO, BotaoPermissao } from '@/components/PermissaoCard'
+import { SeletorPermissoesAgrupado } from '@/components/PermissaoCard'
 
 const ACCENT = '#E8B84B'
 
-// Pedido do usuário (26/08/2026): os cards de permissão aqui só mostravam o
-// nome cru, sem explicar o que cada uma libera — quem tá montando uma
-// função nova (ex: "Segurança do portão") não tinha como saber a diferença
-// entre "Estacionamento — Entrada" e "Estacionamento — Saída" sem ir testar.
-// Agora reaproveita o mesmo card com desc + tooltip de ajuda que já existia
-// só no seletor por evento (PainelEquipe.tsx) — fonte única em
-// components/PermissaoCard.tsx.
-const PERMISSOES = PERMISSOES_INFO
+// Pedido do usuário (26/08/2026): os cards de permissão aqui eram uma
+// grade solta, sem explicar o que cada uma libera nem agrupar por local —
+// quem tá montando uma função nova (ex: "Segurança do portão") não tinha
+// como saber a diferença entre "Estacionamento — Entrada" e "— Saída" sem
+// ir testar. Agora reaproveita o mesmo seletor agrupado por local
+// (Bilheteria/Portaria/Estacionamento) que já existe em
+// PainelEquipe.tsx — fonte única em components/PermissaoCard.tsx.
+const permLabel: Record<string, string> = {
+  validar_ingresso: 'Portaria (Scanner)', vender_ingresso: 'Bilheteria (Caixa)',
+  ver_lista_convidados: 'Ver lista', ver_relatorios: 'Relatórios',
+  gerenciar_checkin: 'Check-in',
+  estacionamento_entrada: 'Estacionamento (entrada)', estacionamento_saida: 'Estacionamento (saída)',
+  autorizar_sangria: 'Autoriza sangria',
+}
 
 type Template = {
   id: string
@@ -40,20 +46,6 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
   const [salvando,   setSalvando]   = useState(false)
   const [removendo,  setRemovendo]  = useState<string | null>(null)
   const [err,        setErr]        = useState<string | null>(null)
-
-  // `estacionamento_entrada` concede sempre os 2 valores do banco juntos
-  // (entrada + saída) — mesma regra de PainelEquipe.tsx (26/08/2026): a
-  // tela virou 1 permissão só, o portão vinculado é quem decide o que a
-  // pessoa realmente faz.
-  const PAR_ESTACIONAMENTO = ['estacionamento_entrada', 'estacionamento_saida']
-  function togglePerm(v: string) {
-    const grupo = v === 'estacionamento_entrada' ? PAR_ESTACIONAMENTO : [v]
-    setPerms(p =>
-      p.includes(v)
-        ? p.filter(x => !grupo.includes(x))
-        : [...p.filter(x => !grupo.includes(x)), ...grupo]
-    )
-  }
 
   async function salvar() {
     if (!nome.trim()) { setErr('Nome é obrigatório'); return }
@@ -117,28 +109,6 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
     setCriando(true)
   }
 
-  const permLabel: Record<string, string> = {
-    validar_ingresso: 'Validar', vender_ingresso: 'Bilheteria',
-    ver_lista_convidados: 'Ver lista', ver_relatorios: 'Relatórios',
-    gerenciar_checkin: 'Check-in',
-    estacionamento_entrada: 'Estacionamento',
-    autorizar_sangria: 'Autoriza sangria',
-  }
-
-  // `estacionamento_saida` sempre vem junto de `estacionamento_entrada`
-  // agora (ver togglePerm() acima) — sem isso, o chip "Estacionamento"
-  // apareceria duplicado (um por valor do banco).
-  function chipsUnicos(perms: { permission: string }[]): string[] {
-    const vistos = new Set<string>()
-    const labels: string[] = []
-    for (const p of perms) {
-      if (p.permission === 'estacionamento_saida') continue
-      const label = permLabel[p.permission] ?? p.permission
-      if (!vistos.has(label)) { vistos.add(label); labels.push(label) }
-    }
-    return labels
-  }
-
   return (
     <div className="flex flex-col gap-4">
 
@@ -164,13 +134,13 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
                 <div className="flex flex-wrap gap-1 mt-1">
                   {f.staff_function_template_permissions.length === 0 ? (
                     <span className="text-[#333] text-[10px]">Sem permissões</span>
-                  ) : chipsUnicos(f.staff_function_template_permissions).map(label => (
+                  ) : f.staff_function_template_permissions.map(p => (
                     <span
-                      key={label}
+                      key={p.permission}
                       className="px-1.5 py-0.5 rounded text-[10px]"
                       style={{ background: `${ACCENT}10`, color: '#888', fontFamily: 'var(--font-dm-sans)' }}
                     >
-                      {label}
+                      {permLabel[p.permission] ?? p.permission}
                     </span>
                   ))}
                 </div>
@@ -235,11 +205,7 @@ export function FuncoesClient({ funcoes: inicial }: Props) {
             <p className="text-[#555] text-[10px] uppercase tracking-wider mb-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
               Permissões padrão
             </p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {PERMISSOES.map(p => (
-                <BotaoPermissao key={p.value} p={p} marcada={perms.includes(p.value)} onClick={() => togglePerm(p.value)} />
-              ))}
-            </div>
+            <SeletorPermissoesAgrupado selecionadas={perms} onChange={setPerms} />
           </div>
 
           {err && <p className="text-red-400 text-xs">{err}</p>}
