@@ -125,6 +125,38 @@ function PortoesEditor({
   const [novoTipo, setNovoTipo] = useState<Portao['tipo']>('ambos')
   const [salvando, setSalvando] = useState(false)
 
+  // Pedido do usuário (24/08/2026): antes só dava pra ativar/desativar ou
+  // excluir um portão já criado — pra trocar o nome (ex: digitou errado),
+  // só apagando e criando de novo. Agora o lápis abre edição inline
+  // (nome + tipo) na própria linha do portão, sem modal novo.
+  const [editandoId, setEditandoId] = useState<string | null>(null)
+  const [nomeEditado, setNomeEditado] = useState('')
+  const [tipoEditado, setTipoEditado] = useState<Portao['tipo']>('ambos')
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false)
+
+  function iniciarEdicao(p: Portao) {
+    setEditandoId(p.id); setNomeEditado(p.nome); setTipoEditado(p.tipo)
+  }
+
+  const salvarEdicao = async () => {
+    if (!editandoId || !nomeEditado.trim()) return
+    setSalvandoEdicao(true)
+    try {
+      const res = await apiFetchAuth(`/api/eventos/${eventoId}/estacionamentos/${estacionamentoId}/portoes/${editandoId}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ nome: nomeEditado.trim(), tipo: tipoEditado }),
+      })
+      if (res.ok) {
+        setPortoes(prev => prev.map(p => p.id === editandoId ? { ...p, nome: nomeEditado.trim(), tipo: tipoEditado } : p))
+        setEditandoId(null)
+        onMudou?.()
+      }
+    } finally {
+      setSalvandoEdicao(false)
+    }
+  }
+
   const criar = async () => {
     if (!novoNome.trim()) return
     setSalvando(true)
@@ -176,6 +208,45 @@ function PortoesEditor({
 
       {portoes.map(p => {
         const Icon = TIPO_PORTAO_ICON[p.tipo]
+
+        if (editandoId === p.id) {
+          return (
+            <div key={p.id} className="flex flex-col gap-1.5 bg-[#111] border border-[#E8B84B]/35 rounded-lg p-2.5">
+              <input type="text" value={nomeEditado} autoFocus
+                onChange={ev => setNomeEditado(ev.target.value)}
+                className="bg-[#0d0d0d] border border-[#222] rounded-lg px-3 py-2 text-white text-xs outline-none focus:border-[#E8B84B]/40"
+                style={{ fontFamily: 'var(--font-dm-sans)' }} />
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  { value: 'entrada' as const, label: 'Só entrada' },
+                  { value: 'saida'   as const, label: 'Só saída'   },
+                  { value: 'ambos'   as const, label: 'Ambos'      },
+                ]).map(({ value, label }) => (
+                  <button key={value} type="button" onClick={() => setTipoEditado(value)}
+                    className={cn(
+                      'py-1.5 rounded-lg border text-[10px] font-medium transition-all',
+                      tipoEditado === value ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white' : 'bg-[#0d0d0d] border-[#1c1c1c] text-[#777]'
+                    )}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-1.5">
+                <button type="button" onClick={() => setEditandoId(null)}
+                  className="flex-1 py-1.5 rounded-lg text-[11px] text-[#777] border border-[#1c1c1c] hover:text-white transition-colors"
+                  style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Cancelar
+                </button>
+                <button type="button" onClick={salvarEdicao} disabled={salvandoEdicao || !nomeEditado.trim()}
+                  className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold text-[#070707] disabled:opacity-30"
+                  style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                  {salvandoEdicao ? <Loader2 size={11} className="animate-spin" /> : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          )
+        }
+
         return (
           <div key={p.id} className="flex items-center justify-between gap-2 bg-[#111] border border-[#1c1c1c] rounded-lg px-3 py-2">
             <div className="flex items-center gap-2 min-w-0">
@@ -190,6 +261,11 @@ function PortoesEditor({
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
+              <button type="button" onClick={() => iniciarEdicao(p)}
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#1a1a1a] transition-colors"
+                title="Editar nome/tipo">
+                <Pencil size={11} className="text-[#444] hover:text-white" />
+              </button>
               <button type="button" onClick={() => toggleAtivo(p)}
                 className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#1a1a1a] transition-colors"
                 title={p.ativo ? 'Desativar' : 'Ativar'}>
