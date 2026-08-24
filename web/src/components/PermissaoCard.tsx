@@ -32,14 +32,19 @@ export const PERMISSOES_INFO: PermissaoInfo[] = [
   { value: 'vender_ingresso',         label: 'Caixa',                desc: 'Vender ingressos presencial',
     help: 'Libera a tela de "Bilheteria". Quem tem essa permissão pode abrir/operar um caixa e vender ingresso presencialmente (dinheiro, PIX ou cartão), sem precisar de link de compra.' },
   // Entrada e Saída do estacionamento são operações diferentes de
-  // verdade (registrar carro chegando vs. cobrar/liberar quem sai) —
+  // verdade (registrar carro chegando vs. dar baixa em quem sai) —
   // continuam sendo 2 permissões independentes no banco, cada uma
   // marcável na sua própria caixinha, agrupadas visualmente dentro do
   // card "Estacionamento" (não fundidas numa permissão só).
-  { value: 'estacionamento_entrada',  label: 'Entrada',              desc: 'Verificar veículo (registro)',
-    help: 'Libera a parte de ENTRADA da tela de "Estacionamento" — registrar placa/modelo/cor do carro que está chegando. Sozinha, não deixa registrar saída nem cobrar.' },
-  { value: 'estacionamento_saida',    label: 'Saída',                desc: 'Caixa — cobrar e liberar',
-    help: 'Libera a parte de SAÍDA da tela de "Estacionamento" — dar baixa no carro e cobrar o valor (se o local for pago). Sozinha, não deixa registrar entrada.' },
+  // Achado do usuário 26/08/2026, confirmado em estacionamento.service.ts:
+  // QUAL das duas cobra depende do modo de preço do local — preço FIXO
+  // cobra na entrada (dá pra saber o valor sem esperar o carro sair);
+  // POR TEMPO só cobra na saída (o valor depende de quanto tempo ficou).
+  // Então "Entrada" também pode ter Caixa, não é só registro puro.
+  { value: 'estacionamento_entrada',  label: 'Entrada',              desc: 'Verificar veículo — cobra se o local for preço fixo',
+    help: 'Libera a parte de ENTRADA da tela de "Estacionamento" — registrar placa/modelo/cor do carro chegando. Se o local cobrar PREÇO FIXO, o pagamento já é feito aqui mesmo (a saída só encerra). Sozinha, não deixa registrar a saída de quem já está dentro.' },
+  { value: 'estacionamento_saida',    label: 'Saída',                desc: 'Dar baixa — cobra se o local for por tempo',
+    help: 'Libera a parte de SAÍDA da tela de "Estacionamento" — dar baixa no carro. Se o local cobrar POR TEMPO, o valor só é calculado e cobrado aqui (depende de quanto tempo o carro ficou). Se for preço fixo, o pagamento já foi feito na entrada. Sozinha, não deixa registrar entrada.' },
   { value: 'autorizar_sangria',       label: 'Autorizar sangria',    desc: 'Confirmar retirada de dinheiro de um caixa',
     help: 'Permite que ESSA função autorize a sangria (retirada parcial de dinheiro) de qualquer caixa do evento, digitando o PIN dela na hora — quem opera a tela não precisa ser a mesma pessoa que retira o dinheiro.' },
   { value: 'ver_lista_convidados',    label: 'Ver lista',            desc: 'Lista de compradores',
