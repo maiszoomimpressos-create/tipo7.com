@@ -1186,6 +1186,7 @@ function Header({
   eventoLocal?: string
   onRefresh?:  () => void
 }) {
+  const router = useRouter()
   return (
     <div className="px-6 py-5 border-b border-[#111] flex items-center gap-3">
       <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
@@ -1220,11 +1221,18 @@ function Header({
             <RefreshCw size={13} />
           </button>
         )}
-        <Link href={`/dashboard/${eventoId}`}
+        {/* Achado do usuário (26/08/2026): "Voltar" era um link fixo pro
+            dashboard do evento — mas essa tela (Caixas) é aberta de vários
+            lugares (dashboard, gerenciar > Bilheteria, minha-área,
+            PromoterLayout...), então um destino único errava sempre que a
+            entrada não foi pelo dashboard. Troca pra router.back(), mesmo
+            padrão já usado em GerenciadorEstacionamentos.tsx — volta pra
+            onde a pessoa realmente estava. */}
+        <button type="button" onClick={() => router.back()}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs hover:text-white transition-colors"
           style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
           <ArrowLeft size={13} /> Voltar
-        </Link>
+        </button>
       </div>
     </div>
   )
