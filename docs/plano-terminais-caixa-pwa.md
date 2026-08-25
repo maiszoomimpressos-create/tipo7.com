@@ -423,11 +423,14 @@ do Tipo7.
   caixas independentes já funcionam, mesmo módulo reaproveitado.
 - Estacionamento já é automático (preço configurado no local).
 
+**Respondido**:
+1. **Estoque de verdade, confirmado** — quantidade, esgota quando acaba,
+   trava de concorrência (mesmo padrão do lote de ingressos, não lista de
+   preço solta). Usuário confirmou explicitamente: "sim precisa mas ainda
+   não criamos" — ninguém começou a construir isso ainda, é 100% novo.
+
 **Ainda EM ABERTO, especificação em andamento** (usuário pediu pra eu ir
 perguntando até fechar):
-1. Catálogo tem controle de estoque de verdade (quantidade, "esgota",
-   trava de concorrência — mesmo padrão já usado no lote de ingressos) ou é
-   lista de preço solta, sem limite de quantidade?
 2. Onde o promotor cadastra os produtos — tela nova dedicada, ou dentro de
    Estrutura, do jeito que Estacionamento já funciona hoje (criar o
    "local" Copa/Alimentação, depois os itens dentro dele)?
