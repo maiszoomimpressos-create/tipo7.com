@@ -51,7 +51,11 @@ interface Caixa {
   nome:               string
   status:             'aberto' | 'fechamento_pendente' | 'fechado'
   operadorName:       string | null
-  fundo_inicial:      number
+  // Bug real achado pelo usuário (25/08/2026, "fundo R$ NaN"): GET
+  // /eventos/:id/caixas espalha o objeto Prisma cru (camelCase) — mesmo
+  // achado já documentado e corrigido em GerenciadorCaixas.tsx (10/08), só
+  // não tinha sido replicado aqui.
+  fundoInicial:       number
   estacionamentoNome: string | null
 }
 
@@ -534,7 +538,7 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
                       )}
                     </p>
                     <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {c.operadorName ?? 'Sem operador designado'} · fundo {formatBRL(Number(c.fundo_inicial))}
+                      {c.operadorName ?? 'Sem operador designado'} · fundo {formatBRL(Number(c.fundoInicial))}
                       {c.status === 'fechamento_pendente' && ' · aguardando validação'}
                     </p>
                   </div>
@@ -854,7 +858,16 @@ function AbrirCaixaModal({ eventoId, estacionamentos, onFechar, onAberto }: {
   const [fundoInicial, setFundoInicial] = useState(0)
   const [calcAberta, setCalcAberta] = useState(false)
   const [operador, setOperador] = useState('')
-  const [estacionamentoId, setEstacionamentoId] = useState('')
+  // Bug real achado pelo usuário (25/08/2026): o seletor abaixo só aparece
+  // com mais de 1 estacionamento cadastrado — com só 1, o campo nunca
+  // aparecia E ficava vazio, então o caixa nascia sem vínculo nenhum
+  // (virava "caixa geral" pra tela de Bilheteria, que assume venda de
+  // ingresso). Agora, com exatamente 1 local, já pré-seleciona ele sozinho
+  // — segue sem perguntar (não tem outro pra escolher mesmo), mas o vínculo
+  // vai junto de verdade.
+  const [estacionamentoId, setEstacionamentoId] = useState(
+    () => estacionamentos.length === 1 ? estacionamentos[0].id : ''
+  )
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   // Sangria (20/08/2026) — ver project_token_pin_acesso_caixa na memória.
