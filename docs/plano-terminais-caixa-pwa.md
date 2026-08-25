@@ -388,3 +388,54 @@ Arquivos tocados: `components/PermissaoCard.tsx`, `PainelEquipe.tsx`,
 **Falta ainda** (fora do escopo desta fase, de propósito): pontos 3 e 4 da
 lista acima (ticket online) só fazem sentido quando "vender estacionamento
 online" existir — feature futura, sem data.
+
+## Fase D — Caixa vira "vende o catálogo do local" (registrado, EM ESPECIFICAÇÃO)
+
+Continuação natural do formato "LOCAL é o agrupador" (Fase C.1 acima).
+Usuário generalizou mais um passo, a partir de `/admin/funcoes` (tela do
+template "Caixa"): **Caixa não é uma permissão com produto fixo
+(`vender_ingresso`) — é um módulo genérico que vende o que o LOCAL ao qual
+está vinculado vende.** O produto vem do local, não da permissão:
+
+- **Bilheteria** → catálogo: Ingressos (já existe, nada muda).
+- **Estacionamento** → cobrança de vaga (já existe — não é bem um catálogo
+  de produtos, é só "cobra valor fixo/por tempo", nada muda).
+- **Copa** (bar/bebidas) → catálogo de bebidas — **não existe ainda**.
+- **Praça de Alimentação** → catálogo de comida — **não existe ainda**,
+  distinto do catálogo da Copa (confirmado pelo usuário: são 2 cardápios
+  separados, não um "Produto" genérico único).
+
+**Decisão de arquitetura fechada**: construir os catálogos (Copa,
+Alimentação) **nativos no Tipo7** (novos models Prisma, mesmo banco),
+**não** um sistema separado integrado por API. Motivo: dinheiro precisa
+reconciliar num lugar só — fechamento de caixa, sangria, dashboard e
+relatórios hoje já somam tudo que passa por um `Caixa` de forma unificada;
+um catálogo/estoque externo ou duplicaria essa reconciliação (2 lugares pra
+conferir dinheiro) ou exigiria sincronizar de volta pro caixa mesmo assim
+(mesma dor de integração, sem economizar nada). Precedente de dor real com
+integração externa: Autosave (veículo/CPF) já deu trabalho de fallback/
+webhook/chave — mas aquilo é dado genuinamente compartilhável entre
+produtos; catálogo de bar de UM evento específico não é, é intrinsecamente
+do Tipo7.
+
+**Confirmado, sem mudança necessária**:
+- Caixa avulso por Bilheteria (A, B, C...) — já existe hoje, múltiplos
+  caixas independentes já funcionam, mesmo módulo reaproveitado.
+- Estacionamento já é automático (preço configurado no local).
+
+**Ainda EM ABERTO, especificação em andamento** (usuário pediu pra eu ir
+perguntando até fechar):
+1. Catálogo tem controle de estoque de verdade (quantidade, "esgota",
+   trava de concorrência — mesmo padrão já usado no lote de ingressos) ou é
+   lista de preço solta, sem limite de quantidade?
+2. Onde o promotor cadastra os produtos — tela nova dedicada, ou dentro de
+   Estrutura, do jeito que Estacionamento já funciona hoje (criar o
+   "local" Copa/Alimentação, depois os itens dentro dele)?
+3. Pagamento reaproveita o mesmo Caixa/Order de ingresso (dinheiro/PIX/
+   cartão), só com linha de venda de produto em vez de ingresso — confirmar
+   se é isso mesmo ou se precisa de algo diferente.
+4. Templates do sistema (`/admin/funcoes`) já têm "Garçom" (hoje sem
+   permissão nenhuma) — vira o cargo padrão pra operar Caixa da Copa?
+
+Nada implementado ainda — feature grande, não cabe na semana corrente
+junto com A/B/C.1/E. Fica registrada aqui conforme a especificação avança.
