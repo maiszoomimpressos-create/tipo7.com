@@ -909,7 +909,15 @@ function AbrirCaixaMembroModal({
   const [nome, setNome]                     = useState(`Caixa — ${nomeMembro}`)
   const [fundoInicial, setFundoInicial]     = useState(0)
   const [calcAberta, setCalcAberta]         = useState(false)
-  const [estacionamentoId, setEstacionamentoId] = useState('')
+  // Achado do usuário (26/08/2026): esse modal só abre pro botão que já é
+  // condicionado a `temPermissaoEstacionamento(m)` (linha ~746) — ou seja,
+  // TODO caixa criado aqui é de estacionamento, nunca "geral". Antes,
+  // com só 1 local cadastrado, o campo nem aparecia e o valor ficava ''
+  // — caixa nascia SEM estacionamentoId, e o roteamento (`TrabalhoClient.
+  // tsx`, via `caixaHref`) mandava esse "caixa sem local" pra tela normal
+  // de BILHETERIA (vender ingresso!) em vez de Estacionamento. Agora, com
+  // só 1 local, já pré-seleciona ele sozinho — nunca fica em branco.
+  const [estacionamentoId, setEstacionamentoId] = useState(estacionamentos.length === 1 ? estacionamentos[0].id : '')
   const [salvando, setSalvando]             = useState(false)
   const [erro, setErro]                     = useState<string | null>(null)
 
@@ -917,6 +925,7 @@ function AbrirCaixaMembroModal({
 
   async function salvar() {
     if (!nome.trim() || !identificadorOperador) return
+    if (!estacionamentoId) { setErro('Selecione o local de estacionamento'); return }
     setSalvando(true); setErro(null)
     try {
       const res = await apiFetchAuth(`/api/estacionamento/${eventoId}/abrir-caixa`, {
@@ -926,7 +935,7 @@ function AbrirCaixaMembroModal({
           nome:                  nome.trim(),
           fundoInicial,
           operadorEmailOuCodigo: identificadorOperador,
-          estacionamentoId:      estacionamentoId || undefined,
+          estacionamentoId,
         }),
       })
       const data = await res.json()
@@ -964,19 +973,27 @@ function AbrirCaixaMembroModal({
               <Calculator size={14} style={{ color: ACCENT }} />
             </button>
           </div>
-          {estacionamentos.length > 1 && (
+          {estacionamentos.length > 1 ? (
             <select value={estacionamentoId} onChange={e => setEstacionamentoId(e.target.value)}
               className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40"
               style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              <option value="">Caixa geral (não vinculado a um local)</option>
+              <option value="" disabled>Selecione o local *</option>
               {estacionamentos.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
             </select>
+          ) : estacionamentos.length === 1 ? (
+            <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Local: <span className="text-white">{estacionamentos[0].nome}</span>
+            </p>
+          ) : (
+            <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Nenhum estacionamento cadastrado neste evento ainda.
+            </p>
           )}
         </div>
 
         {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}
 
-        <button type="button" onClick={salvar} disabled={salvando || !nome.trim() || !identificadorOperador}
+        <button type="button" onClick={salvar} disabled={salvando || !nome.trim() || !identificadorOperador || !estacionamentoId}
           className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
           style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
           {salvando ? <Loader2 size={15} className="animate-spin" /> : 'Abrir caixa'}
