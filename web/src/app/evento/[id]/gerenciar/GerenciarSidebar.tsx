@@ -28,17 +28,21 @@ export function GerenciarSidebar({ eventoId, eventoTitle }: Props) {
   const NAV = [
     { href: `${base}/ingressos`,       label: 'Ingressos',      icon: Ticket },
     { href: `${base}/estrutura`,       label: 'Estrutura',      icon: Layers },
-    { href: `${base}/equipe`,          label: 'Equipe',         icon: Users  },
     { href: `${base}/configuracoes`,   label: 'Configurações',  icon: Settings },
   ]
 
   // Estacionamento (21/08/2026, pedido do usuário) — movido pra junto de
   // Bilheteria/Relatórios: as 3 são telas operacionais do dia do evento
   // (mexem em caixa/dinheiro de verdade), diferente de Ingressos/Estrutura/
-  // Equipe/Configurações, que são só CONFIGURAÇÃO prévia do evento.
+  // Configurações, que são só CONFIGURAÇÃO prévia do evento.
+  // Equipe (25/08/2026, pedido do usuário) — movida pra depois de
+  // Bilheteria: é aqui que se atribui gente aos caixas/portões que acabou
+  // de configurar, então faz mais sentido logo depois, não lá em cima
+  // junto do resto do setup.
   const OPERACIONAL = [
     { href: `${base}/estacionamento`,     label: 'Estacionamento',      icon: Car,         externo: false },
     { href: `/bilheteria/${eventoId}`,    label: 'Bilheteria (caixas)', icon: ShoppingBag, externo: true  },
+    { href: `${base}/equipe`,             label: 'Equipe',              icon: Users,       externo: false },
     { href: `/dashboard/${eventoId}`,     label: 'Relatórios',          icon: BarChart2,   externo: true  },
   ]
 
