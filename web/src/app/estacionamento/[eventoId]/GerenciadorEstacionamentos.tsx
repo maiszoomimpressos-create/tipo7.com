@@ -57,6 +57,13 @@ interface Caixa {
   // não tinha sido replicado aqui.
   fundoInicial:       number
   estacionamentoNome: string | null
+  // Achado do usuário (25/08/2026): esta tela mostrava TODOS os caixas do
+  // evento (inclusive caixa geral de Bilheteria, sem vínculo nenhum) numa
+  // lista solta única — "Caixa A" sem `estacionamentoId` aparecia aqui como
+  // se fosse do estacionamento, quando não era de lugar nenhum. Agora usa
+  // este campo pra filtrar: só entra na lista de um local o caixa que
+  // realmente pertence a ele.
+  estacionamentoId:   string | null
 }
 
 interface Props {
@@ -327,7 +334,9 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
   // edição (mesmo componente do "Novo", pré-preenchido) e o ativo/inativo
   // ganhou um botão próprio (cadeado, mesmo padrão já usado nos portões).
   const [modalEditando, setModalEditando]     = useState<Estacionamento | null>(null)
-  const [modalCaixaAberto, setModalCaixaAberto] = useState(false)
+  // Guarda QUAL local disparou o modal — não é mais um botão único e
+  // ambíguo pro evento inteiro (ver seção "Caixas" removida, 25/08/2026).
+  const [modalCaixaAberto, setModalCaixaAberto] = useState<Estacionamento | null>(null)
   const [erro, setErro]                       = useState<string | null>(null)
   const [portoesAbertos, setPortoesAbertos]   = useState<Set<string>>(new Set())
 
@@ -490,85 +499,102 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
                   </div>
 
                   {portoesAberto && (
-                    <div className="px-4 pb-4 pt-1" style={{ borderTop: '1px solid #1a1a1a' }}>
+                    <div className="px-4 pb-4 pt-1 flex flex-col gap-4" style={{ borderTop: '1px solid #1a1a1a' }}>
                       <PortoesEditor
                         eventoId={eventoId}
                         estacionamentoId={e.id}
                         portoesIniciais={portoes}
                         onMudou={carregar}
                       />
+
+                      {/* Caixas — só os que pertencem a ESTE local (achado
+                          do usuário, 25/08/2026: antes era 1 lista solta
+                          pro evento inteiro, misturando caixa geral de
+                          Bilheteria com o de Estacionamento). */}
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[#444] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                            Caixas deste local
+                          </p>
+                          <button type="button" onClick={() => setModalCaixaAberto(e)}
+                            className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-semibold border border-[#222] text-[#aaa] hover:border-[#E8B84B]/40 hover:text-[#E8B84B] transition-colors"
+                            style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                            <Wallet size={11} /> Abrir caixa
+                          </button>
+                        </div>
+
+                        {caixas.filter(c => c.estacionamentoId === e.id).length === 0 && (
+                          <p className="text-[#444] text-xs py-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                            Nenhum caixa aberto ainda neste local.
+                          </p>
+                        )}
+
+                        {caixas.filter(c => c.estacionamentoId === e.id).map(c => (
+                          <div key={c.id} className="flex items-center justify-between gap-3 bg-[#111] border border-[#1c1c1c] rounded-lg px-3 py-2">
+                            <div>
+                              <p className="text-white text-xs font-medium flex items-center gap-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                                {c.status === 'aberto'
+                                  ? <Unlock size={11} className="text-green-400" />
+                                  : c.status === 'fechamento_pendente'
+                                    ? <Wallet size={11} style={{ color: ACCENT }} />
+                                    : <Lock size={11} className="text-[#555]" />}
+                                {c.nome}
+                              </p>
+                              <p className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                                {c.operadorName ?? 'Sem operador designado'} · fundo {formatBRL(Number(c.fundoInicial))}
+                                {c.status === 'fechamento_pendente' && ' · aguardando validação'}
+                                {c.status === 'fechado' && ' · fechado'}
+                              </p>
+                            </div>
+                            {c.status === 'aberto' && (
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button type="button" onClick={() => handleExcluirCaixa(c.id, c.nome)}
+                                  className="px-2 py-1.5 rounded-lg text-[11px] font-medium border border-[#222] text-[#555] hover:border-red-400/40 hover:text-red-400 transition-colors">
+                                  Excluir
+                                </button>
+                                <button type="button" onClick={() => handleFecharCaixa(c.id)}
+                                  className="px-2 py-1.5 rounded-lg text-[11px] font-medium border border-[#222] text-[#aaa] hover:border-[#E8B84B]/40 hover:text-[#E8B84B] transition-colors">
+                                  Fechar
+                                </button>
+                              </div>
+                            )}
+                            {c.status === 'fechamento_pendente' && (
+                              <button type="button" onClick={() => handleValidarCaixa(c.id)}
+                                className="px-2 py-1.5 rounded-lg text-[11px] font-semibold text-[#070707] shrink-0"
+                                style={{ background: ACCENT }}>
+                                Validar
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
                 )
               })}
-            </section>
 
-            {/* Caixas */}
-            <section className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[#666] text-xs uppercase tracking-widest font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Caixas
-                </p>
-                <button type="button" onClick={() => setModalCaixaAberto(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#222] text-[#aaa] hover:border-[#E8B84B]/40 hover:text-[#E8B84B] transition-colors"
-                  style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  <Wallet size={13} /> Abrir caixa
-                </button>
-              </div>
-
-              {caixas.length === 0 && (
-                <p className="text-[#444] text-sm text-center py-4">Nenhum caixa aberto ainda — só é necessário se algum local cobrar.</p>
-              )}
-
-              {caixas.map(c => (
-                <div key={c.id} className="flex items-center justify-between gap-3 bg-[#0d0d0d] border border-[#1a1a1a] rounded-xl px-4 py-3">
-                  <div>
-                    <p className="text-white text-sm font-medium flex items-center gap-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {c.status === 'aberto'
-                        ? <Unlock size={12} className="text-green-400" />
-                        : c.status === 'fechamento_pendente'
-                          ? <Wallet size={12} style={{ color: ACCENT }} />
-                          : <Lock size={12} className="text-[#555]" />}
-                      {c.nome}
-                      {c.estacionamentoNome && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-normal" style={{ background: '#111', color: '#888' }}>
-                          {c.estacionamentoNome}
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                      {c.operadorName ?? 'Sem operador designado'} · fundo {formatBRL(Number(c.fundoInicial))}
-                      {c.status === 'fechamento_pendente' && ' · aguardando validação'}
-                      {/* Achado do usuário (25/08/2026): caixa fechado ficava
-                          na lista com o mesmo visual de um aberto (só um
-                          ícone cinza discreto de diferença) — parecia
-                          "ainda ali", como se não tivesse sido fechado de
-                          verdade. Agora escreve por extenso. */}
-                      {c.status === 'fechado' && ' · fechado'}
-                    </p>
-                  </div>
-                  {c.status === 'aberto' && (
-                    <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => handleExcluirCaixa(c.id, c.nome)}
-                        className="px-3 py-2 rounded-lg text-xs font-medium border border-[#222] text-[#555] hover:border-red-400/40 hover:text-red-400 transition-colors">
-                        Excluir
-                      </button>
-                      <button type="button" onClick={() => handleFecharCaixa(c.id)}
-                        className="px-3 py-2 rounded-lg text-xs font-medium border border-[#222] text-[#aaa] hover:border-[#E8B84B]/40 hover:text-[#E8B84B] transition-colors">
-                        Fechar
-                      </button>
+              {/* Caixas soltos, sem vínculo a nenhum local — não deviam
+                  existir de agora em diante (todo caixa novo aberto por
+                  aqui já nasce vinculado ao local que o abriu), mas caixas
+                  antigos de antes desse fix podem sobrar. Mostrados à parte,
+                  claramente marcados, pra não sumir com histórico/dinheiro
+                  já movimentado, mas sem confundir com os do estacionamento. */}
+              {caixas.some(c => !c.estacionamentoId) && (
+                <div className="flex flex-col gap-2 mt-1">
+                  <p className="text-[#444] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Caixas sem local vinculado (não pertencem ao Estacionamento)
+                  </p>
+                  {caixas.filter(c => !c.estacionamentoId).map(c => (
+                    <div key={c.id} className="flex items-center justify-between gap-3 bg-[#0d0d0d] border border-[#1a1a1a] rounded-xl px-4 py-3 opacity-70">
+                      <p className="text-[#888] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        {c.nome} · {c.operadorName ?? 'Sem operador designado'} · fundo {formatBRL(Number(c.fundoInicial))}
+                        {c.status === 'fechado' && ' · fechado'}
+                      </p>
                     </div>
-                  )}
-                  {c.status === 'fechamento_pendente' && (
-                    <button type="button" onClick={() => handleValidarCaixa(c.id)}
-                      className="px-3 py-2 rounded-lg text-xs font-semibold text-[#070707]"
-                      style={{ background: ACCENT }}>
-                      Validar
-                    </button>
-                  )}
+                  ))}
                 </div>
-              ))}
+              )}
             </section>
           </>
         )}
@@ -596,9 +622,9 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
       {modalCaixaAberto && (
         <AbrirCaixaModal
           eventoId={eventoId}
-          estacionamentos={estacionamentos}
-          onFechar={() => setModalCaixaAberto(false)}
-          onAberto={async () => { setModalCaixaAberto(false); await carregar() }}
+          estacionamento={modalCaixaAberto}
+          onFechar={() => setModalCaixaAberto(null)}
+          onAberto={async () => { setModalCaixaAberto(null); await carregar() }}
         />
       )}
     </div>
@@ -854,9 +880,15 @@ function EstacionamentoModal({ eventoId, estacionamento, onFechar, onSalvo, onPo
   )
 }
 
-function AbrirCaixaModal({ eventoId, estacionamentos, onFechar, onAberto }: {
+// Achado do usuário (25/08/2026): o problema de fundo do bug de vínculo
+// não era só "auto-selecionar quando só tem 1" — era o modal aceitar abrir
+// um caixa SEM local nenhum ("caixa geral"), o que nunca fazia sentido
+// vindo desta tela (Estacionamento). Agora o modal sempre recebe o local
+// específico de onde foi aberto (o card do local, não mais um seletor) —
+// não tem como criar um caixa órfão a partir daqui.
+function AbrirCaixaModal({ eventoId, estacionamento, onFechar, onAberto }: {
   eventoId: string
-  estacionamentos: Estacionamento[]
+  estacionamento: Estacionamento
   onFechar: () => void
   onAberto: () => void
 }) {
@@ -864,16 +896,6 @@ function AbrirCaixaModal({ eventoId, estacionamentos, onFechar, onAberto }: {
   const [fundoInicial, setFundoInicial] = useState(0)
   const [calcAberta, setCalcAberta] = useState(false)
   const [operador, setOperador] = useState('')
-  // Bug real achado pelo usuário (25/08/2026): o seletor abaixo só aparece
-  // com mais de 1 estacionamento cadastrado — com só 1, o campo nunca
-  // aparecia E ficava vazio, então o caixa nascia sem vínculo nenhum
-  // (virava "caixa geral" pra tela de Bilheteria, que assume venda de
-  // ingresso). Agora, com exatamente 1 local, já pré-seleciona ele sozinho
-  // — segue sem perguntar (não tem outro pra escolher mesmo), mas o vínculo
-  // vai junto de verdade.
-  const [estacionamentoId, setEstacionamentoId] = useState(
-    () => estacionamentos.length === 1 ? estacionamentos[0].id : ''
-  )
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   // Sangria (20/08/2026) — ver project_token_pin_acesso_caixa na memória.
@@ -891,7 +913,7 @@ function AbrirCaixaModal({ eventoId, estacionamentos, onFechar, onAberto }: {
           nome:                    nome.trim(),
           fundoInicial,
           operadorEmailOuCodigo:   operador.trim() || undefined,
-          estacionamentoId:        estacionamentoId || undefined,
+          estacionamentoId:        estacionamento.id,
         }),
       })
       const data = await res.json()
@@ -938,7 +960,12 @@ function AbrirCaixaModal({ eventoId, estacionamentos, onFechar, onAberto }: {
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
       <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6">
         <div className="flex items-center justify-between mb-5">
-          <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Abrir caixa</p>
+          <div>
+            <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Abrir caixa</p>
+            <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Vinculado a <span style={{ color: ACCENT }}>{estacionamento.nome}</span>
+            </p>
+          </div>
           <button onClick={onFechar} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
         </div>
 
@@ -958,13 +985,6 @@ function AbrirCaixaModal({ eventoId, estacionamentos, onFechar, onAberto }: {
               <Calculator size={14} style={{ color: ACCENT }} />
             </button>
           </div>
-          {estacionamentos.length > 1 && (
-            <select value={estacionamentoId} onChange={e => setEstacionamentoId(e.target.value)}
-              className={inp} style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              <option value="">Caixa geral (não vinculado a um local)</option>
-              {estacionamentos.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
-            </select>
-          )}
           <input type="text" placeholder="E-mail ou código T7-USR do operador (opcional)" value={operador}
             onChange={e => setOperador(e.target.value)} className={inp} style={{ fontFamily: 'var(--font-dm-sans)' }} />
           <p className="text-[#444] text-[11px]" style={{ fontFamily: 'var(--font-dm-sans)' }}>
