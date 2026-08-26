@@ -273,6 +273,7 @@ export class EstacionamentoService {
     let valorCobrado: number | null = null;
     let formaPagamento: string | null = null;
     let caixaId: string | null = null;
+    let pagamentoFisicoId: string | null = null;
 
     if (estacionamento.cobraModo === 'fixo') {
       const preco = Number(estacionamento.precoFixo ?? 0);
@@ -286,6 +287,23 @@ export class EstacionamentoService {
           valorCobrado = preco;
           formaPagamento = body.formaPagamento;
           caixaId = body.caixaId;
+
+          // Mesma cobrança real de cartão físico da saída (achado real
+          // 26/08/2026: cobra_modo 'fixo' cobra na ENTRADA, não na saída —
+          // esse caminho nunca chamava pagamentos-fisicos, só gravava
+          // formaPagamento='cartao' cru, sem cobrar nada nem no mock).
+          if (formaPagamento === 'cartao') {
+            const cobranca = await this.pagamentosFisicos.cobrar({
+              valor:    valorCobrado,
+              caixaId,
+              origem:   'estacionamento_sessao',
+              criadoPor: userId,
+            });
+            pagamentoFisicoId = cobranca.id;
+            if (cobranca.status !== 'aprovado') {
+              throw new BadRequestException(cobranca.mensagemErro ?? 'Cartão negado. Tente novamente ou escolha outra forma de pagamento.');
+            }
+          }
         }
       }
     }
@@ -321,6 +339,23 @@ export class EstacionamentoService {
       throw new ConflictException('Esta placa já está registrada como dentro do estacionamento. Registre a saída antes de uma nova entrada.');
     }
     if (!resultado?.sessao_id) throw new BadRequestException('Erro ao registrar entrada');
+
+    // A cobrança (se houve) aconteceu ANTES da sessão existir (a função SQL
+    // acima é quem cria o id) — liga o registro de cobrança à sessão agora
+    // que ela já existe, e completa a origem_id que ficou em aberto na hora
+    // da cobrança.
+    if (pagamentoFisicoId) {
+      await Promise.all([
+        this.prisma.estacionamentoSessao.update({
+          where: { id: resultado.sessao_id },
+          data:  { pagamentoFisicoId },
+        }),
+        this.prisma.pagamentoFisico.update({
+          where: { id: pagamentoFisicoId },
+          data:  { origemId: resultado.sessao_id },
+        }),
+      ]);
+    }
 
     // Best-effort — não aguarda nem bloqueia a resposta. Só salva de volta
     // na Autosave quando a placa NÃO veio do autopreenchimento (achado real
