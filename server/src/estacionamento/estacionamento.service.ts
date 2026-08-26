@@ -4,6 +4,7 @@ import { AutosaveService } from '../common/autosave.service';
 import { calcularValorEstacionamento } from '../common/estacionamento-pricing.util';
 import { WhatsAppService } from '../common/whatsapp.service';
 import { EventPermissionsService } from '../event-permissions/event-permissions.service';
+import { PagamentosFisicosService } from '../pagamentos-fisicos/pagamentos-fisicos.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Achado real (08/08/2026, varredura pós-bug do admin/api): listEstacionamentos
@@ -42,6 +43,7 @@ export class EstacionamentoService {
     private readonly autosave: AutosaveService,
     private readonly whatsapp: WhatsAppService,
     private readonly caixas: CaixasService,
+    private readonly pagamentosFisicos: PagamentosFisicosService,
   ) {}
 
   // ==== CRUD de estacionamentos (dono/admin do evento) ====
@@ -460,6 +462,7 @@ export class EstacionamentoService {
     let caixaId: string | null = null;
     let formaPagamento: string | null = null;
     let jaCobradoNaEntrada = false;
+    let pagamentoFisicoId: string | null = null;
 
     if (config.cobraModo === 'fixo') {
       jaCobradoNaEntrada = true;
@@ -495,13 +498,33 @@ export class EstacionamentoService {
       status = 'pago';
       caixaId = body.caixaId ?? null;
       formaPagamento = body.formaPagamento ?? 'dinheiro';
+
+      // Cobrança real de cartão físico (módulo pagamentos-fisicos, genérico
+      // pro sistema todo — ver docs/maquininha-gpos780-levantamento-requisitos.md).
+      // Hoje roda em modo mock (aprova sempre); quando a decisão comercial
+      // fechar, só troca a implementação injetada, nada aqui muda. Se negar,
+      // NÃO fecha a sessão — operador tenta de novo ou troca de forma de
+      // pagamento, sem duplicar cobrança.
+      if (formaPagamento === 'cartao' && valorCobrado > 0 && caixaId) {
+        const cobranca = await this.pagamentosFisicos.cobrar({
+          valor:    valorCobrado,
+          caixaId,
+          origem:   'estacionamento_sessao',
+          origemId: sessao.id,
+          criadoPor: userId,
+        });
+        pagamentoFisicoId = cobranca.id;
+        if (cobranca.status !== 'aprovado') {
+          throw new BadRequestException(cobranca.mensagemErro ?? 'Cartão negado. Tente novamente ou escolha outra forma de pagamento.');
+        }
+      }
     }
 
     await this.prisma.estacionamentoSessao.update({
       where: { id: body.sessaoId },
       data: jaCobradoNaEntrada
         ? { saidaEm, status, portaoSaidaId }
-        : { saidaEm, valorCobrado, formaPagamento, caixaId, status, portaoSaidaId },
+        : { saidaEm, valorCobrado, formaPagamento, caixaId, status, portaoSaidaId, pagamentoFisicoId },
     });
 
     return { ok: true, valorCobrado, status };

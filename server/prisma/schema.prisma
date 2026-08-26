@@ -857,6 +857,7 @@ model Caixa {
   caixaTransferenciasCaixaOrigem  CaixaTransferencia[]   @relation("CaixaTransferencia_caixaOrigemId")
   estacionamentoSessoes           EstacionamentoSessao[] @relation("EstacionamentoSessao_caixaId")
   orders                          Order[]                @relation("Order_caixaId")
+  pagamentosFisicos               PagamentoFisico[]      @relation("PagamentoFisico_caixaId")
 
   @@index([estacionamentoId])
   @@index([eventoId])
@@ -964,6 +965,11 @@ model EstacionamentoSessao {
   formaPagamento   String?               @map("forma_pagamento")
   caixaId          String?               @map("caixa_id") @db.Uuid
   caixa            Caixa?                @relation("EstacionamentoSessao_caixaId", fields: [caixaId], references: [id])
+  // Link pro registro genérico de cobrança de cartão físico (módulo
+  // pagamentos-fisicos) — só preenchido quando formaPagamento === 'cartao'.
+  // Guarda NSU/bandeira/autorização sem duplicar essas colunas aqui.
+  pagamentoFisicoId String?              @map("pagamento_fisico_id") @db.Uuid
+  pagamentoFisico  PagamentoFisico?      @relation("EstacionamentoSessao_pagamentoFisicoId", fields: [pagamentoFisicoId], references: [id])
   status           String                @default("aberto")
   registradoPor    String?               @map("registrado_por") @db.Uuid
   profile          Profile?              @relation("EstacionamentoSessao_registradoPor", fields: [registradoPor], references: [id])
@@ -981,6 +987,34 @@ model EstacionamentoSessao {
   @@index([placa])
   @@index([status])
   @@map("estacionamento_sessoes")
+}
+
+// Cobrança de cartão físico (maquininha) — genérico pra QUALQUER módulo do
+// Tipo7, não só Estacionamento (ver payment-provider.interface.ts). `origem`
+// identifica o tipo de entidade que pediu a cobrança (ex: 'estacionamento_sessao',
+// 'order') e `origemId` o id dela — sem FK direta porque é polimórfico, cada
+// módulo mantém sua própria referência de volta (ex: EstacionamentoSessao.pagamentoFisicoId).
+model PagamentoFisico {
+  id            String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caixaId       String                 @map("caixa_id") @db.Uuid
+  caixa         Caixa                  @relation("PagamentoFisico_caixaId", fields: [caixaId], references: [id])
+  origem        String
+  origemId      String?                @map("origem_id") @db.Uuid
+  valor         Decimal                @db.Decimal(10, 2)
+  status        String                 @default("pendente")
+  provider      String                 @default("mock")
+  nsu           String?
+  bandeira      String?
+  autorizacao   String?
+  mensagemErro  String?                @map("mensagem_erro")
+  criadoPor     String?                @map("criado_por") @db.Uuid
+  criadoEm      DateTime               @default(now()) @map("criado_em") @db.Timestamptz(6)
+  finalizadoEm  DateTime?              @map("finalizado_em") @db.Timestamptz(6)
+  estacionamentoSessoes EstacionamentoSessao[] @relation("EstacionamentoSessao_pagamentoFisicoId")
+
+  @@index([caixaId])
+  @@index([origem, origemId])
+  @@map("pagamentos_fisicos")
 }
 
 model EstacionamentoPortao {
