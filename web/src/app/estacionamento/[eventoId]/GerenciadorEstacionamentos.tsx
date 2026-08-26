@@ -540,6 +540,12 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
                     <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                       {c.operadorName ?? 'Sem operador designado'} · fundo {formatBRL(Number(c.fundoInicial))}
                       {c.status === 'fechamento_pendente' && ' · aguardando validação'}
+                      {/* Achado do usuário (25/08/2026): caixa fechado ficava
+                          na lista com o mesmo visual de um aberto (só um
+                          ícone cinza discreto de diferença) — parecia
+                          "ainda ali", como se não tivesse sido fechado de
+                          verdade. Agora escreve por extenso. */}
+                      {c.status === 'fechado' && ' · fechado'}
                     </p>
                   </div>
                   {c.status === 'aberto' && (
