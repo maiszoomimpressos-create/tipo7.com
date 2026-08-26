@@ -18,6 +18,18 @@ import { ModalSangria } from '@/components/ModalSangria'
 
 const ACCENT = '#E8B84B'
 
+type FormaPagamento = 'dinheiro' | 'pix' | 'cartao' | 'cortesia'
+
+// Extraído (25/08/2026) — antes vivia duplicado, literal, dentro do JSX de
+// entrada e de saída. Agora é a fonte única, usada tanto pelo botão-resumo
+// quanto pelo modal de escolha.
+const FORMAS_PAGAMENTO: { value: FormaPagamento; icon: React.ElementType; label: string }[] = [
+  { value: 'dinheiro', icon: Banknote,   label: 'Dinheiro' },
+  { value: 'pix',      icon: Smartphone, label: 'PIX'      },
+  { value: 'cartao',   icon: CreditCard, label: 'Cartão'   },
+  { value: 'cortesia', icon: Gift,       label: 'Cortesia' },
+]
+
 // Estacionamento hoje não imprime nada de verdade na entrada (só WhatsApp) —
 // mesmas duas opções de alto nível da Bilheteria: Computador (RawBts
 // PrintServer, cobre Bluetooth/USB/driver Windows sozinho) ou Celular
@@ -114,7 +126,13 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [veiculoJaCadastrado, setVeiculoJaCadastrado] = useState(false)
   const [registrando, setRegistrando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const [formaPagamentoEntrada, setFormaPagamentoEntrada] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
+  // Pedido do usuário (25/08/2026): "Dinheiro" vinha marcado por padrão
+  // sem ninguém ter clicado — parecia escolha automática. Agora começa
+  // sem nada selecionado, e os 4 botões soltos viraram 1 botão-resumo que
+  // abre um modal de escolha (ver ModalSelecionarPagamento no fim do
+  // arquivo) — menos poluição visual, e nada aparece "já escolhido".
+  const [formaPagamentoEntrada, setFormaPagamentoEntrada] = useState<FormaPagamento | null>(null)
+  const [selecionandoPagEntrada, setSelecionandoPagEntrada] = useState(false)
   const [modalSemWhats, setModalSemWhats] = useState(false)
   // Pedido do usuário (25/08/2026): pagar em dinheiro era só marcar o
   // botão "Dinheiro" — sem nenhum apoio pra calcular o troco. Agora, ao
@@ -140,7 +158,8 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [, setTick] = useState(0)
 
   const [saidaAlvo, setSaidaAlvo] = useState<Sessao | null>(null)
-  const [formaPagamento, setFormaPagamento] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
+  const [formaPagamento, setFormaPagamento] = useState<FormaPagamento | null>(null)
+  const [selecionandoPagSaida, setSelecionandoPagSaida] = useState(false)
   const [confirmandoSaida, setConfirmandoSaida] = useState(false)
 
   // Busca por placa na saída (22/08/2026, pedido do usuário) — mesmo padrão
@@ -368,7 +387,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           // recebe o POST que cria o veículo, mesmo já vindo autopreenchida.
           veiculoJaCadastrado,
           semWhatsapp,
-          formaPagamento:    precisaPagarEntrada ? formaPagamentoEntrada : undefined,
+          formaPagamento:    precisaPagarEntrada ? (formaPagamentoEntrada ?? undefined) : undefined,
           caixaId:           precisaCaixaEntrada ? caixaId ?? undefined : undefined,
           portaoId:          precisaPortaoEntrada ? portaoEntradaSel : undefined,
         }),
@@ -509,7 +528,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
         body:    JSON.stringify({
           sessaoId:       saidaAlvo.id,
           caixaId:        precisaCaixa ? caixaId : undefined,
-          formaPagamento: config?.cobra_modo === 'gratis' ? undefined : formaPagamento,
+          formaPagamento: config?.cobra_modo === 'gratis' ? undefined : (formaPagamento ?? undefined),
           portaoId:       precisaPortaoSaida ? portaoSaidaSel : undefined,
         }),
       })
@@ -758,27 +777,22 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                           {formatBRL(precoEntradaFixo)}
                         </p>
                       </div>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {([
-                          { value: 'dinheiro' as const, icon: Banknote,    label: 'Dinheiro' },
-                          { value: 'pix'      as const, icon: Smartphone,  label: 'PIX'      },
-                          { value: 'cartao'   as const, icon: CreditCard,  label: 'Cartão'   },
-                          { value: 'cortesia' as const, icon: Gift,        label: 'Cortesia' },
-                        ]).map(({ value, icon: Icon, label }) => (
-                          <button key={value} type="button"
-                            onClick={() => value === 'dinheiro'
-                              ? setTrocoAberto({ preco: precoEntradaFixo, onConfirmar: () => setFormaPagamentoEntrada('dinheiro') })
-                              : setFormaPagamentoEntrada(value)}
-                            className={cn(
-                              'flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-medium transition-all',
-                              formaPagamentoEntrada === value
-                                ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white'
-                                : 'bg-[#0d0d0d] border-[#1c1c1c] text-[#777]'
-                            )}>
-                            <Icon size={12} /> {label}
-                          </button>
-                        ))}
-                      </div>
+                      <button type="button" onClick={() => setSelecionandoPagEntrada(true)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-xs font-medium transition-all"
+                        style={{
+                          background:  formaPagamentoEntrada ? `${ACCENT}0f` : '#0d0d0d',
+                          borderColor: formaPagamentoEntrada ? `${ACCENT}45` : '#1c1c1c',
+                          color:       formaPagamentoEntrada ? '#fff' : '#666',
+                        }}>
+                        <span className="flex items-center gap-1.5">
+                          {formaPagamentoEntrada ? (() => {
+                            const f = FORMAS_PAGAMENTO.find(x => x.value === formaPagamentoEntrada)!
+                            const Icon = f.icon
+                            return <><Icon size={13} style={{ color: ACCENT }} /> {f.label}</>
+                          })() : 'Selecionar forma de pagamento'}
+                        </span>
+                        <ChevronDown size={13} className="text-[#555]" />
+                      </button>
                       {precisaCaixaEntrada && !caixaId && (
                         <p className="text-red-400 text-[11px] mt-2" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                           Nenhum caixa designado pra você — peça pro organizador abrir e designar um caixa.
@@ -788,7 +802,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                   )}
 
                   <button type="button" onClick={handleRegistrarEntrada}
-                    disabled={registrando || !placa.trim() || !modelo.trim() || !cor.trim() || lotado || !!placaJaDentro || (precisaCaixaEntrada && !caixaId) || (precisaPortaoEntrada && !portaoEntradaSel)}
+                    disabled={registrando || !placa.trim() || !modelo.trim() || !cor.trim() || lotado || !!placaJaDentro || (precisaCaixaEntrada && !caixaId) || (precisaPortaoEntrada && !portaoEntradaSel) || (precisaPagarEntrada && !formaPagamentoEntrada)}
                     className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
                     style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
                     {registrando ? <Loader2 size={15} className="animate-spin" /> : <><Plus size={15} /> Registrar entrada</>}
@@ -926,32 +940,28 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
             )}
 
             {valorPreview > 0 && (
-              <div className="grid grid-cols-2 gap-2 mb-4">
-                {([
-                  { value: 'dinheiro' as const, icon: Banknote,    label: 'Dinheiro' },
-                  { value: 'pix'      as const, icon: Smartphone,  label: 'PIX'      },
-                  { value: 'cartao'   as const, icon: CreditCard,  label: 'Cartão'   },
-                  { value: 'cortesia' as const, icon: Gift,        label: 'Cortesia' },
-                ]).map(({ value, icon: Icon, label }) => (
-                  <button key={value} type="button"
-                    onClick={() => value === 'dinheiro'
-                      ? setTrocoAberto({ preco: valorPreview, onConfirmar: () => setFormaPagamento('dinheiro') })
-                      : setFormaPagamento(value)}
-                    className={cn(
-                      'flex items-center gap-2 p-3 rounded-xl border text-xs font-medium transition-all',
-                      formaPagamento === value
-                        ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white'
-                        : 'bg-[#111] border-[#1c1c1c] text-[#777]'
-                    )}>
-                    <Icon size={13} /> {label}
-                  </button>
-                ))}
-              </div>
+              <button type="button" onClick={() => setSelecionandoPagSaida(true)}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-xs font-medium transition-all mb-4"
+                style={{
+                  background:  formaPagamento ? `${ACCENT}0f` : '#111',
+                  borderColor: formaPagamento ? `${ACCENT}45` : '#1c1c1c',
+                  color:       formaPagamento ? '#fff' : '#666',
+                }}>
+                <span className="flex items-center gap-1.5">
+                  {formaPagamento ? (() => {
+                    const f = FORMAS_PAGAMENTO.find(x => x.value === formaPagamento)!
+                    const Icon = f.icon
+                    return <><Icon size={13} style={{ color: ACCENT }} /> {f.label}</>
+                  })() : 'Selecionar forma de pagamento'}
+                </span>
+                <ChevronDown size={13} className="text-[#555]" />
+              </button>
             )}
 
             {erro && <p className="text-red-400 text-xs text-center mb-3">{erro}</p>}
 
-            <button type="button" onClick={handleConfirmarSaida} disabled={confirmandoSaida || (precisaPortaoSaida && !portaoSaidaSel)}
+            <button type="button" onClick={handleConfirmarSaida}
+              disabled={confirmandoSaida || (precisaPortaoSaida && !portaoSaidaSel) || (valorPreview > 0 && !formaPagamento)}
               className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30 flex items-center justify-center gap-2"
               style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
               {confirmandoSaida ? <Loader2 size={15} className="animate-spin" /> : 'Confirmar saída'}
@@ -1032,6 +1042,36 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
         />
       )}
 
+      {selecionandoPagEntrada && (
+        <ModalSelecionarPagamento
+          selecionado={formaPagamentoEntrada}
+          onSelecionar={value => {
+            setSelecionandoPagEntrada(false)
+            if (value === 'dinheiro') {
+              setTrocoAberto({ preco: precoEntradaFixo, onConfirmar: () => setFormaPagamentoEntrada('dinheiro') })
+            } else {
+              setFormaPagamentoEntrada(value)
+            }
+          }}
+          onFechar={() => setSelecionandoPagEntrada(false)}
+        />
+      )}
+
+      {selecionandoPagSaida && (
+        <ModalSelecionarPagamento
+          selecionado={formaPagamento}
+          onSelecionar={value => {
+            setSelecionandoPagSaida(false)
+            if (value === 'dinheiro') {
+              setTrocoAberto({ preco: valorPreview, onConfirmar: () => setFormaPagamento('dinheiro') })
+            } else {
+              setFormaPagamento(value)
+            }
+          }}
+          onFechar={() => setSelecionandoPagSaida(false)}
+        />
+      )}
+
       {/* Sinal grande de liberado/negado — some sozinho, ou toque pra
           fechar antes. z-[200] pra ficar acima até dos outros modais. */}
       {statusAcesso && (
@@ -1056,6 +1096,41 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+// Modal de escolha da forma de pagamento — pedido do usuário (25/08/2026):
+// os 4 botões (Dinheiro/PIX/Cartão/Cortesia) ficavam soltos na tela o tempo
+// todo, e "Dinheiro" vinha marcado por padrão sem ninguém ter clicado,
+// parecendo escolha automática. Agora é 1 botão-resumo que abre isto aqui;
+// nada aparece pré-selecionado até a pessoa escolher de propósito.
+function ModalSelecionarPagamento({ selecionado, onSelecionar, onFechar }: {
+  selecionado: FormaPagamento | null
+  onSelecionar: (v: FormaPagamento) => void
+  onFechar: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onFechar}>
+      <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Forma de pagamento</p>
+          <button onClick={onFechar} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {FORMAS_PAGAMENTO.map(({ value, icon: Icon, label }) => (
+            <button key={value} type="button" onClick={() => onSelecionar(value)}
+              className={cn(
+                'flex items-center gap-2 p-3 rounded-xl border text-xs font-medium transition-all',
+                selecionado === value
+                  ? 'bg-[#E8B84B]/8 border-[#E8B84B]/35 text-white'
+                  : 'bg-[#111] border-[#1c1c1c] text-[#777]'
+              )}>
+              <Icon size={13} /> {label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
