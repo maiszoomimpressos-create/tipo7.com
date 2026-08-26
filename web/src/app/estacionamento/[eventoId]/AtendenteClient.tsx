@@ -199,8 +199,12 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
 
   // Recarrega a lista de carros periodicamente — pega entrada/saída registrada
   // por outro atendente em outro aparelho, mantendo a contagem de vagas em dia.
+  // Era 20s; reduzido pra 8s (pedido do usuário, 25/08/2026, testando com 2
+  // caixas ao mesmo tempo) — só afeta o que aparece na tela, a checagem de
+  // vaga/placa duplicada já é atômica no banco (registrar_entrada_
+  // estacionamento), então não há risco de segurança em deixar mais rápido.
   useEffect(() => {
-    const id = setInterval(() => { carregarSessoes() }, 20_000)
+    const id = setInterval(() => { carregarSessoes() }, 8_000)
     return () => clearInterval(id)
   }, [carregarSessoes])
 
