@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { KeyRound, Copy, CheckCircle2, Loader2, Download, MessageCircle, AlertCircle, X, Share } from 'lucide-react'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { usePwaInstall, isIOSSafari } from '@/lib/pwaInstall'
@@ -137,6 +138,7 @@ export function BlocoTokenPin({ acesso, onPinAtualizado }: { acesso: AcessoCaixa
 // navegador sem suporte), o botão nem aparece — não adianta oferecer algo
 // que não faz nada.
 function AcessoRapido() {
+  const router = useRouter()
   const { disponivel, jaInstalado, instalar } = usePwaInstall()
   const [instrucaoIOS, setInstrucaoIOS] = useState(false)
   const [enviandoWhats, setEnviandoWhats] = useState(false)
@@ -144,6 +146,21 @@ function AcessoRapido() {
 
   const ios = isIOSSafari()
   const mostrarInstalar = disponivel || (ios && !jaInstalado)
+
+  // Achado real (26/08/2026): este botão fica em telas fora de /caixa
+  // (/trabalhos, gerenciar do evento) — logado com a conta pessoal. No
+  // Chrome desktop, aceitar o prompt de instalação abre a ABA ATUAL como
+  // janela do app; `start_url` do manifest só é garantido em relançamentos
+  // futuros pelo ícone, não no instante da instalação. Resultado real
+  // reportado: instalava e abria mostrando a tela de "Meus trabalhos" da
+  // conta pessoal — sem sentido pra um acesso que devia ser independente do
+  // login (token+PIN). Fix: navegar pra /caixa ANTES de aceitar o prompt, o
+  // pushState já muda window.location antes do React desmontar este
+  // componente, então a instalação nasce no lugar certo.
+  async function instalarNoCaixa() {
+    router.push('/caixa')
+    await instalar()
+  }
 
   function enviarPorWhatsapp() {
     const digits = telefone.replace(/\D/g, '')
@@ -161,7 +178,7 @@ function AcessoRapido() {
         {mostrarInstalar && (
           <button
             type="button"
-            onClick={() => ios ? setInstrucaoIOS(true) : instalar()}
+            onClick={() => ios ? setInstrucaoIOS(true) : instalarNoCaixa()}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-medium border transition-colors hover:border-[#E8B84B]/40"
             style={{ borderColor: '#222', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}
           >
