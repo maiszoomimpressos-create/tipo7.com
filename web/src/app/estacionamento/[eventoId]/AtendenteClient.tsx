@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Car, Plus, Loader2, Clock, Banknote, CreditCard, Smartphone, Gift, X, ArrowLeft, DoorOpen,
   Wallet, Lock, AlertTriangle, CheckCircle2, XCircle, MinusCircle, Search,
+  ChevronDown, ChevronUp, Bluetooth, Calculator,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
@@ -115,6 +116,13 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [erro, setErro] = useState<string | null>(null)
   const [formaPagamentoEntrada, setFormaPagamentoEntrada] = useState<'dinheiro' | 'pix' | 'cartao' | 'cortesia'>('dinheiro')
   const [modalSemWhats, setModalSemWhats] = useState(false)
+  // Pedido do usuário (25/08/2026): pagar em dinheiro era só marcar o
+  // botão "Dinheiro" — sem nenhum apoio pra calcular o troco. Agora, ao
+  // escolher Dinheiro, abre um mini-PDV: digita quanto o cliente entregou,
+  // o sistema já mostra o troco, confirma e só aí marca a forma de
+  // pagamento. Compartilhado entre entrada e saída (guarda o preço e o
+  // callback de quem chamou).
+  const [trocoAberto, setTrocoAberto] = useState<{ preco: number; onConfirmar: () => void } | null>(null)
   const [portaoEntradaSel, setPortaoEntradaSel] = useState('')
   const [portaoSaidaSel,   setPortaoSaidaSel]   = useState('')
   const [modalFecharCaixa, setModalFecharCaixa] = useState(false)
@@ -154,6 +162,12 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     const t = setTimeout(() => setStatusAcesso(null), statusAcesso.tipo === 'liberado' ? 3500 : 5000)
     return () => clearTimeout(t)
   }, [statusAcesso])
+
+  // Pedido do usuário (25/08/2026): a configuração de impressora/ticket
+  // ficava sempre aberta, ocupando a tela toda vez — quem já configurou
+  // isso não precisa ver de novo a cada entrada. Escondida por padrão,
+  // com um botão pra reabrir quando precisar mexer.
+  const [configImpressaoAberta, setConfigImpressaoAberta] = useState(false)
 
   // Impressão do ticket de estacionamento na entrada — mesmo padrão de
   // localStorage por evento já usado na Bilheteria (tipo7-impressora-${id}).
@@ -568,32 +582,50 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           </button>
         </div>
 
-        {/* Primeiro passo ao entrar no caixa: conectar a impressora */}
-        <ImpressoraBluetooth contexto={eventoTitle} />
+        {/* Config de impressora/ticket — escondida por padrão (pedido do
+            usuário, 25/08/2026), quem já configurou não precisa ver de
+            novo toda hora que entra na tela. */}
+        <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #1a1a1a' }}>
+          <button type="button" onClick={() => setConfigImpressaoAberta(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 transition-colors"
+            style={{ background: '#0d0d0d' }}>
+            <span className="flex items-center gap-2 text-[#888] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              <Bluetooth size={13} /> Impressora e ticket de entrada
+            </span>
+            {configImpressaoAberta ? <ChevronUp size={14} className="text-[#555]" /> : <ChevronDown size={14} className="text-[#555]" />}
+          </button>
 
-        {/* Impressão do ticket de entrada — mesmas 2 opções de alto nível da
-            Bilheteria (Computador via PrintServer / Celular via RawBT). */}
-        <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl p-4 flex flex-col gap-3">
-          <p className="text-[#555] text-xs uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            Imprimir ticket na entrada
-          </p>
-          <div className="flex gap-2">
-            {FORMATOS_IMPRESSAO_ESTACIONAMENTO.map(f => (
-              <button key={f.value} type="button" onClick={() => salvarFormatoImpressao(f.value)}
-                className="flex-1 py-2 rounded-xl text-xs font-semibold transition-colors"
-                style={{
-                  background: formatoImpressao === f.value ? `${ACCENT}15` : '#111',
-                  border: `1px solid ${formatoImpressao === f.value ? ACCENT + '50' : '#222'}`,
-                  color: formatoImpressao === f.value ? ACCENT : '#888',
-                  fontFamily: 'var(--font-dm-sans)',
-                }}>
-                {f.label}
-              </button>
-            ))}
-          </div>
-          {formatoImpressao === 'printserver' && <PrintServerPanel />}
-          {erroImpressao && (
-            <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erroImpressao}</p>
+          {configImpressaoAberta && (
+            <div className="px-4 pb-4 pt-1 flex flex-col gap-4" style={{ borderTop: '1px solid #1a1a1a', background: '#0a0a0a' }}>
+              {/* Primeiro passo ao entrar no caixa: conectar a impressora */}
+              <ImpressoraBluetooth contexto={eventoTitle} />
+
+              {/* Impressão do ticket de entrada — mesmas 2 opções de alto nível
+                  da Bilheteria (Computador via PrintServer / Celular via RawBT). */}
+              <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-2xl p-4 flex flex-col gap-3">
+                <p className="text-[#555] text-xs uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Imprimir ticket na entrada
+                </p>
+                <div className="flex gap-2">
+                  {FORMATOS_IMPRESSAO_ESTACIONAMENTO.map(f => (
+                    <button key={f.value} type="button" onClick={() => salvarFormatoImpressao(f.value)}
+                      className="flex-1 py-2 rounded-xl text-xs font-semibold transition-colors"
+                      style={{
+                        background: formatoImpressao === f.value ? `${ACCENT}15` : '#111',
+                        border: `1px solid ${formatoImpressao === f.value ? ACCENT + '50' : '#222'}`,
+                        color: formatoImpressao === f.value ? ACCENT : '#888',
+                        fontFamily: 'var(--font-dm-sans)',
+                      }}>
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+                {formatoImpressao === 'printserver' && <PrintServerPanel />}
+                {erroImpressao && (
+                  <p className="text-red-400 text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>{erroImpressao}</p>
+                )}
+              </div>
+            </div>
           )}
         </div>
 
@@ -729,7 +761,10 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                           { value: 'cartao'   as const, icon: CreditCard,  label: 'Cartão'   },
                           { value: 'cortesia' as const, icon: Gift,        label: 'Cortesia' },
                         ]).map(({ value, icon: Icon, label }) => (
-                          <button key={value} type="button" onClick={() => setFormaPagamentoEntrada(value)}
+                          <button key={value} type="button"
+                            onClick={() => value === 'dinheiro'
+                              ? setTrocoAberto({ preco: precoEntradaFixo, onConfirmar: () => setFormaPagamentoEntrada('dinheiro') })
+                              : setFormaPagamentoEntrada(value)}
                             className={cn(
                               'flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-medium transition-all',
                               formaPagamentoEntrada === value
@@ -894,7 +929,10 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                   { value: 'cartao'   as const, icon: CreditCard,  label: 'Cartão'   },
                   { value: 'cortesia' as const, icon: Gift,        label: 'Cortesia' },
                 ]).map(({ value, icon: Icon, label }) => (
-                  <button key={value} type="button" onClick={() => setFormaPagamento(value)}
+                  <button key={value} type="button"
+                    onClick={() => value === 'dinheiro'
+                      ? setTrocoAberto({ preco: valorPreview, onConfirmar: () => setFormaPagamento('dinheiro') })
+                      : setFormaPagamento(value)}
                     className={cn(
                       'flex items-center gap-2 p-3 rounded-xl border text-xs font-medium transition-all',
                       formaPagamento === value
@@ -982,6 +1020,14 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
         </div>
       )}
 
+      {trocoAberto && (
+        <ModalTrocoDinheiro
+          preco={trocoAberto.preco}
+          onConfirmar={() => { trocoAberto.onConfirmar(); setTrocoAberto(null) }}
+          onFechar={() => setTrocoAberto(null)}
+        />
+      )}
+
       {/* Sinal grande de liberado/negado — some sozinho, ou toque pra
           fechar antes. z-[200] pra ficar acima até dos outros modais. */}
       {statusAcesso && (
@@ -1006,6 +1052,72 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+// Mini-PDV pra pagamento em dinheiro — pedido do usuário (25/08/2026): antes
+// "Dinheiro" era só um botão de marcar a forma de pagamento, sem apoiar em
+// nada na hora de dar troco. Digita quanto o cliente entregou, o sistema já
+// calcula o troco, confirma e só aí marca a forma de pagamento como
+// dinheiro (cancelar não muda nada). Puramente um apoio operacional pro
+// atendente — não manda nada pro backend além da forma de pagamento em si,
+// que já era gravada antes.
+function ModalTrocoDinheiro({ preco, onConfirmar, onFechar }: {
+  preco: number
+  onConfirmar: () => void
+  onFechar: () => void
+}) {
+  const [valorRecebido, setValorRecebido] = useState('')
+  const recebido = parseFloat(valorRecebido.replace(',', '.')) || 0
+  const troco = recebido - preco
+  const suficiente = recebido >= preco
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onFechar}>
+      <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-white text-sm font-medium flex items-center gap-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            <Calculator size={14} style={{ color: ACCENT }} /> Pagamento em dinheiro
+          </p>
+          <button onClick={onFechar} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
+        </div>
+
+        <div className="flex items-center justify-between mb-4 px-3 py-2.5 rounded-xl" style={{ background: '#111', border: '1px solid #1c1c1c' }}>
+          <span className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>Valor a cobrar</span>
+          <span className="text-white text-sm font-bold" style={{ fontFamily: 'var(--font-outfit)' }}>{formatBRL(preco)}</span>
+        </div>
+
+        <label className="text-[#555] text-[10px] uppercase tracking-wider block mb-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+          Cliente entregou
+        </label>
+        <input
+          type="number" inputMode="decimal" placeholder="R$ 0,00" value={valorRecebido}
+          onChange={e => setValorRecebido(e.target.value)} min="0" step="0.01" autoFocus
+          className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-base outline-none focus:border-[#E8B84B]/40 mb-4"
+          style={{ fontFamily: 'var(--font-dm-sans)' }}
+        />
+
+        <div className="flex items-center justify-between mb-5 px-3 py-2.5 rounded-xl"
+          style={{ background: troco > 0 ? '#4ade8010' : '#111', border: `1px solid ${troco > 0 ? '#4ade8030' : '#1c1c1c'}` }}>
+          <span className="text-[#888] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>Troco</span>
+          <span className="text-sm font-bold" style={{ color: troco > 0 ? '#4ade80' : '#555', fontFamily: 'var(--font-outfit)' }}>
+            {formatBRL(Math.max(0, troco))}
+          </span>
+        </div>
+
+        {valorRecebido && !suficiente && (
+          <p className="text-red-400 text-xs text-center mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            Valor entregue é menor que o preço.
+          </p>
+        )}
+
+        <button type="button" onClick={onConfirmar} disabled={!suficiente}
+          className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707] disabled:opacity-30"
+          style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+          Confirmar pagamento
+        </button>
+      </div>
     </div>
   )
 }
