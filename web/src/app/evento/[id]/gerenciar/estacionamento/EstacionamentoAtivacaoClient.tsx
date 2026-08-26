@@ -3,17 +3,19 @@
 import { useState } from 'react'
 import { Car, Loader2 } from 'lucide-react'
 import { apiFetchAuth } from '@/lib/apiFetch'
+import { EstacionamentoTabs } from './EstacionamentoTabs'
 
 const ACCENT = '#E8B84B'
 
 interface Props {
-  eventoId:  string
+  eventoId:    string
+  eventoTitle: string
   ativoInicial: boolean
 }
 
 // Mesma lógica de handleAtivarEstacionamento() que vivia em
 // PainelOrganizador.tsx — só movida pra cá.
-export function EstacionamentoAtivacaoClient({ eventoId, ativoInicial }: Props) {
+export function EstacionamentoAtivacaoClient({ eventoId, eventoTitle, ativoInicial }: Props) {
   const [ativo, setAtivo]     = useState(ativoInicial)
   const [ativando, setAtivando] = useState(false)
   const [erro, setErro]       = useState<string | null>(null)
@@ -55,19 +57,5 @@ export function EstacionamentoAtivacaoClient({ eventoId, ativoInicial }: Props) 
     )
   }
 
-  return (
-    <div className="flex flex-col items-center text-center gap-3 py-10">
-      <Car size={28} className="text-[#E8B84B]" />
-      <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-        Configure locais, preços e caixas do estacionamento
-      </p>
-      <a
-        href={`/estacionamento/${eventoId}`}
-        className="px-4 py-2.5 rounded-xl text-sm font-semibold text-[#070707]"
-        style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}
-      >
-        Abrir gestão do estacionamento
-      </a>
-    </div>
-  )
+  return <EstacionamentoTabs eventoId={eventoId} eventoTitle={eventoTitle} />
 }

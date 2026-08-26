@@ -69,6 +69,13 @@ interface Caixa {
 interface Props {
   eventoId:    string
   eventoTitle: string
+  // Pedido do usuário (25/08/2026): antes só existia via navegação pra
+  // fora (/estacionamento/[eventoId]), atrás de um botão "Abrir gestão do
+  // estacionamento" em /evento/[id]/gerenciar/estacionamento. Agora o mesmo
+  // componente também aparece embutido ali dentro, numa aba — `embutido`
+  // esconde o header/título/botão Voltar próprios (redundantes dentro do
+  // shell do /gerenciar, que já tem os dois) sem duplicar a tela inteira.
+  embutido?:   boolean
 }
 
 const inp = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]'
@@ -321,7 +328,7 @@ function PortoesEditor({
   )
 }
 
-export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
+export function GerenciadorEstacionamentos({ eventoId, eventoTitle, embutido }: Props) {
   const router = useRouter()
   const [estacionamentos, setEstacionamentos] = useState<Estacionamento[]>([])
   const [caixas, setCaixas]                   = useState<Caixa[]>([])
@@ -416,24 +423,26 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
     await carregar()
   }
 
-  return (
-    <div className="min-h-dvh bg-[#070707]">
-      <div className="max-w-2xl mx-auto px-4 py-10 flex flex-col gap-8">
+  const conteudo = (
+    <>
+    <div className={embutido ? 'flex flex-col gap-8' : 'max-w-2xl mx-auto px-4 py-10 flex flex-col gap-8'}>
 
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-white text-2xl font-semibold flex items-center gap-2" style={{ fontFamily: 'var(--font-outfit)' }}>
-              <Car size={22} className="text-[#E8B84B]" />
-              Estacionamento
-            </h1>
-            <p className="text-[#555] text-sm mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>{eventoTitle}</p>
+        {!embutido && (
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-white text-2xl font-semibold flex items-center gap-2" style={{ fontFamily: 'var(--font-outfit)' }}>
+                <Car size={22} className="text-[#E8B84B]" />
+                Estacionamento
+              </h1>
+              <p className="text-[#555] text-sm mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>{eventoTitle}</p>
+            </div>
+            <button type="button" onClick={() => router.back()}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs shrink-0 transition-colors"
+              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
+              <ArrowLeft size={13} /> Voltar
+            </button>
           </div>
-          <button type="button" onClick={() => router.back()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs shrink-0 transition-colors"
-            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
-            <ArrowLeft size={13} /> Voltar
-          </button>
-        </div>
+        )}
 
         {erro && <p className="text-red-400 text-xs">{erro}</p>}
         {carregando && <Loader2 size={20} className="animate-spin text-[#E8B84B] mx-auto my-10" />}
@@ -627,8 +636,10 @@ export function GerenciadorEstacionamentos({ eventoId, eventoTitle }: Props) {
           onAberto={async () => { setModalCaixaAberto(null); await carregar() }}
         />
       )}
-    </div>
+    </>
   )
+
+  return embutido ? conteudo : <div className="min-h-dvh bg-[#070707]">{conteudo}</div>
 }
 
 // Criação E edição do local de estacionamento — mesmo formulário nos dois

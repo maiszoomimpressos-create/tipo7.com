@@ -8,13 +8,23 @@ interface Props {
 
 export default async function GerenciarEstacionamentoPage({ params }: Props) {
   const { id } = await params
-  const res = await apiFetchServer(`/api/eventos/${id}`)
+  const [res, acessoRes] = await Promise.all([
+    apiFetchServer(`/api/eventos/${id}`),
+    apiFetchServer(`/api/eventos/${id}/meu-acesso`),
+  ])
   if (!res.ok) notFound()
   const evento = await res.json() as { modulo_estacionamento: boolean }
+  const acesso = acessoRes.ok
+    ? await acessoRes.json() as { evento: { title: string | null } | null }
+    : { evento: null }
 
   return (
     <div className="p-6 max-w-3xl">
-      <EstacionamentoAtivacaoClient eventoId={id} ativoInicial={evento.modulo_estacionamento ?? false} />
+      <EstacionamentoAtivacaoClient
+        eventoId={id}
+        eventoTitle={acesso.evento?.title ?? 'Evento'}
+        ativoInicial={evento.modulo_estacionamento ?? false}
+      />
     </div>
   )
 }
