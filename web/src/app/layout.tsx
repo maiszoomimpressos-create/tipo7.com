@@ -3,6 +3,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Syne, DM_Sans, Outfit } from 'next/font/google'
 import { Providers } from '@/components/layout/Providers'
+import { RegistrarServiceWorker } from '@/components/RegistrarServiceWorker'
 import './globals.css'
 
 // Fonte de display — usada no logo e elementos de marca
@@ -55,6 +56,7 @@ export default function RootLayout({
       className={`${syne.variable} ${outfit.variable} ${dmSans.variable}`}
     >
       <body className="min-h-dvh flex flex-col">
+        <RegistrarServiceWorker />
         {/* Providers envolve toda a app — disponibiliza AuthContext em todos os componentes */}
         <Providers>
           {children}
