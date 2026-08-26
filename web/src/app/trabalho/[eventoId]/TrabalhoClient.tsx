@@ -47,12 +47,19 @@ export function TrabalhoClient({
   const [pinDefinido, setPinDefinido] = useState(acessoCaixa?.pinDefinido ?? false)
   const [verAcesso, setVerAcesso]     = useState(false)
 
-  const acessos = buildAcessos(eventoId, permissoes, isOwner)
-    .filter(a => !(a.perm.includes('vender_ingresso') && caixaDesignado))
-
   const caixaHref = caixaDesignado
     ? (caixaDesignado.estacionamentoId ? `/estacionamento/${eventoId}` : `/bilheteria/${eventoId}/caixa/${caixaDesignado.id}`)
     : null
+
+  // Achado do usuário (25/08/2026): "Seu caixa" e a ferramenta correspondente
+  // (Bilheteria ou Estacionamento) levavam pro MESMO link quando o caixa
+  // designado é de estacionamento — apareciam os 2 cards duplicados, sem
+  // indicar em nenhum dos dois se tinha dinheiro/status. Antes só filtrava
+  // o caso de Bilheteria (comparando a permissão); generalizado pra
+  // comparar o destino em si — qualquer ferramenta que já leve pra onde
+  // "Seu caixa" leva não precisa aparecer de novo solta.
+  const acessos = buildAcessos(eventoId, permissoes, isOwner)
+    .filter(a => a.href !== caixaHref)
 
   // Lista de tipos de ingresso só faz sentido pra quem vende (ou pro
   // organizador). Quem é só estacionamento/scanner não precisa ver isso.
