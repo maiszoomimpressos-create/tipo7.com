@@ -442,3 +442,51 @@ perguntando até fechar):
 
 Nada implementado ainda — feature grande, não cabe na semana corrente
 junto com A/B/C.1/E. Fica registrada aqui conforme a especificação avança.
+
+## Pagamento no Estacionamento (Dinheiro/PIX/Cartão) — registrado (25-26/08/2026)
+
+Achado do usuário testando a tela de atendente: os 3 botões de forma de
+pagamento (Dinheiro/PIX/Cartão) tinham pesos bem diferentes — Dinheiro já
+ganhou um mini-PDV com cálculo de troco (✅ implementado, `AtendenteClient.tsx`
+— `ModalTrocoDinheiro`), mas PIX e Cartão só marcavam a escolha e voltavam
+pro formulário, sem nenhuma confirmação real. Levantamento feito:
+
+- **Cartão** — depende 100% da maquininha física (GPOS780 + adquirente
+  ainda não escolhido). Sem confirmação real possível até essa peça
+  existir. Decisão: por enquanto, confirmação **de procedimento**
+  ("confirma que a maquininha aprovou?"), mesmo nível do que existia pro
+  Dinheiro antes do troco — não implementado ainda.
+- **PIX** — **viável fazer de verdade já**, reaproveitando a integração
+  PagBank que **já existe e funciona**, hoje só pra Bilheteria
+  (`server/src/bilheteria/bilheteria.service.ts` — `criarPix()`,
+  `statusPix()`, `confirmarPix()`, usa `pagbank-pix.util.ts`). Precisa
+  generalizar esse fluxo (hoje amarrado a um `Order` de ingresso) pra
+  funcionar em cima de uma cobrança de vaga de estacionamento. Não
+  implementado ainda — usuário vai decidir se entra agora ou fica pra
+  próxima rodada.
+
+### Levantamento: a integração da maquininha (cartão físico) serve pro site?
+
+Pergunta do usuário, resposta registrada:
+
+- **PIX**: sim, **já é a mesma peça em todo lugar** — é só API + mostrar QR
+  code, não depende de hardware nenhum. O PagBank que o site usa pra venda
+  online é o mesmo que a Bilheteria já usa presencial, e vai ser o mesmo do
+  Estacionamento. Se PIX aparecer na maquininha um dia, continua sendo essa
+  mesma peça (só mostra o QR na telinha do aparelho).
+- **Cartão físico**: **não, nunca vai ser a mesma integração**, mesmo
+  escolhendo o mesmo adquirente pros dois — são categorias tecnicamente
+  diferentes. Site = "cartão sem cartão presente" (cliente digita o
+  número, vira chamada de API). Maquininha = "cartão com cartão presente"
+  (chip/aproximação lido por hardware, controlado por **SDK nativo**
+  instalado no próprio aparelho — não é API web, não roda no navegador).
+  Não dá pra reaproveitar código entre os dois, por natureza técnica.
+- **O que continua valendo** escolher o mesmo adquirente (PagBank,
+  recomendação já registrada em [[project_maquininha_cartao_e_sync_abas]]):
+  não é código compartilhado, é **conciliação financeira** — venda online +
+  PIX presencial + cartão da maquininha caindo na mesma conta/extrato/taxa,
+  em vez de vários adquirentes espalhados.
+
+**Combinado**: assim que o módulo de Estacionamento estiver fechado, entra
+o trabalho de integração da maquininha (SDK nativo, adquirente ainda a
+decidir).
