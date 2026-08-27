@@ -30,6 +30,10 @@ interface CaixaLote {
   // sozinho, é só pra registrar "esse caixa vai abrir tal dia/hora" pra
   // planejamento da equipe. ISO datetime.
   horario_previsto?: string;
+  // Local de bilheteria (pedido do usuário, 27/08/2026) — mesmo papel que
+  // estacionamentoId tem pro estacionamento. Opcional: sem isso o caixa
+  // continua "geral", sem local designado (comportamento de sempre).
+  bilheteriaId?: string;
 }
 
 @Injectable()
@@ -155,6 +159,16 @@ export class CaixasService {
       for (const l of locais) estacionamentoNomeMap[l.id] = l.nome;
     }
 
+    const bilheteriaIds = [...new Set(caixas.map((c) => c.bilheteriaId).filter((v): v is string => !!v))];
+    const bilheteriaNomeMap: Record<string, string> = {};
+    if (bilheteriaIds.length > 0) {
+      const locais = await this.prisma.bilheteria.findMany({
+        where: { id: { in: bilheteriaIds } },
+        select: { id: true, nome: true },
+      });
+      for (const l of locais) bilheteriaNomeMap[l.id] = l.nome;
+    }
+
     const result = await Promise.all(
       caixas.map(async (c) => {
         const trans = await this.prisma.caixaTransferencia.findMany({
@@ -194,6 +208,7 @@ export class CaixasService {
           operadorEmail: c.operadorId ? (emailMap[c.operadorId] ?? null) : null,
           operadorCode: c.operadorId ? (codeMap[c.operadorId] ?? null) : null,
           estacionamentoNome: c.estacionamentoId ? (estacionamentoNomeMap[c.estacionamentoId] ?? null) : null,
+          bilheteriaNome: c.bilheteriaId ? (bilheteriaNomeMap[c.bilheteriaId] ?? null) : null,
           saldoIngressos: c.controlaIngressosFisicos ? c.ingressosAlocados + recebidos - enviados - vendidos : null,
           vendidos, recebidos, enviados,
           totalDinheiro, totalPix, totalCartao,
@@ -268,7 +283,7 @@ export class CaixasService {
   async getMeuCaixaAberto(userId: string, eventoId: string) {
     const caixa = await this.prisma.caixa.findFirst({
       where: { eventoId, operadorId: userId, status: 'aberto' },
-      select: { id: true, nome: true, estacionamentoId: true },
+      select: { id: true, nome: true, estacionamentoId: true, bilheteriaId: true },
     });
     return caixa ?? null;
   }
@@ -314,10 +329,23 @@ export class CaixasService {
 
     const isOwner = await this.orgAdmin.isOrgAdmin(caixa.evento.organizationId, userId);
     const isOperador = caixa.operadorId === userId;
-    const isVendedor =
+    let isVendedor =
       !isOwner && !isOperador
         ? await this.eventPermissions.hasEventPermission(userId, caixa.eventoId, 'vender_ingresso')
         : false;
+    // Isolamento por local de bilheteria (pedido do usuário, 27/08/2026,
+    // mesma trava que já existe pro estacionamento em
+    // EstacionamentoService.entrada) — o fallback "vendedor" acima libera
+    // QUALQUER staff com vender_ingresso, mesmo sem ser o operador
+    // designado deste caixa; sem isso, alguém do local A conseguia vender
+    // no caixa do local B só por ter a permissão no evento. Só restringe
+    // quem TEM um local designado (via o próprio caixa aberto) — vendedor
+    // "solto" (sem caixa próprio, sem local) continua podendo cobrir
+    // qualquer caixa geral, comportamento de sempre.
+    if (isVendedor && caixa.bilheteriaId) {
+      const bilheteriaRestrita = await this.eventPermissions.getStaffBilheteria(userId, caixa.eventoId);
+      if (bilheteriaRestrita && bilheteriaRestrita !== caixa.bilheteriaId) isVendedor = false;
+    }
     if (!isOwner && !isOperador && !isVendedor) {
       throw new ForbiddenException('Você não tem permissão para acessar este caixa.');
     }
@@ -554,6 +582,21 @@ export class CaixasService {
       throw new BadRequestException('Um operador não pode operar dois caixas ao mesmo tempo.');
     }
 
+    // Local de bilheteria (27/08/2026) — validar que todo bilheteriaId
+    // informado existe e pertence a este evento, mesmo padrão de
+    // estacionamentoId em EstacionamentoService.abrirCaixa().
+    const bilheteriaIdsLote = [...new Set(body.caixas.filter((c) => c.bilheteriaId).map((c) => c.bilheteriaId!))];
+    if (bilheteriaIdsLote.length > 0) {
+      const locais = await this.prisma.bilheteria.findMany({
+        where: { id: { in: bilheteriaIdsLote }, eventId: body.eventoId },
+        select: { id: true },
+      });
+      const idsValidos = new Set(locais.map((l) => l.id));
+      for (const id of bilheteriaIdsLote) {
+        if (!idsValidos.has(id)) throw new NotFoundException('Local de bilheteria não encontrado neste evento');
+      }
+    }
+
     if (operadoresLote.length > 0) {
       const caixasComOp = await this.prisma.caixa.findMany({
         where: { eventoId: body.eventoId, status: 'aberto', operadorId: { in: operadoresLote } },
@@ -577,6 +620,7 @@ export class CaixasService {
             controlaIngressosFisicos: c.controla_ingressos_fisicos ?? false,
             createdBy: userId,
             horarioPrevisto: c.horario_previsto ? new Date(c.horario_previsto) : null,
+            bilheteriaId: c.bilheteriaId ?? null,
           },
         }),
       ),
@@ -603,9 +647,37 @@ export class CaixasService {
 
     const acessoOwner = await this.garantirAcessoOwnerParaSangria(body.eventoId, userId);
 
+    // Token de cada operador designado (pedido do usuário, 27/08/2026) —
+    // abrir caixa é autorização, não deveria depender da pessoa catar o
+    // token sozinha depois em "Meus trabalhos". Só pra quem já é staff
+    // ATIVO (já aceitou convite antes) — quem acabou de ser convidado agora
+    // mesmo (upsert 'pending' acima) ainda não tem token: continua
+    // dependendo do fluxo normal de aceitar o convite, não muda aqui.
+    const operadoresAcesso: { caixa_id: string; caixa_nome: string; operador_id: string; staff_id: string; token: string | null; precisa_criar_pin: boolean }[] = [];
+    if (operadoresLote.length > 0) {
+      const ativos = await this.prisma.eventStaff.findMany({
+        where: { eventId: body.eventoId, userId: { in: operadoresLote }, status: 'active' },
+        select: { userId: true },
+      });
+      for (const op of ativos) {
+        const caixaDoOperador = criados.find((c) => c.operadorId === op.userId);
+        if (!caixaDoOperador) continue;
+        const acesso = await this.garantirAcessoOwnerParaSangria(body.eventoId, op.userId);
+        operadoresAcesso.push({
+          caixa_id: caixaDoOperador.id,
+          caixa_nome: caixaDoOperador.nome,
+          operador_id: op.userId,
+          staff_id: acesso.staffId,
+          token: acesso.token,
+          precisa_criar_pin: acesso.precisaCriarPin,
+        });
+      }
+    }
+
     return {
       caixas: criados,
       owner_acesso: { staff_id: acessoOwner.staffId, token: acessoOwner.token, precisa_criar_pin: acessoOwner.precisaCriarPin },
+      operadores_acesso: operadoresAcesso,
     };
   }
 
@@ -952,5 +1024,62 @@ export class CaixasService {
     if (staff?.pinHash && (await bcrypt.compare(codigo, staff.pinHash))) return true;
 
     return this.authCore.verifyPassword(ownerId, codigo);
+  }
+
+  // ==== Locais de bilheteria (pedido do usuário, 27/08/2026) ====
+  // CRUD bem mais simples que o de Estacionamento (sem preço/portão/vagas —
+  // ver decisão explícita do usuário: todo local vende o mesmo catálogo de
+  // ingressos do evento, a separação é só de operação/dinheiro).
+
+  async listBilheterias(userId: string, eventoId: string) {
+    if (!(await this.eventPermissions.isEventOwner(userId, eventoId))) throw new ForbiddenException('Sem permissão');
+
+    const bilheterias = await this.prisma.bilheteria.findMany({
+      where: { eventId: eventoId },
+      orderBy: { createdAt: 'asc' },
+    });
+    return { bilheterias };
+  }
+
+  async criarBilheteria(userId: string, eventoId: string, body: { nome?: string }) {
+    if (!(await this.eventPermissions.isEventOwner(userId, eventoId))) throw new ForbiddenException('Sem permissão');
+    if (!body.nome?.trim()) throw new BadRequestException('Nome é obrigatório');
+
+    const existentes = await this.prisma.bilheteria.findMany({
+      where: { eventId: eventoId, ativo: true },
+      select: { nome: true },
+    });
+    if (existentes.some((b) => b.nome === body.nome!.trim())) {
+      throw new BadRequestException(`Já existe um local de bilheteria chamado "${body.nome.trim()}".`);
+    }
+
+    const criado = await this.prisma.bilheteria.create({
+      data: { eventId: eventoId, nome: body.nome.trim(), createdBy: userId },
+    });
+    return { ok: true, bilheteria: criado };
+  }
+
+  async atualizarBilheteria(userId: string, eventoId: string, bilheteriaId: string, body: { nome?: string; ativo?: boolean }) {
+    if (!(await this.eventPermissions.isEventOwner(userId, eventoId))) throw new ForbiddenException('Sem permissão');
+
+    const data: Record<string, unknown> = {};
+    if (body.nome !== undefined) data.nome = body.nome.trim();
+    if (body.ativo !== undefined) data.ativo = body.ativo;
+
+    await this.prisma.bilheteria.updateMany({ where: { id: bilheteriaId, eventId: eventoId }, data });
+    return { ok: true };
+  }
+
+  async removerBilheteria(userId: string, eventoId: string, bilheteriaId: string) {
+    if (!(await this.eventPermissions.isEventOwner(userId, eventoId))) throw new ForbiddenException('Sem permissão');
+
+    const caixaAberto = await this.prisma.caixa.findFirst({
+      where: { bilheteriaId, status: 'aberto' },
+      select: { id: true },
+    });
+    if (caixaAberto) throw new BadRequestException('Existe caixa aberto vinculado a este local de bilheteria.');
+
+    await this.prisma.bilheteria.deleteMany({ where: { id: bilheteriaId, eventId: eventoId } });
+    return { ok: true };
   }
 }

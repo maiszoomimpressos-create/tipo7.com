@@ -124,6 +124,8 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/eventos/:id/caixas',
   '/api/eventos/:id/estacionamentos',
   '/api/eventos/:id/estacionamentos/:path*',
+  '/api/eventos/:id/bilheterias',
+  '/api/eventos/:id/bilheterias/:path*',
   '/api/caixas/:path*',
   '/api/estacionamento/:path*',
   '/api/scanner/validate',

@@ -78,4 +78,31 @@ export class CaixasController {
   excluir(@CurrentUser() user: AuthenticatedUser, @Param('caixaId') caixaId: string) {
     return this.caixas.excluir(user.id, caixaId);
   }
+
+  // ==== Locais de bilheteria (pedido do usuário, 27/08/2026) ====
+
+  @Get('eventos/:id/bilheterias')
+  listBilheterias(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.caixas.listBilheterias(user.id, id);
+  }
+
+  @Post('eventos/:id/bilheterias')
+  criarBilheteria(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: { nome?: string }) {
+    return this.caixas.criarBilheteria(user.id, id, body);
+  }
+
+  @Patch('eventos/:id/bilheterias/:bilheteriaId')
+  atualizarBilheteria(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('bilheteriaId') bilheteriaId: string,
+    @Body() body: { nome?: string; ativo?: boolean },
+  ) {
+    return this.caixas.atualizarBilheteria(user.id, id, bilheteriaId, body);
+  }
+
+  @Delete('eventos/:id/bilheterias/:bilheteriaId')
+  removerBilheteria(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Param('bilheteriaId') bilheteriaId: string) {
+    return this.caixas.removerBilheteria(user.id, id, bilheteriaId);
+  }
 }

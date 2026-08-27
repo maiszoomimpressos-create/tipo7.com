@@ -10,6 +10,7 @@ import {
   Calculator, Pencil, PiggyBank, Clock, Calendar, MapPin,
 } from 'lucide-react'
 import { BlocoTokenPin, type AcessoCaixa } from '@/components/BlocoTokenPin'
+import { TokenParaOperador } from '@/components/TokenParaOperador'
 
 function formatarHorarioPrevisto(iso: string) {
   const d = new Date(iso)
@@ -50,6 +51,9 @@ interface CaixaConfig {
   // abrir caixa também significa "alguém está com o fundo de troco em mãos").
   // Valor de <input type="datetime-local"> — string vazia = não informado.
   horarioPrevisto:    string
+  // Local de bilheteria (pedido do usuário, 27/08/2026) — null = caixa
+  // "geral", sem local designado (comportamento de sempre).
+  bilheteriaId:       string | null
 }
 
 interface MembroEquipe {
@@ -58,6 +62,12 @@ interface MembroEquipe {
   cargo:    string | null
   email:    string | null
   userCode: string | null
+}
+
+interface Bilheteria {
+  id:    string
+  nome:  string
+  ativo: boolean
 }
 
 interface CaixaAberto {
@@ -69,6 +79,9 @@ interface CaixaAberto {
   operadorEmail:      string | null
   operadorCode:       string | null
   horarioPrevisto:    string | null
+  // Local de bilheteria (pedido do usuário, 27/08/2026) — null = caixa geral.
+  bilheteriaId:       string | null
+  bilheteriaNome:     string | null
   // Achado real (10/08/2026): a resposta de GET /eventos/:id/caixas espalha
   // o objeto Prisma inteiro (camelCase) — esses 2 campos estavam declarados
   // em snake_case aqui, nunca batendo com o runtime de verdade. Corrigido
@@ -108,7 +121,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
     ativo: boolean; saldo_atual: number; meta_reserva: number; aviso_disparado: boolean
   } | null>(null)
   const [configs, setConfigs]     = useState<CaixaConfig[]>([
-    { nome: 'Caixa A', fundo_inicial: 0, ingressos_alocados: 0, controla_ingressos_fisicos: false, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '' },
+    { nome: 'Caixa A', fundo_inicial: 0, ingressos_alocados: 0, controla_ingressos_fisicos: false, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '', bilheteriaId: null },
   ])
   const [equipe, setEquipe]             = useState<MembroEquipe[]>([])
   const [salvando, setSalvando]         = useState(false)
@@ -119,6 +132,59 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
   // Sangria (20/08/2026) — ver project_token_pin_acesso_caixa na memória.
   // Só vem preenchido na 1ª vez que o dono abre um caixa nesse evento.
   const [acessoOwner, setAcessoOwner] = useState<AcessoCaixa | null>(null)
+  // Token de cada operador designado no lote que acabou de abrir (pedido do
+  // usuário, 27/08/2026) — mesmo raciocínio de acessoOwner acima, só que
+  // pra quem foi designado, não pro dono. Lista porque um lote pode abrir
+  // vários caixas com operadores diferentes de uma vez.
+  const [operadoresAcesso, setOperadoresAcesso] = useState<{ caixaNome: string; operadorNome: string; token: string | null }[]>([])
+
+  const [bilheterias, setBilheterias] = useState<Bilheteria[]>([])
+  const [carregandoBilheterias, setCarregandoBilheterias] = useState(false)
+  const [novoLocalNome, setNovoLocalNome] = useState('')
+  const [salvandoLocal, setSalvandoLocal] = useState(false)
+
+  const carregarBilheterias = useCallback(async () => {
+    setCarregandoBilheterias(true)
+    try {
+      const r = await apiFetchAuth(`/api/eventos/${eventoId}/bilheterias`)
+      const d = r.ok ? await r.json() : { bilheterias: [] }
+      setBilheterias(d.bilheterias ?? [])
+    } catch { /* silencioso */ }
+    finally { setCarregandoBilheterias(false) }
+  }, [eventoId])
+
+  useEffect(() => { carregarBilheterias() }, [carregarBilheterias])
+
+  async function criarLocal() {
+    if (!novoLocalNome.trim()) return
+    setSalvandoLocal(true)
+    try {
+      const res = await apiFetchAuth(`/api/eventos/${eventoId}/bilheterias`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: novoLocalNome.trim() }),
+      })
+      if (res.ok) { setNovoLocalNome(''); await carregarBilheterias() }
+    } finally {
+      setSalvandoLocal(false)
+    }
+  }
+
+  async function renomearLocal(id: string, nome: string) {
+    await apiFetchAuth(`/api/eventos/${eventoId}/bilheterias/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nome }),
+    })
+    await carregarBilheterias()
+  }
+
+  async function desativarLocal(id: string) {
+    await apiFetchAuth(`/api/eventos/${eventoId}/bilheterias/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ativo: false }),
+    })
+    setConfigs(c => c.map(cfg => cfg.bilheteriaId === id ? { ...cfg, bilheteriaId: null } : cfg))
+    await carregarBilheterias()
+  }
 
   const [carregandoEquipe, setCarregandoEquipe] = useState(false)
 
@@ -213,14 +279,14 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
     const existentes = [...caixas.map(c => c.nome), ...configs.map(c => c.nome)]
     setConfigs(c => [...c, {
       nome: nomeCaixaUnico(existentes), fundo_inicial: 0, ingressos_alocados: 0, controla_ingressos_fisicos: false,
-      tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '',
+      tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '', bilheteriaId: null,
     }])
   }
 
   function iniciarNovoCaixa() {
     const nome = nomeCaixaUnico(caixas.map(c => c.nome))
     setFase('configurando')
-    setConfigs([{ nome, fundo_inicial: 0, ingressos_alocados: 0, controla_ingressos_fisicos: false, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '' }])
+    setConfigs([{ nome, fundo_inicial: 0, ingressos_alocados: 0, controla_ingressos_fisicos: false, tipoOperador: 'nenhum', operadorId: null, operadorNome: null, nomeOperadorLivre: '', horarioPrevisto: '', bilheteriaId: null }])
   }
 
   function removeCaixa(i: number) {
@@ -277,6 +343,7 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
         ? { nomeOperador: c.nomeOperadorLivre.trim() }
         : {}),
       ...(c.horarioPrevisto ? { horario_previsto: new Date(c.horarioPrevisto).toISOString() } : {}),
+      ...(c.bilheteriaId ? { bilheteriaId: c.bilheteriaId } : {}),
     }))
     const res = await apiFetchAuth('/api/caixas/abrir', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -295,6 +362,19 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
         token:       data.owner_acesso.token,
         pinDefinido: !data.owner_acesso.precisa_criar_pin,
       })
+    }
+    // Token de cada operador designado no lote (pedido do usuário,
+    // 27/08/2026) — ver comentário no estado operadoresAcesso acima.
+    type OperadorAcessoResp = { caixa_nome: string; operador_id: string; token: string | null }
+    const operadores: OperadorAcessoResp[] = data.operadores_acesso ?? []
+    if (operadores.length > 0) {
+      setOperadoresAcesso(operadores.map(op => ({
+        caixaNome:    op.caixa_nome,
+        operadorNome: configs.find(c => c.operadorId === op.operador_id)?.operadorNome
+          ?? equipe.find(m => m.userId === op.operador_id)?.nome
+          ?? 'Operador',
+        token: op.token,
+      })))
     }
     await carregarCaixas()
   }
@@ -446,6 +526,60 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
               <div className="absolute top-1 w-4 h-4 rounded-full bg-white transition-all"
                    style={{ left: ativarSaldo ? '26px' : '4px' }} />
             </button>
+          </div>
+
+          {/* Locais de bilheteria (pedido do usuário, 27/08/2026) — evento
+              com mais de um ponto físico de venda (ex.: "Bilheteria A"/"B")
+              precisa agrupar caixas por local e isolar quem opera onde,
+              mesma ideia que já existe pro estacionamento. Opcional: sem
+              nenhum local cadastrado, tudo continua "geral" como sempre foi. */}
+          <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: '#0d0d0d', border: '1px solid #1a1a1a' }}>
+            <div className="flex items-center gap-2">
+              <MapPin size={14} style={{ color: ACCENT }} />
+              <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Locais de bilheteria
+              </p>
+              {carregandoBilheterias && <Loader2 size={12} className="animate-spin text-[#444]" />}
+            </div>
+            <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Opcional — só cadastre se o evento tem mais de um ponto físico de venda (ex.: &quot;Bilheteria A&quot; e &quot;Bilheteria B&quot;). Isso isola quem opera onde: um vendedor designado a um local não acessa caixa de outro.
+            </p>
+
+            {bilheterias.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                {bilheterias.filter(b => b.ativo).map(b => (
+                  <div key={b.id} className="flex items-center justify-between px-3 py-2 rounded-xl"
+                       style={{ background: '#111', border: '1px solid #1e1e1e' }}>
+                    <input
+                      defaultValue={b.nome}
+                      onBlur={e => { if (e.target.value.trim() && e.target.value.trim() !== b.nome) renomearLocal(b.id, e.target.value.trim()) }}
+                      className="flex-1 bg-transparent text-white text-sm outline-none"
+                      style={{ fontFamily: 'var(--font-dm-sans)' }}
+                    />
+                    <button type="button" onClick={() => desativarLocal(b.id)}
+                      className="text-[#333] hover:text-red-400 transition-colors shrink-0">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <input
+                value={novoLocalNome}
+                onChange={e => setNovoLocalNome(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); criarLocal() } }}
+                placeholder="Nome do novo local (ex.: Bilheteria A)"
+                className="flex-1 bg-[#111] border border-[#1e1e1e] rounded-xl px-3 py-2.5 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#333]"
+                style={{ fontFamily: 'var(--font-dm-sans)' }}
+              />
+              <button type="button" onClick={criarLocal} disabled={!novoLocalNome.trim() || salvandoLocal}
+                className="px-3 rounded-xl text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                style={{ background: '#111', border: `1px solid ${ACCENT}30`, color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+                {salvandoLocal ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} Adicionar
+              </button>
+            </div>
           </div>
 
           {/* Lista de caixas */}
@@ -638,6 +772,28 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
                     />
                   )}
 
+                  {/* Local de bilheteria (pedido do usuário, 27/08/2026) —
+                      só aparece se tiver algum local cadastrado acima. Sem
+                      local nenhum cadastrado, o caixa continua "geral". */}
+                  {bilheterias.filter(b => b.ativo).length > 0 && (
+                    <div className="mt-2.5">
+                      <label className="text-[#555] text-[11px] mb-1 block" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                        Local de bilheteria
+                      </label>
+                      <select
+                        value={cfg.bilheteriaId ?? ''}
+                        onChange={e => updateConfig(i, 'bilheteriaId', e.target.value || null)}
+                        className="w-full bg-[#111] border border-[#1e1e1e] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#E8B84B]/40"
+                        style={{ fontFamily: 'var(--font-dm-sans)' }}
+                      >
+                        <option value="">Geral (nenhum local específico)</option>
+                        {bilheterias.filter(b => b.ativo).map(b => (
+                          <option key={b.id} value={b.id}>{b.nome}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   {/* Só informativo — não abre o caixa sozinho, é pra
                       planejamento da equipe (pedido do usuário, 10/08/2026) */}
                   <div className="mt-2.5">
@@ -731,6 +887,34 @@ export function GerenciadorCaixas({ eventoId, eventoTitle, eventoDate, eventoLoc
               style={{ borderColor: '#222', color: '#888' }}
             >
               Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {operadoresAcesso.length > 0 && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6 max-h-[85vh] overflow-y-auto">
+            <p className="text-white text-sm font-medium mb-1 flex items-center gap-1.5">
+              <CheckCircle2 size={14} className="text-green-400" /> Caixas abertos
+            </p>
+            <p className="text-[#666] text-xs mb-4">
+              Repasse cada token pra quem vai operar o caixa correspondente.
+            </p>
+            <div className="flex flex-col gap-3">
+              {operadoresAcesso.map((op, i) => (
+                <div key={i}>
+                  <p className="text-[#555] text-[10px] uppercase tracking-wider mb-1.5">{op.caixaNome}</p>
+                  <TokenParaOperador nome={op.operadorNome} token={op.token} />
+                </div>
+              ))}
+            </div>
+            <button
+              type="button" onClick={() => setOperadoresAcesso([])}
+              className="w-full mt-3 py-3 rounded-xl text-sm font-semibold text-[#070707]"
+              style={{ background: '#E8B84B' }}
+            >
+              Concluir
             </button>
           </div>
         </div>
@@ -1027,6 +1211,12 @@ function CaixaCard({ caixa, eventoId, fechado = false, onSalvo }: { caixa: Caixa
                 <span className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)', opacity: fechado ? 0.5 : 1 }}>
                   {caixa.nome}
                 </span>
+                {caixa.bilheteriaNome && (
+                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px]"
+                        style={{ background: '#111', color: '#888', border: '1px solid #1e1e1e' }}>
+                    <MapPin size={9} /> {caixa.bilheteriaNome}
+                  </span>
+                )}
               </div>
               {caixa.operadorName && (
                 <div className="ml-[18px] flex flex-col gap-0.5">

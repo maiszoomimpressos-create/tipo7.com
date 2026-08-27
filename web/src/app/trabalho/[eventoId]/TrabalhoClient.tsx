@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   ArrowLeft, Calendar, MapPin, Shield,
-  ShoppingCart, CheckCircle2, ChevronRight, Ticket, KeyRound,
+  ShoppingCart, CheckCircle2, ChevronRight, Ticket, KeyRound, Car,
 } from 'lucide-react'
 import { TrabalhoDashboard } from './TrabalhoDashboard'
 import { BlocoTokenPin, type AcessoCaixa } from '@/components/BlocoTokenPin'
@@ -50,6 +50,14 @@ export function TrabalhoClient({
   const caixaHref = caixaDesignado
     ? (caixaDesignado.estacionamentoId ? `/estacionamento/${eventoId}` : `/bilheteria/${eventoId}/caixa/${caixaDesignado.id}`)
     : null
+
+  // Achado do usuário (27/08/2026): o card "Seu caixa" mostrava só o nome
+  // livre digitado na abertura (ex.: "nm tutoriais") — quem via o card não
+  // tinha como saber se aquele caixa era de Bilheteria ou de Estacionamento.
+  // Mesma distinção (ícone + cor) que buildAcessos usa pras ferramentas.
+  const caixaTipo = caixaDesignado?.estacionamentoId
+    ? { label: 'Estacionamento', icon: Car, cor: '#38bdf8' }
+    : { label: 'Bilheteria', icon: ShoppingCart, cor: ACCENT }
 
   // Achado do usuário (25/08/2026): "Seu caixa" e a ferramenta correspondente
   // (Bilheteria ou Estacionamento) levavam pro MESMO link quando o caixa
@@ -168,22 +176,22 @@ export function TrabalhoClient({
           <a
             href={caixaHref!}
             className="flex items-center justify-between px-3 py-3 rounded-xl transition-all hover:brightness-110 active:scale-[0.98]"
-            style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}30` }}
+            style={{ background: `${caixaTipo.cor}08`, border: `1px solid ${caixaTipo.cor}30` }}
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${ACCENT}15` }}>
-                <ShoppingCart size={12} style={{ color: ACCENT }} />
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${caixaTipo.cor}15` }}>
+                <caixaTipo.icon size={12} style={{ color: caixaTipo.cor }} />
               </div>
               <div>
                 <p className="text-[#666] text-[9px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Seu caixa
+                  Seu caixa · {caixaTipo.label}
                 </p>
                 <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                   {caixaDesignado.nome}
                 </p>
               </div>
             </div>
-            <ChevronRight size={13} style={{ color: ACCENT + '70' }} />
+            <ChevronRight size={13} style={{ color: caixaTipo.cor + '70' }} />
           </a>
         )}
 
@@ -276,22 +284,22 @@ export function TrabalhoClient({
             <a
               href={caixaHref!}
               className="flex items-center justify-between px-4 py-4 rounded-2xl transition-all hover:brightness-110 active:scale-[0.98]"
-              style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}35` }}
+              style={{ background: `${caixaTipo.cor}08`, border: `1px solid ${caixaTipo.cor}35` }}
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${ACCENT}15` }}>
-                  <ShoppingCart size={18} style={{ color: ACCENT }} />
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${caixaTipo.cor}15` }}>
+                  <caixaTipo.icon size={18} style={{ color: caixaTipo.cor }} />
                 </div>
                 <div>
                   <p className="text-[#888] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Seu caixa designado
+                    Seu caixa designado · {caixaTipo.label}
                   </p>
                   <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
                     {caixaDesignado.nome}
                   </p>
                 </div>
               </div>
-              <ChevronRight size={16} style={{ color: ACCENT + '80' }} />
+              <ChevronRight size={16} style={{ color: caixaTipo.cor + '80' }} />
             </a>
           )}
 

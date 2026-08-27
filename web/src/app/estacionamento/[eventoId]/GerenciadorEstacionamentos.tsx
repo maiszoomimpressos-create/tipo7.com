@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { BlocoTokenPin, type AcessoCaixa } from '@/components/BlocoTokenPin'
+import { TokenParaOperador } from '@/components/TokenParaOperador'
 
 const ACCENT = '#E8B84B'
 
@@ -912,6 +913,10 @@ function AbrirCaixaModal({ eventoId, estacionamento, onFechar, onAberto }: {
   // Sangria (20/08/2026) — ver project_token_pin_acesso_caixa na memória.
   // Só vem preenchido quando o dono ainda não tem PIN configurado.
   const [acessoOwner, setAcessoOwner] = useState<AcessoCaixa | null>(null)
+  // Token de quem foi designado operador (achado do usuário, 27/08/2026) —
+  // mesmo raciocínio de AbrirCaixaMembroModal em PainelEquipe.tsx: abrir
+  // caixa é autorização, o dono precisa poder repassar o token na hora.
+  const [operadorAcesso, setOperadorAcesso] = useState<{ nome: string; token: string | null } | null>(null)
 
   const salvar = async () => {
     if (!nome.trim()) return
@@ -929,7 +934,9 @@ function AbrirCaixaModal({ eventoId, estacionamento, onFechar, onAberto }: {
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.message ?? data.error ?? 'Erro ao abrir caixa'); return }
-      if (data.owner_acesso?.precisa_criar_pin) {
+      if (data.operador_acesso) {
+        setOperadorAcesso({ nome: operador.trim(), token: data.operador_acesso.token ?? null })
+      } else if (data.owner_acesso?.precisa_criar_pin) {
         setAcessoOwner({
           staffId:     data.owner_acesso.staff_id,
           token:       data.owner_acesso.token,
@@ -941,6 +948,29 @@ function AbrirCaixaModal({ eventoId, estacionamento, onFechar, onAberto }: {
     } finally {
       setSalvando(false)
     }
+  }
+
+  if (operadorAcesso) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6">
+          <p className="text-white text-sm font-medium mb-1 flex items-center gap-1.5">
+            <Wallet size={14} className="text-green-400" /> Caixa aberto
+          </p>
+          <p className="text-[#666] text-xs mb-4">
+            Repasse esse token pra {operadorAcesso.nome} entrar no caixa dela.
+          </p>
+          <TokenParaOperador nome={operadorAcesso.nome} token={operadorAcesso.token} />
+          <button
+            type="button" onClick={onAberto}
+            className="w-full mt-3 py-3 rounded-xl text-sm font-semibold text-[#070707]"
+            style={{ background: '#E8B84B' }}
+          >
+            Concluir
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (acessoOwner) {
