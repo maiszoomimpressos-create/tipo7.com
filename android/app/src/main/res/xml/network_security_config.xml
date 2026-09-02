@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Libera http:// (sem TLS) só pro cenário de dev na rede local — o IP da
+     máquina que roda `npm run dev` não tem certificado válido. Em produção
+     o app usa TIPO7_BASE_URL_RELEASE (https://), coberto pela config padrão
+     abaixo, que exige certificado confiável normalmente. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <!-- Adicione aqui o IP da rede local usado em dev, ex:
+             <domain includeSubdomains="false">192.168.0.42</domain> -->
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
