@@ -215,7 +215,9 @@ const nextConfig = {
   // cai num loop de full-reload da página (achado real, 01/09/2026 — 76
   // reloads de /caixa num teste de poucos minutos, apagando o formulário no
   // meio da digitação). Só afeta dev; build de produção não usa HMR.
-  allowedDevOrigins: ['10.0.2.2'],
+  // 10.0.2.2 = emulador Android; 192.168.18.39 = IP da máquina dev na rede
+  // local, usado quando o app roda no aparelho físico (GPOS780 via Wi-Fi).
+  allowedDevOrigins: ['10.0.2.2', '192.168.18.39'],
   async rewrites() {
     return [...ROTAS_MIGRADAS_NESTJS, ...ROTAS_ESTATICAS_NESTJS].map((source) => ({
       source,

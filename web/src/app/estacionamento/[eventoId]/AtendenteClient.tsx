@@ -86,6 +86,21 @@ interface Props {
 
 const inp = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]'
 
+// Pedido do usuário (03/09/2026): trocar o teclado da GPOS780 (numérico ↔
+// letras) conforme a posição da placa sendo digitada, pra facilitar digitar
+// rápido no aparelho físico. Os dois formatos brasileiros só divergem na
+// 5ª posição — todo o resto é previsível:
+//   Mercosul: L L L N L N N   (posição 5 = LETRA)
+//   Antiga:   L L L N N N N   (posição 5 = NÚMERO)
+// `comprimento` = quantos caracteres já foram digitados (0 a 6) — o valor
+// devolvido é o inputMode pro PRÓXIMO caractere (a posição comprimento+1).
+function inputModePlaca(comprimento: number): 'text' | 'numeric' {
+  if (comprimento === 3) return 'numeric' // posição 4 — número nos dois formatos
+  if (comprimento === 4) return 'text'    // posição 5 — ambíguo (letra OU número), mantém texto
+  if (comprimento >= 5)  return 'numeric' // posições 6-7 — número nos dois formatos
+  return 'text'                            // posições 1-3 — sempre letra
+}
+
 function formatBRL(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
@@ -753,6 +768,8 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               )}
               <div className="relative">
                 <input type="text" placeholder="Placa *" value={placa} disabled={lotado}
+                  autoCapitalize="characters"
+                  inputMode={inputModePlaca(placa.length)}
                   onChange={e => {
                     const next = e.target.value.toUpperCase()
                     setPlaca(next)
@@ -760,7 +777,15 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                     setVeiculoJaCadastrado(false)
                     // Dispara assim que a 7ª letra/número é digitado — não
                     // espera o atendente tirar o foco do campo.
-                    if (next.trim().length === 7) void handleBuscarPlaca(next)
+                    if (next.trim().length === 7) {
+                      void handleBuscarPlaca(next)
+                      // Pedido do usuário (03/09/2026): esconde o teclado
+                      // sozinho ao completar a placa — tirar o foco já
+                      // basta, o SO some com o teclado na hora. `onBlur`
+                      // dispara de novo (guardado, idempotente — só refaz
+                      // a mesma busca, sem efeito colateral real).
+                      e.target.blur()
+                    }
                   }}
                   onBlur={() => handleBuscarPlaca()}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)', textTransform: 'uppercase' }} />
