@@ -280,10 +280,20 @@ export class CaixasService {
   // (/bilheteria/.../caixa/...) sem checar isso. Quem só tem função de
   // estacionamento caía numa tela errada. Front decide o destino certo com
   // esse campo.
+  //
+  // orderBy abertoEm desc: achado real (03/09/2026) — mesma pessoa pode ter
+  // MAIS DE UM caixa "aberto" no mesmo evento ao mesmo tempo (ex.: um caixa
+  // de estacionamento antigo que ninguém fechou, e agora um caixa de
+  // bilheteria novo). Sem ordenação, `findFirst` devolvia qualquer um dos
+  // dois (ordem não garantida pelo banco) — quem logava com token/PIN de um
+  // caixa de bilheteria às vezes caía no estacionamento errado e batia na
+  // tela de "sem permissão" lá. Sempre pega o mais recente — mesmo critério
+  // que getMeusCaixasAbertos já usa logo abaixo.
   async getMeuCaixaAberto(userId: string, eventoId: string) {
     const caixa = await this.prisma.caixa.findFirst({
       where: { eventoId, operadorId: userId, status: 'aberto' },
       select: { id: true, nome: true, estacionamentoId: true, bilheteriaId: true },
+      orderBy: { abertoEm: 'desc' },
     });
     return caixa ?? null;
   }
