@@ -6,8 +6,11 @@
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">10.0.2.2</domain>
-        <!-- Adicione aqui o IP da rede local usado em dev, ex:
-             <domain includeSubdomains="false">192.168.0.42</domain> -->
+        <!-- IP da máquina dev na rede local (Ethernet) — usado quando o
+             app roda no aparelho físico (GPOS780 via Wi-Fi), não no
+             emulador. Mesma sub-rede confirmada 02/09: PC 192.168.18.39,
+             GPOS780 192.168.18.56. Trocar se a rede mudar. -->
+        <domain includeSubdomains="false">192.168.18.39</domain>
     </domain-config>
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
