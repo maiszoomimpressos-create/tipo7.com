@@ -1070,7 +1070,19 @@ export class CaixasService {
     return { bilheterias };
   }
 
-  async criarBilheteria(userId: string, eventoId: string, body: { nome?: string }) {
+  // quantidadeCaixas: pedido do usuário (03/09/2026) — copiar o mesmo
+  // método já usado no Estacionamento ("quantos portões esse local vai
+  // ter?"), só que aqui a pergunta é "quantos caixas essa bilheteria vai
+  // ter?". Cria os caixas JÁ ABERTOS, sem operador designado (mesmo padrão
+  // dos caixas "gerais" que já existiam antes desta feature) — qualquer
+  // staff ativo com vender_ingresso (e sem restrição de outro local, ver
+  // getCaixaParaOperador) pode entrar em qualquer um deles depois, igual um
+  // balcão físico com N guichês onde quem está livre atende. Diferente de
+  // portões (que são só configuração, sem dinheiro), caixa é uma unidade
+  // financeira de verdade — por isso não reaproveitei o endpoint de lote
+  // (caixas/abrir), que teria efeitos colaterais no evento inteiro
+  // (vendasOnlinePausadas, transferencia_requer_senha) sem sentido aqui.
+  async criarBilheteria(userId: string, eventoId: string, body: { nome?: string; quantidadeCaixas?: number }) {
     if (!(await this.eventPermissions.isEventOwner(userId, eventoId))) throw new ForbiddenException('Sem permissão');
     if (!body.nome?.trim()) throw new BadRequestException('Nome é obrigatório');
 
@@ -1085,7 +1097,105 @@ export class CaixasService {
     const criado = await this.prisma.bilheteria.create({
       data: { eventId: eventoId, nome: body.nome.trim(), createdBy: userId },
     });
+
+    const qtd = Math.min(Math.max(Math.trunc(body.quantidadeCaixas ?? 0), 0), 10);
+    if (qtd > 0) {
+      await this.prisma.caixa.createMany({
+        data: Array.from({ length: qtd }, (_, i) => ({
+          eventoId,
+          bilheteriaId: criado.id,
+          nome: `Caixa ${i + 1}`,
+          fundoInicial: 0,
+          ingressosAlocados: 0,
+          createdBy: userId,
+        })),
+      });
+    }
+
     return { ok: true, bilheteria: criado };
+  }
+
+  // Mesma lógica de EstacionamentoService.abrirCaixa — "Abrir caixa" por
+  // local, pra adicionar UM caixa a mais depois de criado (já com operador
+  // designado na hora, diferente dos caixas "slot" auto-criados acima).
+  async abrirCaixaBilheteria(userId: string, eventoId: string, body: Record<string, any>) {
+    if (!(await this.eventPermissions.isEventOwner(userId, eventoId))) throw new ForbiddenException('Sem permissão');
+
+    const evento = await this.prisma.event.findUnique({
+      where: { id: eventoId },
+      select: { status: true, dateStart: true, dateEnd: true },
+    });
+    if (!evento) throw new NotFoundException('Evento não encontrado');
+    this.assertEventoNaoVencido(evento);
+
+    if (!body.nome?.trim()) throw new BadRequestException('Nome do caixa é obrigatório');
+
+    let bilheteriaId: string | null = null;
+    if (body.bilheteriaId) {
+      const local = await this.prisma.bilheteria.findFirst({ where: { id: body.bilheteriaId, eventId: eventoId }, select: { id: true } });
+      if (!local) throw new NotFoundException('Local de bilheteria não encontrado neste evento');
+      bilheteriaId = body.bilheteriaId;
+    }
+
+    const abertos = await this.prisma.caixa.findMany({
+      where: { eventoId, status: 'aberto' },
+      select: { nome: true, operadorId: true },
+    });
+    if (abertos.some((c) => c.nome === body.nome.trim())) {
+      throw new BadRequestException(`Já existe um caixa aberto chamado "${body.nome.trim()}".`);
+    }
+
+    let operadorId: string | null = null;
+    if (body.operadorEmailOuCodigo?.trim()) {
+      const busca = body.operadorEmailOuCodigo.trim();
+      if (busca.toUpperCase().startsWith('T7-')) {
+        const perfil = await this.prisma.profile.findFirst({ where: { userCode: busca.toUpperCase() }, select: { id: true } });
+        operadorId = perfil?.id ?? null;
+      } else {
+        const rows = await this.prisma.$queryRaw<{ find_user_id_by_email: string | null }[]>`
+          SELECT find_user_id_by_email(${busca})
+        `;
+        operadorId = rows[0]?.find_user_id_by_email ?? null;
+      }
+      if (!operadorId) throw new NotFoundException('Operador não encontrado. Verifique o email ou código T7-USR.');
+
+      if (!(await this.eventPermissions.hasEventPermission(operadorId, eventoId, 'vender_ingresso'))) {
+        throw new BadRequestException(
+          'Esse usuário ainda não é equipe ativa com permissão de bilheteria neste evento. Convide-o primeiro pela equipe do evento.',
+        );
+      }
+    }
+
+    if (operadorId && abertos.some((c) => c.operadorId === operadorId)) {
+      throw new BadRequestException('Esse operador já tem um caixa aberto neste evento.');
+    }
+
+    const caixa = await this.prisma.caixa.create({
+      data: {
+        eventoId,
+        nome: body.nome.trim(),
+        fundoInicial: body.fundoInicial ?? 0,
+        ingressosAlocados: 0,
+        operadorId,
+        createdBy: userId,
+        bilheteriaId,
+      },
+    });
+
+    const acessoOwner = await this.garantirAcessoOwnerParaSangria(eventoId, userId);
+
+    let operadorAcesso: { staff_id: string; token: string | null; precisa_criar_pin: boolean } | null = null;
+    if (operadorId) {
+      const acesso = await this.garantirAcessoOwnerParaSangria(eventoId, operadorId);
+      operadorAcesso = { staff_id: acesso.staffId, token: acesso.token, precisa_criar_pin: acesso.precisaCriarPin };
+    }
+
+    return {
+      ok: true,
+      caixa,
+      owner_acesso: { staff_id: acessoOwner.staffId, token: acessoOwner.token, precisa_criar_pin: acessoOwner.precisaCriarPin },
+      operador_acesso: operadorAcesso,
+    };
   }
 
   async atualizarBilheteria(userId: string, eventoId: string, bilheteriaId: string, body: { nome?: string; ativo?: boolean }) {

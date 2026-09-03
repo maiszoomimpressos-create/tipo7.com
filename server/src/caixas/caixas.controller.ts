@@ -87,8 +87,13 @@ export class CaixasController {
   }
 
   @Post('eventos/:id/bilheterias')
-  criarBilheteria(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: { nome?: string }) {
+  criarBilheteria(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: { nome?: string; quantidadeCaixas?: number }) {
     return this.caixas.criarBilheteria(user.id, id, body);
+  }
+
+  @Post('bilheteria/:eventoId/abrir-caixa')
+  abrirCaixaBilheteria(@CurrentUser() user: AuthenticatedUser, @Param('eventoId') eventoId: string, @Body() body: any) {
+    return this.caixas.abrirCaixaBilheteria(user.id, eventoId, body);
   }
 
   @Patch('eventos/:id/bilheterias/:bilheteriaId')
