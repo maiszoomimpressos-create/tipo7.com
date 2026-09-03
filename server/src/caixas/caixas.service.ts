@@ -281,21 +281,40 @@ export class CaixasService {
   // estacionamento caía numa tela errada. Front decide o destino certo com
   // esse campo.
   //
-  // orderBy abertoEm desc: achado real (03/09/2026) — mesma pessoa pode ter
-  // MAIS DE UM caixa "aberto" no mesmo evento ao mesmo tempo (ex.: um caixa
-  // de estacionamento antigo que ninguém fechou, e agora um caixa de
-  // bilheteria novo). Sem ordenação, `findFirst` devolvia qualquer um dos
-  // dois (ordem não garantida pelo banco) — quem logava com token/PIN de um
-  // caixa de bilheteria às vezes caía no estacionamento errado e batia na
-  // tela de "sem permissão" lá. Sempre pega o mais recente — mesmo critério
-  // que getMeusCaixasAbertos já usa logo abaixo.
+  // orderBy abertoEm desc: mesma pessoa pode ter mais de um caixa "aberto"
+  // no mesmo evento ao mesmo tempo (ex.: um caixa antigo que ninguém
+  // fechou, e outro mais novo) — sempre prioriza o mais recente, mesmo
+  // critério que getMeusCaixasAbertos já usa logo abaixo.
+  //
+  // Checagem de permissão atual: achado real (03/09/2026) — usuário mudou a
+  // FUNÇÃO de alguém no evento (de Estacionamento pra Bilheteria), a pessoa
+  // aceitou a nova função, mas o CAIXA antigo de estacionamento (aberto
+  // quando ela ainda era estacionamento) nunca foi fechado. Login por
+  // token/PIN continuava achando esse caixa velho — mesmo userId, "aberto"
+  // — e mandava a pessoa pra tela de estacionamento, onde ela batia de
+  // frente com "sem permissão" (a função dela já não cobre mais isso). Não
+  // basta ordenar por mais recente quando só existe UM caixa aberto e ele é
+  // do tipo errado pra permissão atual. Por isso filtra pelo tipo do caixa
+  // (estacionamentoId setado = exige estacionamento_entrada/saída; senão =
+  // exige vender_ingresso) cruzado com a permissão de AGORA, não a de quando
+  // o caixa foi aberto. Dono do evento nunca é filtrado (hasEventPermission
+  // já trata isso). Se o caixa mais recente não bate, cai pro próximo —
+  // nenhum bater é o mesmo que não ter caixa aberto (front já sabe lidar).
   async getMeuCaixaAberto(userId: string, eventoId: string) {
-    const caixa = await this.prisma.caixa.findFirst({
+    const caixas = await this.prisma.caixa.findMany({
       where: { eventoId, operadorId: userId, status: 'aberto' },
       select: { id: true, nome: true, estacionamentoId: true, bilheteriaId: true },
       orderBy: { abertoEm: 'desc' },
     });
-    return caixa ?? null;
+    for (const caixa of caixas) {
+      const permissaoNecessaria = caixa.estacionamentoId
+        ? ['estacionamento_entrada', 'estacionamento_saida']
+        : 'vender_ingresso';
+      if (await this.eventPermissions.hasEventPermission(userId, eventoId, permissaoNecessaria)) {
+        return caixa;
+      }
+    }
+    return null;
   }
 
   // Pedido do usuário (09/08/2026) — entrada da Segunda Tela sem precisar
