@@ -42,3 +42,6 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# Logs de servidor dev rodado manualmente em background nesta máquina
+.next-dev-*.log

@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+/local.properties
+.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Keystore de desenvolvedor da Gertec (achado em INFOGedi_780.rar, portal
+# deles) — credencial de terceiro, nunca commitar. Sem isso o build de
+# debug cai de volta pro keystore padrão do Android (não instala na
+# GPOS780 física, só serve pra emulador/testes de layout).
+/keystore/

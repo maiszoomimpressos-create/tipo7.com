@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Car, Plus, Loader2, Clock, Banknote, CreditCard, Smartphone, Gift, X, ArrowLeft, DoorOpen,
   Wallet, Lock, AlertTriangle, CheckCircle2, XCircle, MinusCircle, Search,
-  ChevronDown, ChevronUp, Bluetooth, Calculator,
+  ChevronDown, ChevronUp, Bluetooth, Calculator, Ticket, Menu, Eye, LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
@@ -15,6 +15,8 @@ import { imprimirTicketPrintServer } from '@/lib/printServerClient'
 import { gerarComandosMultiplos, imprimirViaTipPrint } from '@/lib/rawbtPrint'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { ModalSangria } from '@/components/ModalSangria'
+import { isNativeCaixaApp } from '@/lib/nativeCaixaApp'
+import { clearSession } from '@/lib/auth/session'
 
 const ACCENT = '#E8B84B'
 
@@ -85,6 +87,21 @@ interface Props {
 
 const inp = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#E8B84B]/40 placeholder:text-[#383838]'
 
+// Pedido do usuário (03/09/2026): trocar o teclado da GPOS780 (numérico ↔
+// letras) conforme a posição da placa sendo digitada, pra facilitar digitar
+// rápido no aparelho físico. Os dois formatos brasileiros só divergem na
+// 5ª posição — todo o resto é previsível:
+//   Mercosul: L L L N L N N   (posição 5 = LETRA)
+//   Antiga:   L L L N N N N   (posição 5 = NÚMERO)
+// `comprimento` = quantos caracteres já foram digitados (0 a 6) — o valor
+// devolvido é o inputMode pro PRÓXIMO caractere (a posição comprimento+1).
+function inputModePlaca(comprimento: number): 'text' | 'numeric' {
+  if (comprimento === 3) return 'numeric' // posição 4 — número nos dois formatos
+  if (comprimento === 4) return 'text'    // posição 5 — ambíguo (letra OU número), mantém texto
+  if (comprimento >= 5)  return 'numeric' // posições 6-7 — número nos dois formatos
+  return 'text'                            // posições 1-3 — sempre letra
+}
+
 function formatBRL(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
@@ -144,6 +161,26 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const [portaoEntradaSel, setPortaoEntradaSel] = useState('')
   const [portaoSaidaSel,   setPortaoSaidaSel]   = useState('')
   const [modalFecharCaixa, setModalFecharCaixa] = useState(false)
+  // Menu "Funções do caixa" (01/09/2026) — junta o que antes eram 2 links de
+  // texto soltos no cabeçalho (contagem/sangria) + o botão "Voltar", pra
+  // liberar espaço vertical na tela pequena da GPOS780.
+  const [menuFuncoesAberto, setMenuFuncoesAberto] = useState(false)
+  // "Ver meu caixa" (01/09/2026, pedido do usuário) — resumo de quanto já
+  // entrou, quebrado por forma de pagamento. GET /caixas/:caixaId já
+  // calcula tudo isso (ver calcularSaldoCaixa em caixas.service.ts), não
+  // precisou de endpoint novo.
+  const [verCaixaAberto, setVerCaixaAberto] = useState(false)
+  // "Sair" no menu (03/09/2026, pedido do usuário) — terminal físico é
+  // compartilhado entre turnos/pessoas, precisa dar pra encerrar a sessão
+  // de quem estava logado antes de passar o aparelho pro próximo operador.
+  // Sempre volta pra /caixa (a tela de token+PIN), nunca pra "/" — mesmo
+  // raciocínio de segurança do resto da sessão: terminal nunca expõe rota
+  // fora do escopo do token+PIN, native ou não.
+  async function sair() {
+    setMenuFuncoesAberto(false)
+    await clearSession()
+    router.push('/caixa')
+  }
   // Sangria (20/08/2026) — ver project_token_pin_acesso_caixa na memória.
   // Especialmente útil aqui: estacionamento normalmente não tem gaveta
   // fixa (atendente anda pelo pátio com o dinheiro), então sangrar antes de
@@ -187,12 +224,25 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   // isso não precisa ver de novo a cada entrada. Escondida por padrão,
   // com um botão pra reabrir quando precisar mexer.
   const [configImpressaoAberta, setConfigImpressaoAberta] = useState(false)
+  // Pedido do usuário (01/09/2026): a GPOS780 já tem impressora térmica
+  // embutida — o seletor genérico (Bluetooth/PrintServer/celular) não faz
+  // sentido dentro do app nativo, só no navegador comum (PC/tablet). Estado
+  // em vez de chamar isNativeCaixaApp() direto no JSX porque `window` só
+  // existe depois da hidratação — calcular no render causaria mismatch SSR.
+  const [nativeApp, setNativeApp] = useState(false)
+  useEffect(() => { setNativeApp(isNativeCaixaApp()) }, [])
 
   // Impressão do ticket de estacionamento na entrada — mesmo padrão de
   // localStorage por evento já usado na Bilheteria (tipo7-impressora-${id}).
   const [formatoImpressao, setFormatoImpressao] = useState<FormatoImpressaoEstacionamento>('nenhuma')
   const [erroImpressao, setErroImpressao] = useState<string | null>(null)
   useEffect(() => {
+    // Dentro do app nativo, ignora qualquer preferência salva de um uso
+    // anterior em navegador comum (mesmo evento) — sem UI pra trocar isso
+    // aqui, `formatoImpressao` tem que ficar em 'nenhuma' (impressão própria
+    // da GPOS780 é trabalho futuro separado, ver
+    // docs/maquininha-gpos780-levantamento-requisitos.md).
+    if (isNativeCaixaApp()) return
     const saved = localStorage.getItem(`tipo7-impressora-estacionamento-${eventoId}`) as FormatoImpressaoEstacionamento | null
     if (saved) setFormatoImpressao(saved)
   }, [eventoId])
@@ -575,39 +625,49 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     <div className="min-h-dvh bg-[#070707] flex flex-col">
       <div className="max-w-2xl mx-auto w-full px-4 py-8 flex flex-col gap-6">
 
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-white text-xl font-semibold flex items-center gap-2" style={{ fontFamily: 'var(--font-outfit)' }}>
-              <Car size={20} className="text-[#E8B84B]" />
-              Estacionamento — {eventoTitle}
-            </h1>
-            {caixaNome ? (
-              <div className="flex items-center gap-3 mt-1 flex-wrap">
-                <button type="button" onClick={() => setModalFecharCaixa(true)}
-                  className="flex items-center gap-1.5 text-xs hover:underline" style={{ color: '#888', fontFamily: 'var(--font-dm-sans)' }}>
-                  <Wallet size={11} className="text-green-400" /> Caixa: {caixaNome} · enviar contagem
-                </button>
-                <button type="button" onClick={() => setModalSangria(true)}
-                  className="flex items-center gap-1.5 text-xs hover:underline" style={{ color: '#666', fontFamily: 'var(--font-dm-sans)' }}>
-                  <MinusCircle size={11} className="text-red-400/70" /> Sangrar
-                </button>
+        {/* Cabeçalho compacto (01/09/2026, pedido do usuário, pensado pra
+            caber na tela pequena da GPOS780) — antes eram 4 blocos
+            empilhados (título de 2 linhas, info do caixa, sangria, config
+            de impressora) antes do formulário começar. Agora: 1 linha com
+            marca+evento, 1 linha com o módulo, e as ações administrativas
+            (contagem/sangria/voltar) viram 1 botão só que abre um menu —
+            elas não precisam ficar sempre visíveis, só acessíveis. */}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1 shrink-0" aria-hidden>
+                <Ticket size={15} className="text-[#E8B84B]" strokeWidth={2} />
+                <span className="text-[13px] tracking-tight leading-none" style={{ fontFamily: 'var(--font-syne)', fontWeight: 800 }}>
+                  <span className="text-white">tipo</span><span className="text-[#E8B84B]">7</span>
+                </span>
               </div>
-            ) : (
-              <p className="flex items-center gap-1.5 mt-1 text-xs" style={{ color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
-                <Lock size={11} /> Sem caixa designado — peça pro organizador abrir um pra você
-              </p>
-            )}
+              <span className="text-[#333] shrink-0">·</span>
+              <h1 className="text-white text-sm font-medium truncate" style={{ fontFamily: 'var(--font-outfit)' }}>
+                {eventoTitle}
+              </h1>
+            </div>
+            <button type="button" onClick={() => setMenuFuncoesAberto(true)}
+              className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl transition-colors"
+              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#888' }}
+              aria-label="Funções do caixa">
+              <Menu size={16} />
+            </button>
           </div>
-          <button type="button" onClick={() => router.back()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs shrink-0 transition-colors"
-            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
-            <ArrowLeft size={13} /> Voltar
-          </button>
+          <div className="flex items-center gap-1.5">
+            <Car size={12} className="text-[#E8B84B]" />
+            <span className="text-[#666] text-xs uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+              Estacionamento
+            </span>
+          </div>
         </div>
 
         {/* Config de impressora/ticket — escondida por padrão (pedido do
             usuário, 25/08/2026), quem já configurou não precisa ver de
-            novo toda hora que entra na tela. */}
+            novo toda hora que entra na tela. Escondida por completo dentro
+            do app nativo (GPOS780) — ela já tem impressora térmica
+            embutida, esse seletor Bluetooth/PrintServer/celular é pra quem
+            usa PC/tablet no navegador comum. */}
+        {!nativeApp && (
         <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #1a1a1a' }}>
           <button type="button" onClick={() => setConfigImpressaoAberta(v => !v)}
             className="w-full flex items-center justify-between px-4 py-3 transition-colors"
@@ -651,6 +711,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
             </div>
           )}
         </div>
+        )}
 
         {estacionamentos.length === 0 && (
           <p className="text-[#555] text-sm text-center py-10">
@@ -719,6 +780,8 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               )}
               <div className="relative">
                 <input type="text" placeholder="Placa *" value={placa} disabled={lotado}
+                  autoCapitalize="characters"
+                  inputMode={inputModePlaca(placa.length)}
                   onChange={e => {
                     const next = e.target.value.toUpperCase()
                     setPlaca(next)
@@ -726,7 +789,15 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                     setVeiculoJaCadastrado(false)
                     // Dispara assim que a 7ª letra/número é digitado — não
                     // espera o atendente tirar o foco do campo.
-                    if (next.trim().length === 7) void handleBuscarPlaca(next)
+                    if (next.trim().length === 7) {
+                      void handleBuscarPlaca(next)
+                      // Pedido do usuário (03/09/2026): esconde o teclado
+                      // sozinho ao completar a placa — tirar o foco já
+                      // basta, o SO some com o teclado na hora. `onBlur`
+                      // dispara de novo (guardado, idempotente — só refaz
+                      // a mesma busca, sem efeito colateral real).
+                      e.target.blur()
+                    }
                   }}
                   onBlur={() => handleBuscarPlaca()}
                   className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)', textTransform: 'uppercase' }} />
@@ -747,7 +818,12 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                       Modelo e cor preenchidos automaticamente — confira antes de registrar.
                     </p>
                   )}
-                  <div className="grid grid-cols-2 gap-2">
+                  {/* grid-cols-1: empilha em tela estreita (GPOS780, ~360-400px
+                      de largura CSS) — 2 colunas nesse espaço deixava cada
+                      campo com menos de metade da largura útil, apertado
+                      demais pra digitar/ler. sm: volta a 2 colunas em
+                      tablet/PC, onde já funcionava bem. */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input type="text" placeholder="Modelo *" value={modelo} disabled={lotado}
                       onChange={e => setModelo(e.target.value)}
                       className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
@@ -755,7 +831,7 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                       onChange={e => setCor(e.target.value)}
                       className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input type="text" placeholder="Nome (opcional)" value={nomeCondutor} disabled={lotado}
                       onChange={e => setNomeCondutor(e.target.value)}
                       className={cn(inp, 'disabled:opacity-40')} style={{ fontFamily: 'var(--font-dm-sans)' }} />
@@ -891,6 +967,62 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
 
         {erro && !saidaAlvo && <p className="text-red-400 text-xs text-center">{erro}</p>}
       </div>
+
+      {/* Menu "Funções do caixa" — reúne contagem/sangria/voltar, que antes
+          ficavam soltos no cabeçalho. "Voltar" só aparece fora do app
+          nativo: dentro da GPOS780 não tem outra tela do site pra voltar,
+          o app só existe pra essa função. */}
+      {menuFuncoesAberto && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setMenuFuncoesAberto(false)}>
+          <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Funções do caixa</p>
+              <button onClick={() => setMenuFuncoesAberto(false)} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
+            </div>
+            <div className="flex flex-col gap-2">
+              {caixaNome ? (
+                <>
+                  <button type="button" onClick={() => { setMenuFuncoesAberto(false); setVerCaixaAberto(true) }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                    style={{ background: '#111', border: '1px solid #1e1e1e', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}>
+                    <Eye size={14} className="text-[#E8B84B]" /> Ver meu caixa
+                  </button>
+                  <button type="button" onClick={() => { setMenuFuncoesAberto(false); setModalFecharCaixa(true) }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                    style={{ background: '#111', border: '1px solid #1e1e1e', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}>
+                    <Wallet size={14} className="text-green-400" /> Caixa: {caixaNome} · enviar contagem
+                  </button>
+                  <button type="button" onClick={() => { setMenuFuncoesAberto(false); setModalSangria(true) }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                    style={{ background: '#111', border: '1px solid #1e1e1e', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}>
+                    <MinusCircle size={14} className="text-red-400/70" /> Sangrar
+                  </button>
+                </>
+              ) : (
+                <p className="flex items-center gap-1.5 px-1 py-2 text-xs" style={{ color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
+                  <Lock size={11} /> Sem caixa designado — peça pro organizador abrir um pra você
+                </p>
+              )}
+              {!nativeApp && (
+                <button type="button" onClick={() => { setMenuFuncoesAberto(false); router.back() }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', color: '#888', fontFamily: 'var(--font-dm-sans)' }}>
+                  <ArrowLeft size={14} /> Voltar
+                </button>
+              )}
+              <button type="button" onClick={sair}
+                className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                style={{ background: '#111', border: '1px solid #2a1414', color: '#f87171', fontFamily: 'var(--font-dm-sans)' }}>
+                <LogOut size={14} /> Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {verCaixaAberto && caixaId && (
+        <ModalVerCaixa caixaId={caixaId} onFechar={() => setVerCaixaAberto(false)} />
+      )}
 
       {/* Modal de confirmação de saída */}
       {saidaAlvo && (
@@ -1096,6 +1228,105 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+// "Ver meu caixa" (01/09/2026, pedido do usuário) — resumo rápido de quanto
+// já entrou no turno, quebrado por forma de pagamento, pra o atendente
+// conferir sem precisar abrir o painel do organizador. Busca GET /caixas/
+// :caixaId (mesmo endpoint que o dono usa, já calcula tudo — ver
+// calcularSaldoCaixa em caixas.service.ts); a permissão de quem pode ver já
+// é resolvida lá (dono OU o próprio operador do caixa).
+interface ResumoCaixa {
+  // Decimal do Prisma chega como string no JSON — os outros campos abaixo
+  // já são number de verdade (somados em JS no backend, ver
+  // calcularSaldoCaixa em caixas.service.ts).
+  fundo_inicial:  number | string
+  totalDinheiro:  number
+  totalPix:       number
+  totalCartao:    number
+  totalVendas:    number
+  totalSangrias:  number
+  expectedGaveta: number
+}
+
+function ModalVerCaixa({ caixaId, onFechar }: { caixaId: string; onFechar: () => void }) {
+  const [resumo, setResumo]   = useState<ResumoCaixa | null>(null)
+  const [erro, setErro]       = useState<string | null>(null)
+  const [carregando, setCarregando] = useState(true)
+
+  useEffect(() => {
+    let cancelado = false
+    apiFetchAuth(`/api/caixas/${caixaId}`)
+      .then(res => res.json())
+      .then(data => { if (!cancelado) setResumo(data) })
+      .catch(() => { if (!cancelado) setErro('Não foi possível carregar o resumo do caixa.') })
+      .finally(() => { if (!cancelado) setCarregando(false) })
+    return () => { cancelado = true }
+  }, [caixaId])
+
+  const linhas = resumo ? [
+    { label: 'Dinheiro',       valor: resumo.totalDinheiro, icon: Banknote,   cor: '#4ade80' },
+    { label: 'PIX',            valor: resumo.totalPix,      icon: Smartphone, cor: '#60a5fa' },
+    { label: 'Cartão',         valor: resumo.totalCartao,   icon: CreditCard, cor: '#a855f7' },
+  ] : []
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onFechar}>
+      <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-white text-sm font-medium flex items-center gap-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+            <Eye size={14} style={{ color: ACCENT }} /> Meu caixa
+          </p>
+          <button onClick={onFechar} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
+        </div>
+
+        {carregando && <Loader2 size={20} className="animate-spin text-[#E8B84B] mx-auto my-8" />}
+        {erro && <p className="text-red-400 text-xs text-center py-4">{erro}</p>}
+
+        {resumo && (
+          <div className="flex flex-col gap-3">
+            <div className="text-center py-3 rounded-xl" style={{ background: '#111' }}>
+              <p className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>Total arrecadado</p>
+              <p className="text-white text-2xl font-bold mt-1" style={{ fontFamily: 'var(--font-outfit)' }}>
+                {formatBRL(resumo.totalVendas)}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {linhas.map(l => (
+                <div key={l.label} className="flex items-center justify-between px-3.5 py-2.5 rounded-xl" style={{ background: '#111', border: '1px solid #1c1c1c' }}>
+                  <span className="flex items-center gap-2 text-[#aaa] text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    <l.icon size={13} style={{ color: l.cor }} /> {l.label}
+                  </span>
+                  <span className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>{formatBRL(l.valor)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-1.5 pt-2 mt-1" style={{ borderTop: '1px solid #1a1a1a' }}>
+              <div className="flex items-center justify-between text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <span className="text-[#666]">Fundo inicial</span>
+                {/* Number(): fundo_inicial chega como Decimal do Prisma,
+                    serializado em string no JSON — formatBRL espera number,
+                    sem isso mostrava "100" cru em vez de "R$ 100,00". */}
+                <span className="text-[#999]">{formatBRL(Number(resumo.fundo_inicial))}</span>
+              </div>
+              {resumo.totalSangrias > 0 && (
+                <div className="flex items-center justify-between text-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  <span className="text-[#666]">Sangrias</span>
+                  <span className="text-red-400/80">− {formatBRL(resumo.totalSangrias)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-xs pt-1.5 mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)', borderTop: '1px solid #1a1a1a' }}>
+                <span className="text-[#888] font-medium">Esperado na gaveta</span>
+                <span className="text-[#E8B84B] font-semibold">{formatBRL(resumo.expectedGaveta)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

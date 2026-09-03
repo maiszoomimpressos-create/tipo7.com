@@ -124,6 +124,8 @@ const ROTAS_MIGRADAS_NESTJS = [
   '/api/eventos/:id/caixas',
   '/api/eventos/:id/estacionamentos',
   '/api/eventos/:id/estacionamentos/:path*',
+  '/api/eventos/:id/bilheterias',
+  '/api/eventos/:id/bilheterias/:path*',
   '/api/caixas/:path*',
   '/api/estacionamento/:path*',
   '/api/scanner/validate',
@@ -205,6 +207,17 @@ const nextConfig = {
   turbopack: {
     root: import.meta.dirname,
   },
+  // Sem isso, o Next.js bloqueia o HMR (/_next/webpack-hmr) quando a página
+  // é acessada de uma origem diferente de localhost — é exatamente o caso
+  // do app Android (android/) rodando num emulador/aparelho físico, que
+  // carrega http://10.0.2.2:3000 (emulador) ou o IP da máquina na rede local
+  // (aparelho físico) em vez de localhost. Sem o HMR conectar, o dev server
+  // cai num loop de full-reload da página (achado real, 01/09/2026 — 76
+  // reloads de /caixa num teste de poucos minutos, apagando o formulário no
+  // meio da digitação). Só afeta dev; build de produção não usa HMR.
+  // 10.0.2.2 = emulador Android; 192.168.18.39 = IP da máquina dev na rede
+  // local, usado quando o app roda no aparelho físico (GPOS780 via Wi-Fi).
+  allowedDevOrigins: ['10.0.2.2', '192.168.18.39'],
   async rewrites() {
     return [...ROTAS_MIGRADAS_NESTJS, ...ROTAS_ESTATICAS_NESTJS].map((source) => ({
       source,

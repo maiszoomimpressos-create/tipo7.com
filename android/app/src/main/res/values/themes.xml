@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tema mínimo, sem action bar — a UI inteira é a WebView, a barra de
+         título já vem da própria página /caixa carregada dentro dela. -->
+    <style name="Theme.Tipo7Caixa" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>
