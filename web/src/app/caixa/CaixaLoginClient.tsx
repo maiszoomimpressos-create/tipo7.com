@@ -7,7 +7,7 @@
 // MESMA sessão JWT do login normal (POST /auth/entrar-com-pin), então daqui
 // pra frente é sessão normal pro resto do sistema — zero código novo em
 // nenhuma tela existente.
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { KeyRound, Loader2, AlertCircle, ArrowRight } from 'lucide-react'
 import { setSessionFromAccessToken } from '@/lib/auth/session'
@@ -68,6 +68,12 @@ export function CaixaLoginClient() {
   const [pin, setPin]           = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro]         = useState<string | null>(null)
+  // PIN pode ser de 4 OU 6 dígitos (pinHash é bcrypt — não dá pra saber o
+  // comprimento sem guardar isso à parte no banco). Em vez de mudar schema,
+  // detecta pela pausa: ao completar 4 dígitos, espera um instante; se a
+  // pessoa não continuar digitando (não é PIN de 6), assume que terminou e
+  // esconde o teclado sozinha, igual já acontece de cara com 6.
+  const pinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   async function entrar() {
     setErro(null)
@@ -155,11 +161,18 @@ export function CaixaLoginClient() {
               onChange={(e) => {
                 const next = e.target.value.replace(/\D/g, '').slice(0, 6)
                 setPin(next)
-                // PIN de 6 dígitos é sempre o comprimento máximo — ao
-                // completar, some com o teclado igual já fazemos na Placa
-                // do Estacionamento (nunca dá pra saber isso com 4, porque
-                // 4 é um estado completo válido por si só).
-                if (next.length === 6) e.target.blur()
+                if (pinTimeoutRef.current) clearTimeout(pinTimeoutRef.current)
+                if (next.length === 6) {
+                  // Comprimento máximo — sempre terminou, some na hora.
+                  e.target.blur()
+                } else if (next.length === 4) {
+                  // Pode ser um PIN de 4 completo, ou a pessoa ainda vai
+                  // continuar até 6 — espera um instante pra decidir. Se
+                  // digitar o 5º dígito antes disso, esse timeout é
+                  // cancelado no próximo onChange (limpo ali em cima).
+                  const el = e.target
+                  pinTimeoutRef.current = setTimeout(() => el.blur(), 700)
+                }
               }}
               className="w-full rounded-lg px-3 py-3 text-base text-white outline-none tracking-[0.3em] text-center"
               style={{ background: '#111', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)' }}
