@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Car, Plus, Loader2, Clock, Banknote, CreditCard, Smartphone, Gift, X, ArrowLeft, DoorOpen,
   Wallet, Lock, AlertTriangle, CheckCircle2, XCircle, MinusCircle, Search,
-  ChevronDown, ChevronUp, Bluetooth, Calculator, Ticket, Menu, Eye,
+  ChevronDown, ChevronUp, Bluetooth, Calculator, Ticket, Menu, Eye, LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { calcularValorEstacionamento } from '@/lib/estacionamentoPricing'
@@ -16,6 +16,7 @@ import { gerarComandosMultiplos, imprimirViaTipPrint } from '@/lib/rawbtPrint'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { ModalSangria } from '@/components/ModalSangria'
 import { isNativeCaixaApp } from '@/lib/nativeCaixaApp'
+import { clearSession } from '@/lib/auth/session'
 
 const ACCENT = '#E8B84B'
 
@@ -169,6 +170,17 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   // calcula tudo isso (ver calcularSaldoCaixa em caixas.service.ts), não
   // precisou de endpoint novo.
   const [verCaixaAberto, setVerCaixaAberto] = useState(false)
+  // "Sair" no menu (03/09/2026, pedido do usuário) — terminal físico é
+  // compartilhado entre turnos/pessoas, precisa dar pra encerrar a sessão
+  // de quem estava logado antes de passar o aparelho pro próximo operador.
+  // Sempre volta pra /caixa (a tela de token+PIN), nunca pra "/" — mesmo
+  // raciocínio de segurança do resto da sessão: terminal nunca expõe rota
+  // fora do escopo do token+PIN, native ou não.
+  async function sair() {
+    setMenuFuncoesAberto(false)
+    await clearSession()
+    router.push('/caixa')
+  }
   // Sangria (20/08/2026) — ver project_token_pin_acesso_caixa na memória.
   // Especialmente útil aqui: estacionamento normalmente não tem gaveta
   // fixa (atendente anda pelo pátio com o dinheiro), então sangrar antes de
@@ -998,6 +1010,11 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                   <ArrowLeft size={14} /> Voltar
                 </button>
               )}
+              <button type="button" onClick={sair}
+                className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                style={{ background: '#111', border: '1px solid #2a1414', color: '#f87171', fontFamily: 'var(--font-dm-sans)' }}>
+                <LogOut size={14} /> Sair
+              </button>
             </div>
           </div>
         </div>
