@@ -5,3 +5,6 @@ dist
 .env
 
 /generated/prisma
+
+# Logs de servidor dev rodado manualmente em background nesta máquina
+.server-dev-*.log
