@@ -96,6 +96,12 @@ export class CaixasController {
     return this.caixas.abrirCaixaBilheteria(user.id, eventoId, body);
   }
 
+  // Etapa "Tenda" do wizard de Locais e Caixas — ver criarCaixasParaEvento.
+  @Post('eventos/:id/caixas/gerar')
+  gerarCaixas(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: { quantidade?: number }) {
+    return this.caixas.criarCaixasParaEvento(user.id, id, body.quantidade ?? 0);
+  }
+
   @Patch('eventos/:id/bilheterias/:bilheteriaId')
   atualizarBilheteria(
     @CurrentUser() user: AuthenticatedUser,

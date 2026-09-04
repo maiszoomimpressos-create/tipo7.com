@@ -1055,6 +1055,31 @@ export class CaixasService {
     return this.authCore.verifyPassword(ownerId, codigo);
   }
 
+  // Gera N caixas "slot" (sem operador, já abertos) direto pra um eventoId
+  // qualquer — pedido do usuário (03/09/2026), etapa "Tenda" do wizard de
+  // Locais e Caixas. Diferente de Estacionamento/Bilheteria, Tenda não tem
+  // local próprio (é um EVENTO FILHO — ver eventos-admin.service.ts >
+  // criarFilho), então o caixa nasce direto no eventoId do filho, sem
+  // precisar de nenhum campo tipo bilheteriaId/estacionamentoId.
+  async criarCaixasParaEvento(userId: string, eventoId: string, quantidade: number) {
+    if (!(await this.eventPermissions.isEventOwner(userId, eventoId))) throw new ForbiddenException('Sem permissão');
+
+    const qtd = Math.min(Math.max(Math.trunc(quantidade ?? 0), 0), 10);
+    if (qtd === 0) return { ok: true, criados: 0 };
+
+    const existentes = await this.prisma.caixa.count({ where: { eventoId } });
+    await this.prisma.caixa.createMany({
+      data: Array.from({ length: qtd }, (_, i) => ({
+        eventoId,
+        nome: `Caixa ${existentes + i + 1}`,
+        fundoInicial: 0,
+        ingressosAlocados: 0,
+        createdBy: userId,
+      })),
+    });
+    return { ok: true, criados: qtd };
+  }
+
   // ==== Locais de bilheteria (pedido do usuário, 27/08/2026) ====
   // CRUD bem mais simples que o de Estacionamento (sem preço/portão/vagas —
   // ver decisão explícita do usuário: todo local vende o mesmo catálogo de

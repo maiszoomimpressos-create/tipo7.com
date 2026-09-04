@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  ArrowLeft, Ticket, Layers, Users, Car, ShoppingBag, ShoppingCart, Settings,
+  ArrowLeft, Ticket, Layers, Users, MapPin, ShoppingBag, Settings,
   ExternalLink, BarChart2, GraduationCap,
 } from 'lucide-react'
 import { TutorialModal } from '@/components/TutorialModal'
@@ -40,12 +40,12 @@ export function GerenciarSidebar({ eventoId, eventoTitle }: Props) {
   // de configurar, então faz mais sentido logo depois, não lá em cima
   // junto do resto do setup.
   const OPERACIONAL = [
-    { href: `${base}/estacionamento`,     label: 'Estacionamento',      icon: Car,         externo: false },
-    // Bilheteria (config): locais + quantos caixas cada um vai ter — mesmo
-    // método do Estacionamento (03/09/2026, pedido do usuário). Distinto
-    // do item "Bilheteria (caixas)" abaixo, que é a tela OPERACIONAL de
-    // vender ingresso de verdade, não de configurar.
-    { href: `${base}/bilheteria`,         label: 'Bilheteria',          icon: ShoppingCart, externo: false },
+    // Locais e Caixas (03/09/2026, pedido do usuário): 1 fluxo único
+    // (Estacionamento → Bilheteria → Tenda) no lugar das telas separadas
+    // que existiam antes — "ficou muito bagunçado" nas palavras dele.
+    // Distinto de "Bilheteria (caixas)" abaixo, que é a tela OPERACIONAL
+    // de vender ingresso de verdade, não de configurar locais.
+    { href: `${base}/locais`,             label: 'Locais e Caixas',     icon: MapPin,      externo: false },
     { href: `/bilheteria/${eventoId}`,    label: 'Bilheteria (caixas)', icon: ShoppingBag, externo: true  },
     { href: `${base}/equipe`,             label: 'Equipe',              icon: Users,       externo: false },
     { href: `/dashboard/${eventoId}`,     label: 'Relatórios',          icon: BarChart2,   externo: true  },

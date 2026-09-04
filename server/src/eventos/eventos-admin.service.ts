@@ -1089,7 +1089,11 @@ export class EventosAdminService {
     const filhos = await this.prisma.event.findMany({
       where: { parentEventId: eventoId },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, title: true, status: true, dateStart: true, createdAt: true },
+      // modulo_tenda incluído (03/09/2026) — o wizard de Locais e Caixas
+      // (ver LocaisWizard.tsx no web) precisa distinguir "filho que é uma
+      // Tenda" de outros tipos de filho, pra listar só as Tendas na etapa
+      // dele.
+      select: { id: true, title: true, status: true, dateStart: true, createdAt: true, moduloTenda: true },
     });
     return {
       filhos: filhos.map((f) => ({
@@ -1098,6 +1102,7 @@ export class EventosAdminService {
         status: f.status,
         date_start: f.dateStart,
         created_at: f.createdAt,
+        modulo_tenda: f.moduloTenda,
       })),
     };
   }
