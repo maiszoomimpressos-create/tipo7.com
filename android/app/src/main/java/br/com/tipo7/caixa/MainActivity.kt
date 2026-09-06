@@ -1,6 +1,7 @@
 package br.com.tipo7.caixa
 
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Intent
@@ -8,10 +9,12 @@ import android.content.IntentFilter
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
+import android.webkit.CookieManager
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
@@ -109,6 +112,15 @@ class MainActivity : AppCompatActivity() {
 
         webView.loadUrl(baseUrl() + "/caixa")
 
+        // Botão nativo (fora da WebView, ver activity_main.xml) — funciona
+        // mesmo se a página web travar/ficar em branco. Sem isso, a única
+        // forma de recuperar um terminal travado era ADB (inviável no
+        // campo). Discreto de propósito: não é pra ser usado no dia a dia,
+        // só quando algo trava.
+        findViewById<android.widget.TextView>(R.id.botaoMenu).setOnClickListener {
+            mostrarMenuRecuperacao()
+        }
+
         // Trava o terminal na nossa tela — segunda versão (03/09/2026).
         // Achado real testando com usuário no aparelho físico: o simples
         // `startLockTask()` (Screen Pinning) NÃO segura os botões dessa
@@ -162,6 +174,37 @@ class MainActivity : AppCompatActivity() {
 
     private fun baseUrl(): String =
         if (BuildConfig.DEBUG) BuildConfig.BASE_URL_DEBUG else BuildConfig.BASE_URL_RELEASE
+
+    // Menu nativo de recuperação — pedido do usuário 06/09/2026 depois de um
+    // terminal travar numa tela em branco sem cabo/ADB por perto pra
+    // recuperar. As duas opções cobrem os 2 tipos de trava reais que já
+    // vimos: rede/servidor com problema (Recarregar resolve) e sessão presa
+    // num caixa errado (Desconectar limpa e volta pro login).
+    private fun mostrarMenuRecuperacao() {
+        AlertDialog.Builder(this)
+            .setTitle("Terminal Tipo7")
+            .setItems(arrayOf("Recarregar", "Desconectar (sair da conta)", "Cancelar")) { _, which ->
+                when (which) {
+                    0 -> recarregar()
+                    1 -> desconectar()
+                }
+            }
+            .show()
+    }
+
+    private fun recarregar() {
+        webView.loadUrl(baseUrl() + "/caixa")
+    }
+
+    // Limpa cookies E localStorage — a sessão do site pode estar em
+    // qualquer um dos dois (ver web/src/lib/auth/session.ts), limpar só um
+    // não garante logout de verdade.
+    private fun desconectar() {
+        CookieManager.getInstance().removeAllCookies(null)
+        WebStorage.getInstance().deleteAllData()
+        webView.clearCache(true)
+        recarregar()
+    }
 
     // Terminal de caixa não deve "sair" do app com o botão voltar do Android
     // — só navega pra trás dentro da própria WebView, se der.
