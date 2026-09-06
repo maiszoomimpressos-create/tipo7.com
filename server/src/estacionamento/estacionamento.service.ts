@@ -295,7 +295,7 @@ export class EstacionamentoService {
           if (formaPagamento === 'cartao') {
             const cobranca = await this.pagamentosFisicos.cobrar({
               valor:    valorCobrado,
-              caixaId,
+              caixaId:  body.caixaId,
               origem:   'estacionamento_sessao',
               criadoPor: userId,
             });
@@ -651,10 +651,23 @@ export class EstacionamentoService {
     // 20/08/2026).
     const acessoOwner = await this.caixas.garantirAcessoOwnerParaSangria(eventoId, userId);
 
+    // Token de quem foi designado pra operar (pedido do usuário, 27/08/2026)
+    // — abrir caixa é autorização, o dono precisa do token na hora pra
+    // repassar, não devia depender da pessoa catar sozinha depois em "Meus
+    // trabalhos". Seguro gerar aqui: operadorId só chega até aqui se já
+    // passou pela checagem de hasEventPermission acima, que exige staff
+    // ATIVO (já aceitou convite antes) — nunca é convite novo nesta rota.
+    let operadorAcesso: { staff_id: string; token: string | null; precisa_criar_pin: boolean } | null = null;
+    if (operadorId) {
+      const acesso = await this.caixas.garantirAcessoOwnerParaSangria(eventoId, operadorId);
+      operadorAcesso = { staff_id: acesso.staffId, token: acesso.token, precisa_criar_pin: acesso.precisaCriarPin };
+    }
+
     return {
       ok: true,
       caixa,
       owner_acesso: { staff_id: acessoOwner.staffId, token: acessoOwner.token, precisa_criar_pin: acessoOwner.precisaCriarPin },
+      operador_acesso: operadorAcesso,
     };
   }
 }

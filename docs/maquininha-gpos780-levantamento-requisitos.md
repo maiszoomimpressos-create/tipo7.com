@@ -539,13 +539,756 @@ quando tiver app de verdade rodando, o passo seguinte é usar "fixação de
 tela" (Screen Pinning) ou o próprio Gertec Box/MDM pra travar o aparelho só
 no app da Tipo7.
 
+## Exploração do portal do desenvolvedor Gertec (26/08/2026) — achado sobre Cerimonial de Chaves
+
+Seguindo o passo 0 acima, entramos no `portal.developer.gertec.com.br` pra
+procurar o processo de homologação/certificado. Mapeamento da trilha certa
+e um achado que pesa na decisão comercial.
+
+**Trilha do portal**: o menu "POS" que aparece primeiro é da linha **POS
+Linux** (Ficha técnica POS Linux, PPComp, SHOPIN) — não é a trilha da
+GPOS780, que é Smart POS Android. A trilha certa é **"Primeiros passos"**
+→ depois **"Desenvolvimento Android"** (ainda não aberto). Dentro de
+"Primeiros passos" existem os artigos: Glossário, Cuidados com o produto,
+**Cerimonial de Chaves**, Criptografia Triple-DES/TDES/3DES, Conexão móvel,
+Entendendo o funcionamento de uma compra com cartão, Remoção de Chaves DES
+do Mapa ABECS, Integração - Primeiros Passos, TEF.
+
+**O que é o Cerimonial de Chaves, lido direto no artigo oficial + no
+"Formulário de Cerimonial de Chaves.docx"** (achado no Desktop do usuário):
+
+- É o procedimento formal de **carregar a chave criptográfica** (TDES ou
+  DUKPT-TDES) que o pinpad/POS usa pra criptografar PIN/dados — sem isso,
+  o aparelho não consegue processar transação real com captura de PIN.
+- **Exige presença física** na unidade da Gertec, com equipe deles +
+  representantes do cliente/adquirente, seguindo princípios PCI de **dupla
+  custódia** (2-3 "custodiantes", cada um sabe só uma parte da chave) — a
+  própria doc desaconselha fazer com 1 pessoa só.
+- Precisa agendar por e-mail (sugerir 3 datas), preencher o formulário
+  (documento .docx com campos: equipamento alvo — PINPAD/MOBILE
+  PINPAD/POS/MOBILE POS e modelo exato; algoritmo da chave; KCV; KSI se
+  DUKPT; propósito — PIN/Dados/Transporte; quantidade de componentes da
+  chave; se está protegida por chave de transporte), e levar documento de
+  identificação.
+- Custodiantes recomendados: pessoas de confiança (diretor, gerente, time
+  de segurança) — a doc questiona explicitamente se pode ser "o
+  desenvolvedor" e não dá resposta fechada (depende do que for combinado
+  no e-mail).
+- Chave fica guardada num **HSM** (Hardware Security Module) — cofre digital
+  à prova de violação, com autodestruição das chaves em caso de tentativa de
+  invasão física.
+
+**Por que isso importa pra decisão comercial (Caminho 1 vs 2 do levantamento
+acima)**: esse processo é pesado, presencial, com regra de dupla custódia e
+burocracia de agendamento — não é algo que uma software house like a Tipo7
+normalmente faz por conta própria pra um app. Na prática, **quem passa por
+esse cerimonial já é o provedor de TEF ou a adquirente**, que entrega ao
+integrador um SDK que já sabe falar com a chave carregada, sem o integrador
+precisar tocar na chave em si. Isso é mais uma evidência a favor do
+**Caminho 1 (TEF terceirizado)**: se formos pelo Caminho 2 (SDK direto de
+adquirente) ou por integração de baixíssimo nível direto no keymanager da
+WangPOS, é provável que sejamos nós (Tipo7) quem teria que passar por esse
+cerimonial — o que não faz sentido pro tamanho da operação.
+
+**Ainda não confirmado**: se o provedor de TEF escolhido (SiTef/PayGo/Connect
+TEF) já resolve o cerimonial de chave por trás (bem provável, é o modelo
+padrão do mercado) ou se ainda assim algum cerimonial local seria necessário
+pra vincular a GPOS780 específica. Pergunta a mais pra somar na cotação do
+próximo passo 1.
+
+## Primeiras mudanças de layout aplicadas e testadas (01/09/2026)
+
+Duas mudanças pequenas e de baixo risco (arquivo em produção, mexe com
+dinheiro/veículo real — evitando reescrever tudo de uma vez):
+
+1. **`web/src/lib/nativeCaixaApp.ts`** — `isNativeCaixaApp()`, detecta se a
+   página roda dentro do app Android nativo (checando a presença de
+   `window.CobrancaBridge`, injetada só lá). Reaproveitável em qualquer
+   outra tela que precise diferenciar "rodando no navegador" vs "rodando na
+   GPOS780".
+2. Em `AtendenteClient.tsx`: bloco **"Impressora e ticket de entrada"**
+   escondido por completo quando `isNativeCaixaApp()` — a GPOS780 já tem
+   impressora térmica embutida, esse seletor genérico
+   (Bluetooth/PrintServer/celular) não se aplica lá. `formatoImpressao`
+   também passa a ignorar qualquer preferência salva no localStorage do
+   mesmo evento quando em app nativo, ficando sempre `'nenhuma'` — evita
+   herdar configuração de um uso anterior em navegador comum.
+3. Grids `Modelo/Cor` e `Nome/WhatsApp`, que eram `grid-cols-2` fixo (nunca
+   respondiam a tamanho de tela), viraram `grid-cols-1 sm:grid-cols-2` —
+   empilham em 1 coluna em telas estreitas (GPOS780), continuam 2 colunas
+   em tablet/PC como já era.
+
+**Testado**: `tsc --noEmit` sem erros, recarregado no emulador `Tipo7Caixa`
+com login real — confirmado visualmente que o bloco de impressora sumiu e
+os campos empilharam certinho.
+
+**Cabeçalho compactado (01/09/2026)**, mesma sessão — pedido do usuário:
+- Linha 1: marca (ícone + "tipo7", mesmo estilo do `Header.tsx` do site) +
+  nome do evento, truncando se necessário (`truncate`).
+- Linha 2: badge do módulo (ícone `Car` + "ESTACIONAMENTO").
+- 1 botão (`Menu`) abre um bottom-sheet "Funções do caixa" com o que antes
+  eram 2 links de texto soltos (contagem do caixa, sangria) + o botão
+  "Voltar" — que agora só aparece **fora** do app nativo (dentro da GPOS780
+  não existe outra tela do site pra voltar, o app só serve pra essa
+  função).
+- Reduziu de 4 blocos empilhados (título 2 linhas + info do caixa + sangria
+  + config de impressora) pra 2 linhas + 1 botão antes do formulário.
+
+Testado: `tsc --noEmit` sem erros, recarregado no emulador, menu abre e
+mostra as opções certas (sem "Voltar", confirmando a detecção de app
+nativo).
+
+**Ajustes no menu + "Ver meu caixa" (01/09/2026)**, mesma sessão:
+- Modal "Funções do caixa" estava abrindo colado embaixo da tela
+  (`items-end sm:items-center`, herdado do padrão de outro modal) — trocado
+  pra `items-center` sempre, agora abre centralizado.
+- Novo item **"Ver meu caixa"**: resumo de quanto já entrou no turno,
+  quebrado por forma de pagamento (Dinheiro/PIX/Cartão) + fundo inicial +
+  valor esperado na gaveta. **Não precisou de endpoint novo** — `GET
+  /caixas/:caixaId` já calculava tudo isso (`calcularSaldoCaixa` em
+  `caixas.service.ts`), só faltava uma tela pro operador consultar (só o
+  dono/admin via até agora). Permissão de quem pode ver já vem resolvida
+  nesse mesmo endpoint (dono OU o operador do caixa).
+- Achado real no caminho: `fundo_inicial` chega como Decimal do Prisma
+  (serializa como string no JSON) — `formatBRL()` esperava number puro;
+  sem o `Number(...)` mostrava "100" cru em vez de "R$ 100,00". Os outros
+  campos (totalDinheiro/Pix/Cartao/expectedGaveta) já vêm como number de
+  verdade, somados em JS no backend.
+
+Testado: `tsc --noEmit` sem erros, recarregado no emulador — modal
+centralizado confirmado, "Ver meu caixa" abre e mostra os valores certos
+com a formatação corrigida.
+
+**Achado à parte**: a sessão de login não persiste entre reinícios do app
+(fica só em memória, `web/src/lib/auth/session.ts`) — reiniciar o app
+nativo sempre volta pra tela de login. Não é bug, é como o site já
+funciona hoje (refresh de página também desloga); só relevante se algum dia
+quisermos "lembrar login" no app nativo especificamente.
+
+## Login completo confirmado + início do redesenho de layout (01/09/2026)
+
+Login de verdade testado com token+PIN reais de um evento de teste
+("EVENTO DE TESTES (NÃO E VÁLIDO)") — funcionou de ponta a ponta, caiu
+direto na tela do Estacionamento (Atendente). A partir daqui começamos a
+**Fase de layout**: redesenhar `AtendenteClient.tsx` (1200 linhas, hoje
+pensado pra tela normal de PC/tablet) pro tamanho pequeno da GPOS780
+(retrato, ~720×1280 reais — testado num emulador 1080×2400 que aproxima a
+proporção). Mantendo a identidade visual já existente do produto
+("Midnight Minimal with Gold Accent", ver `DESIGN_SYSTEM.md`) — não é
+redesenho de marca, é adaptação de layout/ergonomia pro formato pequeno.
+
+## Papéis do ecossistema TEF (26/08/2026) — onde a Tipo7 se encaixa
+
+Lido o artigo "TEF" do portal Gertec, que define 3 papéis. Registrando aqui
+porque esclarece de vez qual é o papel da Tipo7 na integração:
+
+| Papel | Função | Quem |
+|---|---|---|
+| **TEF House** | desenvolve o software que conecta o estabelecimento com as adquirentes | SiTef, PayGo, Connect TEF |
+| **Software House** | integra o TEF da TEF House dentro do sistema de automação comercial próprio, dá suporte ao cliente final | **Tipo7** |
+| **Adquirente** | negocia taxa, processa pagamento, antecipa recebíveis | Stone, Cielo, Rede, GetNet etc. — contratada à parte pelo promotor/cliente |
+
+Confirma a arquitetura já desenhada (app fino/ponte nativa chamando o SDK do
+provedor de TEF escolhido) — a Tipo7 nunca precisa virar TEF House nem
+Adquirente, só integrar como Software House.
+
+**Ponto a esclarecer na cotação**: o artigo abre com "as soluções TEF **da
+Gertec**", o que soa contraditório com o achado anterior ("não existe TEF da
+Gertec, é só fabricante de hardware"). Leitura mais provável: é a Gertec se
+posicionando como fabricante de hardware **homologado** pra rodar TEFs de
+terceiros, não que a Gertec seja ela própria uma TEF House — mas vale
+confirmar direto na cotação, pra não presumir errado.
+
+## Referência técnica encontrada — impressão de QR Code via Gertec EasyLayer (26/08/2026)
+
+Artigo do portal (trilha "Gertec EasyLayer") mostra como gerar e imprimir QR
+Code na térmica embutida do aparelho — **não é sobre pagamento**, é
+impressão. Guardado aqui porque conecta direto com
+[[project_estacionamento_ticket_qr]] (ticket de estacionamento com QR
+impresso na entrada) e [[project_impressao_termica_sessao_11_08]].
+
+- **EasyLayer** é a biblioteca própria da Gertec pra periféricos (impressora
+  térmica embutida) — diferente do SDK de pagamento (WangPOS, achado via ADB
+  na sessão de mão na massa). As duas coexistem no mesmo aparelho, uma pra
+  cada função.
+- Dependências: `EasyLayer-SK210-v2.1.7-release.aar` (impressão) +
+  `io.nayuki:qrcodegen:1.7.0` (geração do QR, alternativa ao ZXing).
+- Fluxo: gera o QR como `Bitmap` (`generateQRCode(texto, largura, altura)`),
+  imprime via métodos de imagem do EasyLayer, ou mostra em tela via
+  `ImageView`.
+
+**Quando isso vira útil de verdade**: só quando a Fase de implementação do
+app Android nativo começar (depois da decisão comercial de TEF). Nesse
+ponto, essa é a implementação de referência pra imprimir o ticket com QR
+direto na GPOS780, sem reinventar.
+
+## SDK Android oficial da Gertec — achado no portal (27/08/2026)
+
+Usuário conseguiu acesso ao portal `gertec.atlassian.net` (Service Desk/
+Confluence, login próprio) e colou o conteúdo do artigo **"Gertec SDK
+GPOS780"**, seção "Pacote SDK". Registro do conteúdo e da leitura técnica.
+
+### O que o pacote de desenvolvimento contém
+
+Três bibliotecas:
+- **PPComp** — "Biblioteca Compartilhada" (família GPOS700) — é a camada de
+  pagamento/TEF propriamente dita.
+- **GEDI** — funções de impressora, NFC e outros módulos do equipamento.
+- **GANDI** — configurações exclusivas dos equipamentos Android padrão
+  (APN etc.).
+
+Conteúdo do pacote: driver USB do dispositivo Android, bibliotecas de
+integração, documentação das bibliotecas, apps de exemplo.
+
+### Achado decisivo: PPComp é casado com a Adquirente, não é agnóstico
+
+A própria página avisa: **"A versão da PPComp deve corresponder à do
+Adquirente principal que será utilizado!"** — ou seja, o PPComp não é uma
+camada neutra que fala com qualquer adquirente. Cada build/versão já vem
+homologada pra uma adquirente específica.
+
+Tabela colada pelo usuário (Build Number → GANDI/GEDI → PPComp → Adquirente):
+
+| Build Number | GANDI | GEDI | PPComp | Adquirente |
+|---|---|---|---|---|
+| 888 (2307111859) | 1.2.16 | 1.16.19 | 1.31 | — |
+| 933 (2404182135) | 1.2.19 | 1.16.21 | 1.32 | **Fiserv - Rede** |
+| 935 (2404301413) | 1.2.20 | 1.16.21 | 1.32 | **Fiserv - Rede** |
+| 978A (2503141249) | 2.1.4 | 2.1.2 | 1.38 | — |
+| 981 (2504142159) | 2.1.9 | 2.1.4 | 1.38 | — |
+| 987 (2508121440) | 2.1.14 | 2.1.10 | 1.37 | — |
+| 988 (2511121019) | 2.1.19 | 2.1.14 | 1.37 | — |
+| 988B (2602091811) | 2.1.19 | 2.2.6 | 1.39 | — |
+
+Só as versões 933/935 vieram com a coluna Adquirente preenchida no que foi
+colado (**Fiserv - Rede**) — não confirmado se as demais linhas são a mesma
+adquirente (cortado na cópia) ou se há outras mais abaixo na página original.
+**Pergunta em aberto pro usuário**: rolar a página completa e confirmar.
+
+### Leitura técnica — o que isso muda na decisão
+
+Esse achado **reforça** o Caminho 1 (TEF terceirizado) como opção mais
+flexível: se o SDK oficial "Gertec" pra GPOS780 já nasce amarrado a uma
+adquirente específica (aparentemente Rede/Fiserv, na trilha encontrada até
+agora), então "usar o SDK direto da Gertec" na prática **é** Caminho 2 (SDK
+de adquirente específica), só que rodando por cima de bibliotecas com nome
+Gertec (GEDI/GANDI) em vez de acessar a WangPOS por baixo diretamente. Não
+existe, pelo visto até agora, uma trilha "SDK Gertec multi-adquirente" —
+isso ficaria a cargo de um TEF terceirizado (SiTef/PayGo/Connect TEF) rodando
+por cima dessa mesma base.
+
+**Também explica uma peça do quebra-cabeça de 26/08**: é bem provável que a
+"whitelist de certificado" que bloqueou o sideload de navegador/apps nas
+tentativas anteriores seja resolvida justamente por esse cadastro no portal
+— o próprio acesso que o usuário já tem agora pode ser o passo que faltava
+pra registrar a assinatura de um app próprio. Ainda não testado — próximo
+passo real depois de baixar o pacote é tentar instalar o app de exemplo do
+SDK e ver se passa da barreira `INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES`
+que travava antes.
+
+**Ainda não confirmado**: se esse pacote SDK é exclusivo Rede/Fiserv ou se
+existe versão equivalente pra outras adquirentes (Stone, Cielo, GetNet) na
+mesma trilha do portal — vale procurar por outras páginas irmãs no mesmo
+espaço "DA" do Confluence.
+
+### Achado que simplifica tudo: PPComp é padrão ABECS, TEF já embute ele por dentro (27/08/2026)
+
+Usuário colou o artigo "PPComp GPOS700 family – Shared Library" (a
+documentação de baixo nível da biblioteca de PIN pad). Achado mais
+importante, direto do aviso oficial no topo do artigo:
+
+> *"caso o cliente já esteja utilizando algum SDK de TEF para pagamento, por
+> exemplo SDK Software Express, SDK Stone ou SDK REDE, etc., **na maioria dos
+> casos não será necessário incluir em seu aplicativo a biblioteca
+> compartilhada**, visto que estes SDKs já a possuem internamente."*
+
+**Leitura**: PPComp é a implementação Gertec do padrão **"Biblioteca
+Compartilhada para PIN pad"** da **ABECS** (associação das bandeiras/cartões
+no Brasil) — interface EMV de baixo nível (`PP_Open`, `PP_GetCard`,
+`PP_GoOnChip`, `PP_FinishChip`, `PP_GetPin`, `PP_SetKbd`, tratamento de botão
+"inflado" no Android, senão a tela trava ~2min por segurança, etc.). É
+trabalho pesado, exige conhecimento prévio de arquitetura EMV, documento
+próprio da ABECS embutido.
+
+**Isso só importa de verdade pro Caminho 2 (SDK direto de adquirente/PPComp
+cru)**. No Caminho 1 (TEF terceirizado — SiTef/PayGo), o SDK do TEF House já
+embute o PPComp por dentro — a Tipo7, como Software House (ver tabela de
+papéis já registrada acima), integraria contra o SDK do SiTef/PayGo, não
+contra PPComp diretamente. **Reduz a complexidade real de implementação se
+o Caminho 1 for o escolhido** — reforça ainda mais essa direção.
+
+Também existe um app de teste oficial (`PPCOMP test.apk`, mar/2021) com
+passo a passo de teste manual (Open → GetCard → produto Débito/Crédito →
+GoOnChip → senha → FinishChip) — útil só se algum dia formos pelo Caminho 2
+ou quisermos validar o hardware isoladamente antes de escolher TEF.
+
+**Próximo passo real, mais produtivo que continuar explorando o portal
+Gertec**: mandar a cotação já rascunhada em
+`docs/rascunho-email-cotacao-tef.md` pra SiTef/PayGo/Connect TEF — as
+respostas deles (BYOD, cerimonial de chave, split, estorno) importam mais
+agora do que aprofundar em PPComp.
+
+## Scaffold do app Android iniciado (01/09/2026), em paralelo à cotação
+
+Enquanto a cotação (Caminho 1) não tem resposta, começamos a parte que não
+depende dela: a casca nativa em WebView descrita na seção "App único
+cobrindo Bilheteria/Estacionamento/Tenda/Praça de Alimentação" acima.
+
+**Criado:**
+- `android/` — projeto Android novo no monorepo (Kotlin, Gradle Kotlin DSL,
+  wrapper gerado de verdade a partir de uma distribuição Gradle 8.9 já em
+  cache na máquina). `MainActivity` carrega `{BASE_URL}/caixa` numa WebView
+  — zero tela recriada, 100% reaproveitamento do `/caixa` que já existe.
+- `CobrancaBridge.kt` — ponte JS↔Android (`window.CobrancaBridge.cobrarCartao(...)`
+  → `window.Tipo7CobrancaCallback(callbackId, resultadoJson)`), documentada
+  com o contrato final pra não precisar mudar do lado da página web quando o
+  SDK real de TEF entrar. Hoje ela só repassa pro backend via HTTP
+  (OkHttp) — nenhum cartão é lido de verdade ainda.
+- `server/src/pagamentos-fisicos/pagamentos-fisicos.controller.ts` —
+  endpoint novo `POST /pagamentos-fisicos/cobrar` (mesma auth Bearer/
+  SupabaseJwtGuard do resto do backend), exposto especificamente pra essa
+  ponte chamar. Não substitui a cobrança automática que
+  `estacionamento.service.ts` já dispara ao fechar ticket com
+  `formaPagamento='cartao'` — os dois convivem por enquanto; unificar isso
+  é decisão pra quando o SDK real entrar (ver achado abaixo).
+
+**Testado de verdade, não só "compilou no editor":**
+- `cd android && .\gradlew.bat assembleDebug` → `BUILD SUCCESSFUL`, gerou
+  APK debug de verdade.
+- `cd server && npm run build` (nest build, produção) → sem erros.
+- **Instalado e aberto num emulador real** (AVD novo `Tipo7Caixa`, criado
+  separado do emulador que já estava aberto pra outro projeto, pra não
+  mexer nele — mesma imagem `android-36/google_apis/x86_64` já em cache,
+  sem baixar nada). Subiu `web` (Next dev, :3000) e `server` (Nest dev,
+  :3001) locais, instalou o APK via `adb install`, abriu a `MainActivity` —
+  **a tela real de "Acesso ao caixa" (login por token+PIN) carregou dentro
+  da WebView nativa**, confirmando o caminho completo: app → WebView →
+  `http://10.0.2.2:3000/caixa` → proxy Next.js → backend Nest. Log do
+  servidor confirma a rota nova mapeada: `PagamentosFisicosController
+  {/pagamentos-fisicos}` → `POST /pagamentos-fisicos/cobrar`.
+- Não testado ainda: logar de verdade com token+PIN e acionar o botão
+  "Cobrar Cartão" pela ponte (`CobrancaBridge`) — a página web ainda não
+  chama a ponte (isso não foi feito nesta sessão, só o transporte da ponte
+  foi construído e fica pronto pra ser chamado).
+
+**Bug real achado e corrigido (01/09/2026) — HMR bloqueado derrubava o
+formulário de login**: ao tentar digitar token+PIN dentro do app Android, os
+campos "esvaziavam" sozinhos no meio da digitação, como se não aceitassem
+texto. Não era teclado nem WebView — o Next.js bloqueia `/_next/webpack-hmr`
+quando acessado de uma origem diferente de `localhost` (`10.0.2.2`, que é
+como o emulador/app enxergam a máquina dev), e sem HMR conectar o dev server
+cai num loop de full-reload da página (76 recargas de `/caixa` capturadas
+num teste de poucos minutos) — cada recarga zera o estado React e some com
+o que tinha sido digitado. Corrigido com `allowedDevOrigins: ['10.0.2.2']`
+em `web/next.config.mjs`. **Só afeta ambiente de dev** (produção não usa
+HMR) — mas se algum dia testarem com o IP da rede local (aparelho físico
+GPOS780), esse IP também precisa entrar nessa lista. Testado e confirmado:
+login completo funciona (`Token ou PIN inválido.` renderizado corretamente
+pra credencial de teste, sem apagar os campos).
+
+**Achado de arquitetura em aberto, registrado aqui pra não esquecer**: o
+endpoint novo assume que quem aciona a cobrança é o cliente (app), mas hoje
+`estacionamento.service.ts` já cobra sozinho, no servidor, ao fechar o
+ticket — isso só funciona porque é mock (não fala com hardware nenhum). Com
+SDK real, o cartão só pode ser lido no aparelho que o operador tem na mão
+— o servidor não consegue "acionar a maquininha à distância" sem um
+transporte tipo SSE/push (opção B já registrada acima). Antes de plugar o
+provider real, decidir: (a) o app native chama `cobrar` ANTES de fechar o
+ticket e manda o resultado junto (inverte quem dispara), ou (b) mantém o
+servidor disparando e usa push/SSE pra acionar o terminal certo. Não
+bloqueia o scaffold atual, mas bloqueia a integração real.
+
+## Pacotes de SDK reais analisados (01/09/2026) — achado forte sobre o bloqueio de instalação
+
+Usuário conseguiu os dois pacotes de desenvolvimento direto no portal
+Gertec e mandou os arquivos: `PPComp_1.39.zip` (3MB) e `SDK 988B.zip`
+(933MB, quase tudo é `OS/ATUALIZADOR_FULL_GPOS780_v988B_USERTSEC.apk`,
+907MB — o atualizador de firmware completo pra build 988B; `README.txt`
+avisa **usar esse atualizador só a partir da versão de imagem 987** — nosso
+aparelho está na 977, então **não** atualizar direto sem confirmar o
+caminho de upgrade certo, risco real de brickar o aparelho).
+
+**Conteúdo de verdade (sem o firmware):**
+- `PPComp_1.39/` — só as 2 libs já esperadas (`libhcl` + `libppcomp`, .aar
+  e .jar, variantes `logs`/`release`) — confirma o que já sabíamos: só
+  importa pro Caminho 2 (SDK direto de adquirente).
+- `SDK 988B/SDK/Libs/` — `Gandi_2.1.19` (config do aparelho) e `Gedi_2.2.6`
+  (periféricos: impressora, NFC etc.) — as duas bibliotecas "genéricas Android"
+  que já sabíamos existir.
+- `SDK 988B/SDK/Docs/` — javadoc completo de GANDI e GEDI (só HTML, sem PDF
+  narrativo).
+- `SDK 988B/SDK/Gertec Service/` — `GertecService-2.7.3.1-...apk`, o
+  serviço de sistema que provavelmente hospeda essas permissões por trás.
+- `SDK 988B/SDK/Samples/` e `Tools/` — **vazias** nesse pacote, sem app de
+  exemplo pronto pra testar instalação.
+
+### Achado forte: 2 métodos GANDI parecem endereçar direto o bloqueio de sideload
+
+Lendo o javadoc de `IGandi`, dois métodos batem exatamente com o problema
+da sessão de 26/08 (4 tentativas de instalar navegador via `adb install`,
+todas com `INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES`):
+
+- **`CanInstallUnknownAppsEnabled(packageName, enable)`** — "Activates/
+  Deactivates Can install unknown apps", por pacote específico. Não lista
+  GPOS780 na lista de "Unsupported to" (só GPOS700A/X/Mini, 720, 730, 740,
+  760, 790, 790M) — ou seja, **é suportado no nosso aparelho**.
+- **`EnableDebugInstallMode(enable)`** — "Enable/Disable install any
+  application **(debug image only)**". Bate direto com o achado de
+  26/08 de que o aparelho roda build `userdebug`. Também não exclui
+  GPOS780 da lista de suportados.
+
+Os dois exigem "Customer privilege" / "Enhanced privilege" respectivamente
+— **não confirmado ainda** o que exatamente concede esse privilégio a um
+app (provavelmente ligado ao cadastro no portal do desenvolvedor, mesma
+trilha do "Cerimonial de Chaves"/certificado já mapeada, mas não achei doc
+narrativo explicando isso dentro do próprio pacote SDK — só o javadoc
+técnico dos métodos).
+
+**Reframing importante**: a hipótese anterior era "whitelist de assinatura
+de certificado" bloqueando qualquer app não cadastrado. Esse achado sugere
+algo mais simples e mais controlável: **`CanInstallUnknownAppsEnabled`
+provavelmente vem OFF por padrão e bloqueia instalação de qualquer app não
+pré-aprovado**, independente de quem assinou — não é sobre a chave de
+assinatura em si, é sobre esse toggle específico.
+
+**Teste barato e ainda não feito, próximo passo real**: tentar `adb
+install` do **nosso próprio** `android/app/build/outputs/apk/debug/
+app-debug.apk` (Tipo7 Caixa) no aparelho físico de verdade — as 4
+tentativas de 26/08 foram todas com **navegadores de terceiros**
+(Chromium/Bromite/F-Droid), nunca com um app nosso. Se instalar sem erro,
+o bloqueio pode não ser tão universal quanto pensávamos. Se falhar com o
+mesmo erro, confirma que precisamos achar como acionar
+`EnableDebugInstallMode`/`CanInstallUnknownAppsEnabled` antes de instalar
+qualquer coisa — e aí vira um problema de "preciso rodar código Java no
+aparelho antes de conseguir instalar app nenhum", que pode exigir suporte
+direto da Gertec ou achar um caminho via `adb shell` sem precisar de app
+instalado primeiro (não pesquisado ainda).
+
+## Primeiro contato com a SiTef — por telefone (01/09/2026)
+
+Usuário ligou pra SiTef (não por e-mail, então sem registro escrito pra
+citar aqui). Foco da ligação foi comercial/valores, não técnico — usuário
+não é da área técnica, então os detalhes abaixo são o que deu pra captar,
+sem garantia de precisão total (nada em texto pra conferir):
+
+- **BYOD confirmado**: aceitam ativar a GPOS780 **já comprada avulsa**
+  ("máquina destravada e própria"). Também oferecem aparelho alugado como
+  alternativa, se um dia fizer sentido trocar.
+- Eles têm **um time de programadores que ajuda** na integração (postura
+  de suporte ativo ao Software House, bate com o papel esperado de TEF
+  House descrito antes).
+- **Não capturado**: valores exatos (só que "pesquisou preços", sem
+  números registrados aqui), cerimonial de chave, split de pagamento,
+  estorno, prazo de homologação, kit de integração/SDK em si.
+
+**Isso já resolve a maior pergunta em aberto do levantamento** (BYOD) —
+Caminho 1 com a GPOS780 atual está confirmado viável comercialmente.
+
+**Bloqueio real pra codar**: tudo que temos até aqui é verbal. Não dá pra
+integrar sem material escrito — SDK, documentação técnica, ou pelo menos
+um contato técnico direto. Próximo passo natural: pedir pra SiTef mandar
+isso por e-mail (kit de integração, documentação, e as perguntas técnicas
+que já estavam na cotação original — cerimonial de chave, split, estorno).
+
+## Investigação a fundo do bloqueio de instalação (02/09/2026) — aparelho físico, com root
+
+GPOS780 conectada de verdade (`0123abcd`, build igual à de 26/08:
+`977`/`userdebug`/Android 11). Testes feitos:
+
+1. **`adb install` do nosso próprio APK** (não navegador de terceiro,
+   primeira vez testando isso) → **mesmo erro** de 26/08:
+   `INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES: has mismatched
+   certificates at entry`.
+2. **Verificado com `apksigner verify --print-certs`**: nosso APK está
+   perfeitamente assinado, 1 único signer (`Android Debug`), sem
+   inconsistência real nenhuma — confirma que **o problema é do aparelho,
+   não do nosso app**.
+3. **`adb root` funcionou** — aparelho aceita root de verdade (build
+   userdebug). Reinstalar como root, ou via `adb push` + `pm install` de
+   dentro do shell, deu o mesmo erro — não é limitação do cliente `adb`,
+   é o `PackageManagerService`/`installd` do aparelho recusando mesmo.
+4. **Logs do sistema quase vazios de propósito** (`main`: 13KB de 16MB,
+   `crash`: 0B) — aparelho endurecido, não loga verbosamente por padrão
+   (postura típica de terminal certificado PCI).
+5. **Não é restrição padrão do Android**: `dumpsys device_policy` sem
+   Device Admin ativo; `dumpsys user` mostra `Restrictions: none` e
+   `Effective restrictions: none` pro usuário 0 atual (`no_install_
+   unknown_sources` só aparece no template de Guest, não aplicado a nós).
+   Ou seja, **não dá pra destravar via `adb shell settings put` nem via
+   DevicePolicyManager** — não é esse o mecanismo.
+6. **Achado interessante, mas beco sem saída por ADB**: `br.com.gertec.
+   mymdm` (app MDM já instalado de fábrica) tem `android.permission.
+   INSTALL_PACKAGES` + `DELETE_PACKAGES` — privilégio de sistema real
+   pra instalar qualquer coisa. Mas `dumpsys package` mostra **zero
+   componentes exportados** (nenhuma Activity/Service/Receiver acessível
+   de fora) em `mymdm`, `smartstoremdm`, `gertecinstaller`, `autorun`,
+   `factory_service` — não tem porta aberta pra acionar isso via `adb
+   shell am broadcast`/`am start` sem já ter código nosso rodando no
+   aparelho.
+7. **Nenhum serviço "gandi" registrado** em `service list` do Binder —
+   a API GANDI (`CanInstallUnknownAppsEnabled`/`EnableDebugInstallMode`,
+   achado de ontem) deve falar por outro caminho (só chamável de dentro
+   de um app já instalado com o SDK, não via ADB puro) — **não testado
+   ainda de fato**, porque exigiria conseguir instalar um app primeiro
+   pra rodar esse código, o que é exatamente o problema.
+
+**Conclusão**: não existe atalho por ADB/root pra destravar isso. Os dois
+caminhos reais que sobram, nessa ordem de prioridade prática:
+
+1. **Ir pela SiTef primeiro** — SDKs de TEF House costumam já vir
+   pré-homologados/whitelisted pelo fabricante do hardware (é o modelo
+   padrão do mercado, parceria direta Gertec↔SiTef) — reforça ainda mais
+   o Caminho 1, agora também por motivo técnico, não só comercial.
+2. **Cadastro formal no portal Gertec** (Cerimonial de Chave/homologação
+   de app, trilha já mapeada em 27/08) — caminho de fallback se a SiTef
+   não resolver isso sozinha.
+
+**Deliberadamente não tentado**: remount de `/system` ou qualquer
+modificação de partição de sistema — risco real de brickar um aparelho
+físico de pagamento, não é decisão pra tomar sem confirmação explícita.
+
+**Lib GANDI integrada no app mesmo assim (02/09/2026)**: copiada pra
+`android/app/libs/libgandi-2.1.19-...aar`, dependência declarada em
+`app/build.gradle.kts`, chamada em `GandiHelper.kt` (`EnableDebugInstallMode`
++ `CanInstallUnknownAppsEnabled`) disparada no `MainActivity.onCreate`.
+Precisou de `tools:replace="android:allowBackup"` no manifest (a lib GANDI
+declara `allowBackup=true`, conflitava com o nosso `false`). Build passa
+limpo. **Testado no aparelho físico — instalação continua falhando com o
+mesmo erro.** Confirma o problema circular já documentado: o código GANDI só
+roda depois que o app já está instalado, mas é a instalação em si que está
+bloqueada — ter a lib no APK não resolve isso sozinho.
+
+## 🎉 RESOLVIDO — instalação destravada com chave de desenvolvedor da Gertec (02-03/09/2026)
+
+Usuário achou e mandou `INFOGedi_780.rar` (portal Gertec) — um projeto
+Android **completo** de exemplo (`infoGEDI`), diferente dos pacotes SDK
+anteriores (que só tinham as libs `.aar`, sem projeto/app de exemplo de
+verdade). Dentro dele:
+
+- Um APK pré-compilado (`APK/INFOGedi.apk`).
+- O projeto-fonte completo, incluindo o **keystore de desenvolvedor da
+  Gertec**: `Development_GertecDeveloper_EnhancedAPP.jks` (senha e alias no
+  próprio `build.gradle` do projeto: storePassword/keyPassword =
+  `Development@GertecDeveloper2018`, alias =
+  `developmentgertecdeveloper_enhancedapp`). Certificado real:
+  `CN=GertecDeveloper EnhancedAPP, O=Gertec Brasil Ltda`, emitido por
+  `Development EnhancedAPP CA` da própria Gertec, válido até 2029.
+
+**Teste decisivo**: instalado `INFOGedi.apk` (assinado com essa chave) no
+aparelho físico via `adb install` → **sucesso**. Confirma de vez que o
+bloqueio (`INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES`) é mesmo uma
+whitelist de certificado, e essa chave de desenvolvedor está nela.
+
+**Aplicado no nosso projeto**:
+- Keystore copiado pra `android/keystore/` (fora de `app/`, **gitignored**
+  — é credencial de terceiro, nunca commitar).
+- `app/build.gradle.kts`: `signingConfig` novo (`gertecDev`) usado tanto em
+  `debug` quanto `release`, **condicional** — se o arquivo não existir
+  (outro dev, CI), cai de volta no keystore padrão do Android (build
+  continua funcionando, só não instala na GPOS780 física).
+- **Resultado: nosso próprio APK (Tipo7 Caixa) instalou no aparelho físico
+  de verdade** — `adb install` retornou `Success` pela primeira vez desde
+  26/08.
+
+**Ajuste de rede pro app físico** (o app rodando na GPOS780 de verdade usa
+Wi-Fi, não o `10.0.2.2` do emulador):
+- Confirmado: PC na rede local em `192.168.18.39` (Ethernet), GPOS780 em
+  `192.168.18.56` (Wi-Fi), mesma sub-rede, `ping` ok.
+- `network_security_config.xml`: adicionado `192.168.18.39` como domínio
+  liberado pra cleartext (além do `10.0.2.2` do emulador).
+- `next.config.mjs`: `allowedDevOrigins` também recebeu esse IP (mesmo
+  motivo do `10.0.2.2` de antes — sem isso, o HMR quebra e a página
+  recarrega em loop).
+- Build feito com `-PTIPO7_BASE_URL_DEBUG=http://192.168.18.39:3000`
+  (override de linha de comando, não mudou o padrão do `gradle.properties`
+  — emulador continua usando `10.0.2.2` por padrão).
+
+**Bug real achado e corrigido no caminho**: chamar `GandiHelper.
+tentarLiberarInstalacao()` no `onCreate` — mesmo depois de mover pra uma
+thread separada — **trava a WebView inteira** no aparelho físico (tela
+preta, nunca carrega nada, sem log nenhum, processo fica "R" rodando mas
+nada renderiza). Como o problema que isso tentava resolver (instalação
+bloqueada) já foi resolvido pela chave Gertec, a chamada foi **desativada**
+(comentada, não removida) em `MainActivity.onCreate` — sem ela, a tela
+carrega normalmente. Causa raiz exata do travamento não investigada a
+fundo (não era mais necessário).
+
+**Resultado final, testado e fotografado**: app Tipo7 Caixa rodando na
+tela física real da GPOS780 (720×1280 confirmado), carregando `/caixa` via
+Wi-Fi do dev server local, idêntico ao que já rodava no emulador.
+
+## Achado de segurança — app nativo vazava navegação pro site geral (03/09/2026)
+
+Usuário testando no navegador comum (não no app nativo) notou que, num
+cenário de "sem caixa aberto ainda", o sistema mandava pro hub geral
+(`/trabalho/[eventoId]`) — que tem link pra **"Meus trabalhos"** (painel
+pessoal da conta, todos os eventos) e outras ferramentas fora do escopo.
+Levantou a bandeira certa: **"nas maquininhas só teremos as telas de
+estacionamento e bilheteria, conecta com o site apenas as informações
+pertinentes ao evento que o token e PIN direcionar"** — um terminal
+público (GPOS780, PC compartilhado) nunca pode ter caminho pra navegação
+ampla, pra área pessoal de ninguém, nem pra home pública.
+
+**4 vazamentos achados e corrigidos:**
+1. `CaixaLoginClient.tsx` (`decidirDestino`) — dentro do app nativo
+   (`isNativeCaixaApp()`), nunca mais cai no hub. Sem caixa direto pra
+   entrar, fica na própria tela de login com erro ("Peça pro organizador
+   abrir e designar um caixa"), sem navegar pra lugar nenhum.
+2. `bilheteria/[eventoId]/caixa/[caixaId]/page.tsx` — tela "Acesso negado"
+   tinha `href="/"` (home pública). Removido.
+3. `estacionamento/[eventoId]/page.tsx` — mesmo link, mesmo fix.
+4. `bilheteria/[eventoId]/page.tsx` — tela "Aguardando abertura do caixa"
+   linkava pro hub (`/trabalho/[eventoId]`). Trocado por um botão
+   "Atualizar" novo (`AtualizarButton.tsx`, só recarrega a página) — resolve
+   o mesmo problema (checar de novo se o caixa abriu) sem sair do escopo.
+
+**Por que os 3 primeiros não dependiam de `isNativeCaixaApp()`**: são
+páginas de servidor (sem `'use client'`, sem acesso a `window`) — em vez de
+tentar detectar o contexto no servidor, a correção foi só **nunca ter esse
+link**, em nenhum contexto — mais simples e seguro nos dois casos (não
+existe cenário real onde alguém precisa desse link específico).
+
+**Testado**: `tsc --noEmit` sem erros. Não testado ainda no app nativo de
+verdade forçando cada um desses 4 cenários (caixa fechado, sem permissão,
+etc.) — próximo passo real antes de considerar resolvido de verdade.
+
+**5º vazamento achado no aparelho físico de verdade (03/09/2026)**: o
+usuário viu, na própria GPOS780, um modal pedindo **endereço completo**
+(CEP/Rua/Bairro/Tipo de residência) com link pra `/perfil`. Origem:
+`ProfileCompletionModal.tsx` — modal **global**, renderizado em
+`Providers.tsx` (raiz do app, aparece em cima de QUALQUER página), dispara
+sozinho 2s depois de carregar se o perfil da conta logada tiver endereço
+incompleto. Não era específico de nenhuma tela de caixa, por isso escapou
+da varredura anterior. Corrigido: `isNativeCaixaApp()` bloqueia o
+`useEffect` que decide mostrar o modal — nunca aparece dentro do app
+nativo. **Testado no aparelho físico de verdade**: recarregado, modal não
+apareceu mais, voltou direto pra tela de login normal.
+
+**Lição registrada**: vazamentos de escopo no app nativo podem vir de
+qualquer lugar do site, não só das telas de caixa em si — qualquer
+componente **global** (providers, modais, banners) precisa ser auditado
+também, não só as páginas óbvias.
+
+## 🎉 Impressão térmica confirmada funcionando (03/09/2026)
+
+Via GEDI (`GEDI.getInstance(ctx).getPRNTR()` → `Init()` →
+`DrawStringExt(config, texto)` → `Output()`, achado no javadoc do pacote
+SDK 988B). Implementado com cuidado pra não repetir o susto da GANDI:
+
+- `PrinterHelper.kt` — chama a sequência acima, tudo em try/catch.
+- `PrintTestReceiver.kt` — `BroadcastReceiver` **só acionável via ADB**
+  (`am broadcast -a br.com.tipo7.caixa.TESTE_IMPRESSAO`), roda numa thread
+  separada, **completamente desacoplado do boot do app** — se travasse, só
+  travava essa thread isolada, a WebView já tinha carregado antes de
+  qualquer chance de disparar isso.
+
+**Testado no aparelho físico de verdade**: app carregou normal, broadcast
+disparado, app continuou respondendo (não travou) — e **o papel saiu de
+verdade** da impressora térmica embutida, confirmado pelo usuário. Primeira
+função de hardware da GPOS780 (além de instalar app) comprovada funcionando
+via nosso próprio código.
+
+**Também nessa sessão**: campo Placa (`AtendenteClient.tsx`) ganhou
+`autoCapitalize="characters"` — teclado já abre em maiúsculo (placa é
+sempre maiúscula), sem o operador precisar tocar em Shift toda hora. Isso é
+controlado 100% por nós (atributo HTML do input), não vem fixo de fábrica —
+o teclado que aparece na GPOS780 segue as mesmas regras de qualquer
+navegador, porque é a mesma WebView carregando a mesma página.
+
+## Teclado dinâmico no campo Placa (03/09/2026)
+
+Pedido do usuário: trocar o teclado (letras ↔ números) sozinho conforme a
+posição do caractere sendo digitado na Placa, já que os 2 formatos
+brasileiros são previsíveis:
+- Mercosul: `L L L N L N N` (posição 5 = LETRA)
+- Antiga: `L L L N N N N` (posição 5 = NÚMERO)
+
+Implementado `inputModePlaca(comprimento)` em `AtendenteClient.tsx` —
+retorna o `inputMode` HTML certo pra próxima posição (`text` nas 1-3,
+`numeric` na 4, `text` na 5 — ambígua entre os formatos, cobre os dois —
+`numeric` nas 6-7). Também ganhou `autoCapitalize="characters"` (mesma
+sessão, pedido anterior) e some com o teclado sozinho ao completar os 7
+caracteres.
+
+**Ressalva honesta**: `tsc` limpo, mas **não testado ainda no aparelho
+físico** — trocar `inputMode` num campo já focado nem sempre reage igual
+em todo WebView/IME (pode ter uma piscada ou demorar a reagir dependendo
+do teclado do sistema). Próximo passo real: testar isso especificamente
+no aparelho assim que tivermos token+PIN válido de novo.
+
+## Fixação de tela (Screen Pinning) — terminal travado no nosso app (03/09/2026)
+
+Motivado por um toque acidental durante teste que jogou o app pra tela
+inicial do Android (achado real, ao vivo) — usuário perguntou como travar
+o terminal só na nossa tela. Dois níveis possíveis, registrados:
+
+1. **Screen Pinning** (`startLockTask()`) — padrão do Android, qualquer
+   app pode chamar, sem permissão especial. Botão Voltar/Recentes/Home
+   param de responder até liberar de propósito (toque e segure Voltar +
+   Recentes juntos). **Implementado agora** em `MainActivity.onCreate`,
+   depois do `loadUrl`.
+2. **Device Owner** (MDM de verdade) — trava mais forte (barra de status,
+   troca de app), mas só funciona em aparelho sem conta configurada.
+   **Ainda disponível** nesse aparelho (`dumpsys device_policy` confirma
+   nenhum Device Admin ativo) — fica registrado como próximo passo, se um
+   dia precisarmos de trava mais forte que Screen Pinning.
+
+**Testado no aparelho físico de verdade**: instalado, app abriu e já
+mostrou o diálogo nativo do Android "O app está fixado". Depois de
+confirmar, tentei **Home** e **Recentes** via ADB (`keyevent 3` e `187`) —
+os dois foram bloqueados, o app nunca saiu da própria tela (só voltou pro
+login, dentro do app). Funciona.
+
+**Nota pra nós mesmos, não bloqueia nada**: enquanto estivermos
+testando/desenvolvendo, screen pinning ativo também bloqueia NOSSO próprio
+acesso via toque físico ao Recentes/Home pra trocar de app no aparelho —
+únicas saídas: o gesto de liberar (toque e segure Voltar+Recentes), ou
+matar o processo via `adb shell am force-stop`.
+
+**Próximo passo real de impressão**: adaptar `imprimirTicketEstacionamento`
+(já existe em `AtendenteClient.tsx`, hoje só fala com PrintServer/RawBT)
+pra ter um 3º caminho usando essa `PrinterHelper` quando `isNativeCaixaApp()`
+— aí sim vira o ticket de verdade (placa/modelo/cor/QR), não só o texto de
+teste fixo de agora.
+
+## GEDI integrada também (03/09/2026)
+
+Mesmo padrão da GANDI — copiada pra `android/app/libs/`, dependência
+declarada em `app/build.gradle.kts`. **Nenhum código chamando ela ainda**
+(só a dependência disponível, de propósito — lição da GANDI ontem: chamar
+API de aparelho sem entender direito pode travar a tela). Fica pronta pra
+quando entrarmos na Fase de imprimir ticket na térmica embutida da GPOS780.
+
+**Achado no caminho**: GANDI e GEDI embutem a **mesma pasta fonte
+`aidl/wangpos/...` inteira**, duplicada em mais de um caminho dentro de
+cada `.aar` — confirma de novo (agora a nível de arquivo, não só de pacote
+Android via `pm list packages`) que as duas rodam sobre a mesma base
+WangPOS/Weipass por baixo. Resolvido com `packaging { resources {
+pickFirsts += "**" } }` no `build.gradle.kts` — as duplicatas são sempre
+"mesmo conteúdo, dois lugares", nunca conflito de verdade, então liberar
+geral é seguro.
+
+**Testado**: build passa limpo, instala no aparelho físico (mesma chave
+Gertec), app abre e carrega normal — GEDI presente no APK não quebrou nada.
+
+**O que isso desbloqueia**: dá pra continuar todo o desenvolvimento/teste
+do app Android **direto no aparelho físico** de agora em diante, não só no
+emulador — inclusive testar a instalação real de um SDK de TEF (SiTef)
+assim que ele chegar, sem depender de resolver esse bloqueio de novo.
+**Ressalva**: essa é uma chave de **desenvolvimento**, não de produção —
+antes de distribuir o app de verdade (fora de teste), precisa decidir se
+usa homologação própria da Tipo7 no portal Gertec, ou se o SDK do TEF
+escolhido resolve isso por conta própria (bate com a leitura de que SDKs de
+TEF House costumam vir pré-homologados).
+
 ## Próximos passos sugeridos
 
-0. **(Novo, bloqueia o resto)** Verificar no portal
-   `portal.developer.gertec.com.br` se esse aparelho específico precisa de
-   homologação/registro de certificado antes de aceitar qualquer app
-   (inclusive um navegador de terceiros ou app próprio construído do zero).
-   Ver seção "Sessão de mão na massa" acima.
+0. **(Atualizado 27/08)** Confirmar se a página do SDK lista outras
+   adquirentes além de Fiserv/Rede; conferir o Build Number do aparelho
+   físico (`adb shell getprop ro.build.display.id`) contra a tabela acima;
+   baixar o Pacote de Desenvolvimento e testar se o app de exemplo instala
+   sem cair no erro de certificado que travava as tentativas de 26/08. Ver
+   seção "SDK Android oficial da Gertec" acima.
 1. Cotar/confirmar com 1-2 adquirentes diretas e 1 provedor de TEF
    (ex: Connect TEF) se aceitam ativar uma GPOS780 comprada avulsa, e a que
    taxa.
@@ -556,3 +1299,99 @@ no app da Tipo7.
 Combinado anterior (`plano-terminais-caixa-pwa.md`): essa integração entra
 depois que o módulo de Estacionamento estiver fechado — continua valendo,
 este documento só antecipa o levantamento pra não perder tempo depois.
+
+## 03/09/2026 — teste ao vivo no aparelho físico: placa com teclado dinâmico
+
+Testado direto na GPOS780 (não emulador) o ajuste da Placa no Estacionamento
+(`autoCapitalize="characters"`, `inputMode` dinâmico por posição do
+caractere, auto-blur ao completar 7 caracteres). **Confirmado funcionando**:
+digitado `ABC1D23`, o campo aceitou maiúsculas e a busca automática disparou
+sozinha (spinner apareceu) assim que bateu 7 caracteres — o `blur()` some
+com o teclado sem precisar tocar em outro lugar.
+
+A pedido do usuário, replicado o mesmo comportamento no campo **PIN** da
+tela de login (`/caixa`): ao completar os 6 dígitos, o campo também some
+com o teclado sozinho (`e.target.blur()` no `onChange`, só quando
+`next.length === 6` — com 4 dígitos não dá pra saber se terminou, porque 4
+já é um tamanho válido por si só, então só o de 6 tem gatilho automático).
+
+**Achado no caminho, útil pra próximos testes no aparelho físico**: depois
+de `am force-stop` num app que chamou `startLockTask()` (Screen Pinning),
+o Android trava a tela do **launcher** no modo fixado (toast "Para liberar
+o app, toque em Voltar e Visão geral..."), porque o pinning não foi
+liberado antes do processo morrer — `am start` de novo no nosso app não
+adianta enquanto isso não for resolvido. Solução via ADB, sem precisar do
+gesto físico Voltar+Recentes: `adb shell am task lock stop`. Confirmado
+que isso não deixa o aparelho em nenhum modo="lockTaskMode" residual
+(`dumpsys activity activities | grep mLockTaskModeState` mostra `NONE`
+depois).
+
+## 03/09/2026 — kiosk de verdade: Device Owner + Lock Task (Screen Pinning não segurava)
+
+Achado real testando com o usuário no aparelho físico: o `startLockTask()`
+simples (Screen Pinning, sem Device Owner) **não segurava os botões da
+GPOS780** — um toque nos botões (Home/Recentes) já tirava o app, achado que
+motivou essa mudança. A trava de verdade do Android é **Lock Task via
+Device Owner**: aí sim os botões física/logicamente não fazem nada fora do
+app allowlistado, sem gesto de escape nenhum pro usuário.
+
+**O que foi feito**:
+- `AdminReceiver.kt` — `DeviceAdminReceiver` vazio, só o cadastro técnico
+  necessário pra virar Device Owner.
+- `MainActivity.kt` — no `onCreate`, se `dpm.isDeviceOwnerApp(packageName)`
+  for verdade: `setLockTaskPackages(admin, [package])` +
+  `addPersistentPreferredActivity(admin, filtroHOME, MainActivity)` (vira
+  a Home persistente do aparelho, sem prompt de escolha). Se não for Device
+  Owner ainda, cai pro Screen Pinning comum como fallback (com aviso no
+  log).
+- `BootReceiver.kt` — `BOOT_COMPLETED` → abre a `MainActivity` direto,
+  reforço em cima de já sermos a Home persistente.
+- `KioskControlReceiver.kt` — válvula de escape só por ADB (`adb shell am
+  broadcast -a br.com.tipo7.caixa.KIOSK_DESATIVAR -n
+  br.com.tipo7.caixa/.KioskControlReceiver`), pra tirar o aparelho do modo
+  kiosk sem precisar de factory reset. **Achado**: só tirar o pacote do
+  `setLockTaskPackages` não ejeta sozinho quem já está em Lock Task — foi
+  preciso a `MainActivity` guardar uma referência estática de si mesma e
+  a válvula chamar `stopLockTask()` na instância ativa.
+- Ativado no aparelho via `adb shell dpm set-device-owner
+  br.com.tipo7.caixa/.AdminReceiver` — **só funciona com o aparelho sem
+  nenhuma conta cadastrada** (confirmado 0 contas antes de rodar).
+
+**Achado sério no caminho — bug real de produção que isso revelou**: logo
+depois de `am force-stop`, o Android **bloqueia silenciosamente** o
+force-stop de um app em Lock Task por Device Owner (processo continua
+vivo, mesmo PID) — mas `adb install -r` (reinstalar por cima) consegue
+passar por cima disso (mata e reinicia o processo como parte da troca de
+pacote). Isso quer dizer que em produção, se o app travar precisando de
+reinício, `force-stop` manual não resolve — só reinstalar ou usar a
+válvula de escape.
+
+**Achado sério #2 — por que a tela ficava branca depois do boot**: o
+`WebViewClient` original não tinha nenhum tratamento de erro — se o
+`loadUrl()` inicial falhasse (ex: WiFi ainda subindo logo depois de ligar
+o aparelho), a tela ficava branca pra sempre, sem tentar de novo sozinha.
+Corrigido com `onReceivedError` fazendo retry com backoff (2s, 4s, 6s...
+até 15s) chamando `loadUrl()` de novo. **Testado e confirmado**: reboot
+completo → aparelho liga → cai direto no painel de token/PIN sozinho em
+~8s, sem intervenção nenhuma.
+
+**Achado sério #3 — nada a ver com kiosk, mas travou o teste por um
+tempo**: o `gradle.properties` tem `TIPO7_BASE_URL_DEBUG=http://10.0.2.2:3000`
+como valor padrão (só funciona no **emulador**) — rebuild sem passar
+`-PTIPO7_BASE_URL_DEBUG=http://<ip-da-rede>:<porta>` explicitamente faz o
+app físico apontar pro endereço errado silenciosamente (parece "travado"
+carregando, sem erro óbvio). E a porta do servidor web dev mudou de sessão
+pra sessão (hoje era **1200**, não 3000/3001/3002) — sempre conferir com
+`netstat -ano | grep LISTENING` qual porta está realmente de pé antes de
+buildar pro aparelho físico.
+
+**Teste final confirmado**: reboot → boot completo (~15s) → app carrega
+sozinho (~8s depois) → `input keyevent 3` (Home) e `187` (Recentes) não
+tiram o app → `mLockTaskModeState=LOCKED` em todo o teste.
+
+**Ressalva importante**: Device Owner é mais difícil de reverter que
+Screen Pinning — não decorre de fábrica, mas some com `adb shell dpm
+remove-active-admin br.com.tipo7.caixa/.AdminReceiver` (não precisa de
+factory reset). Só funciona com o aparelho "limpo" (sem contas
+cadastradas) — se algum dia logarem uma conta Google nele, precisa tirar a
+conta antes de conseguir promover a Device Owner de novo.

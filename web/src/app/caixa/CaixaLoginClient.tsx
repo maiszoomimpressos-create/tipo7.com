@@ -7,12 +7,13 @@
 // MESMA sessão JWT do login normal (POST /auth/entrar-com-pin), então daqui
 // pra frente é sessão normal pro resto do sistema — zero código novo em
 // nenhuma tela existente.
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { KeyRound, Loader2, AlertCircle, ArrowRight } from 'lucide-react'
 import { setSessionFromAccessToken } from '@/lib/auth/session'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { buildAcessos } from '@/lib/buildAcessos'
+import { isNativeCaixaApp } from '@/lib/nativeCaixaApp'
 
 const ACCENT = '#E8B84B'
 
@@ -27,8 +28,17 @@ const ACCENT = '#E8B84B'
 //      (buildAcessos), cai direto nela. Se tem mais de uma (ou nenhuma),
 //      cai no hub — só aí que sobra ambiguidade real pra resolver na mão.
 // Qualquer erro nessas checagens cai no hub também — nunca trava o login.
-async function decidirDestino(eventId: string): Promise<string> {
-  const hub = `/trabalho/${eventId}`
+//
+// Achado real de segurança (03/09/2026): dentro do app nativo (GPOS780),
+// "cair no hub" significa expor `/trabalho/[eventoId]` — que tem link pra
+// "Meus trabalhos" (painel PESSOAL da conta, todos os eventos) e outras
+// ferramentas fora do escopo desse token+PIN. Um terminal público não pode
+// ter esse caminho disponível — é o que o usuário chamou de "erro de
+// segurança". Dentro do app nativo, NUNCA cai no hub: `null` sinaliza "sem
+// caixa direto pra entrar", e quem chama mostra um erro ali mesmo na tela
+// de login, sem navegar pra lugar nenhum.
+async function decidirDestino(eventId: string, native: boolean): Promise<string | null> {
+  const hub = native ? null : `/trabalho/${eventId}`
   try {
     const resCaixa = await apiFetchAuth(`/api/eventos/${eventId}/meu-caixa`)
     if (resCaixa.ok) {
@@ -37,6 +47,8 @@ async function decidirDestino(eventId: string): Promise<string> {
         return caixa.estacionamentoId ? `/estacionamento/${eventId}` : `/bilheteria/${eventId}/caixa/${caixa.id}`
       }
     }
+
+    if (native) return null // nunca cai em "é dono"/hub/lista de ferramentas dentro do app nativo
 
     const resAcesso = await apiFetchAuth(`/api/eventos/${eventId}/meu-acesso`)
     if (!resAcesso.ok) return hub
@@ -56,6 +68,12 @@ export function CaixaLoginClient() {
   const [pin, setPin]           = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro]         = useState<string | null>(null)
+  // PIN pode ser de 4 OU 6 dígitos (pinHash é bcrypt — não dá pra saber o
+  // comprimento sem guardar isso à parte no banco). Em vez de mudar schema,
+  // detecta pela pausa: ao completar 4 dígitos, espera um instante; se a
+  // pessoa não continuar digitando (não é PIN de 6), assume que terminou e
+  // esconde o teclado sozinha, igual já acontece de cara com 6.
+  const pinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   async function entrar() {
     setErro(null)
@@ -76,7 +94,13 @@ export function CaixaLoginClient() {
         return
       }
       setSessionFromAccessToken(data.accessToken)
-      const destino = await decidirDestino(data.eventId)
+      const destino = await decidirDestino(data.eventId, isNativeCaixaApp())
+      if (!destino) {
+        // Sem caixa direto pra entrar E rodando no app nativo (terminal
+        // público) — fica aqui mesmo, sem navegar pra nenhum lugar do site.
+        setErro('Nenhum caixa aberto pra você neste evento. Peça pro organizador abrir e designar um caixa.')
+        return
+      }
       router.push(destino)
     } catch {
       setErro('Erro de conexão. Tente novamente.')
@@ -95,8 +119,11 @@ export function CaixaLoginClient() {
           >
             <KeyRound size={24} style={{ color: ACCENT }} />
           </div>
+          {/* "Acesso ao sistema", não "ao caixa" (pedido do usuário,
+              03/09/2026) — nesse momento do login ainda não se sabe se a
+              pessoa vai cair em Bilheteria ou Estacionamento. */}
           <h1 className="text-white text-xl font-semibold" style={{ fontFamily: 'var(--font-outfit)' }}>
-            Acesso ao caixa
+            Acesso ao sistema
           </h1>
           <p className="text-[#555] text-sm text-center mt-1" style={{ fontFamily: 'var(--font-dm-sans)' }}>
             Digite o token e o PIN do seu turno neste evento.
@@ -131,7 +158,22 @@ export function CaixaLoginClient() {
               inputMode="numeric"
               placeholder="4 ou 6 dígitos"
               value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onChange={(e) => {
+                const next = e.target.value.replace(/\D/g, '').slice(0, 6)
+                setPin(next)
+                if (pinTimeoutRef.current) clearTimeout(pinTimeoutRef.current)
+                if (next.length === 6) {
+                  // Comprimento máximo — sempre terminou, some na hora.
+                  e.target.blur()
+                } else if (next.length === 4) {
+                  // Pode ser um PIN de 4 completo, ou a pessoa ainda vai
+                  // continuar até 6 — espera um instante pra decidir. Se
+                  // digitar o 5º dígito antes disso, esse timeout é
+                  // cancelado no próximo onChange (limpo ali em cima).
+                  const el = e.target
+                  pinTimeoutRef.current = setTimeout(() => el.blur(), 700)
+                }
+              }}
               className="w-full rounded-lg px-3 py-3 text-base text-white outline-none tracking-[0.3em] text-center"
               style={{ background: '#111', border: '1px solid #1e1e1e', fontFamily: 'var(--font-dm-sans)' }}
             />

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   ArrowLeft, Calendar, MapPin, Shield,
-  ShoppingCart, CheckCircle2, ChevronRight, Ticket, KeyRound,
+  ShoppingCart, CheckCircle2, ChevronRight, Ticket, KeyRound, Car,
 } from 'lucide-react'
 import { TrabalhoDashboard } from './TrabalhoDashboard'
 import { BlocoTokenPin, type AcessoCaixa } from '@/components/BlocoTokenPin'
@@ -50,6 +50,14 @@ export function TrabalhoClient({
   const caixaHref = caixaDesignado
     ? (caixaDesignado.estacionamentoId ? `/estacionamento/${eventoId}` : `/bilheteria/${eventoId}/caixa/${caixaDesignado.id}`)
     : null
+
+  // Achado do usuário (27/08/2026): o card "Seu caixa" mostrava só o nome
+  // livre digitado na abertura (ex.: "nm tutoriais") — quem via o card não
+  // tinha como saber se aquele caixa era de Bilheteria ou de Estacionamento.
+  // Mesma distinção (ícone + cor) que buildAcessos usa pras ferramentas.
+  const caixaTipo = caixaDesignado?.estacionamentoId
+    ? { label: 'Estacionamento', icon: Car, cor: '#38bdf8' }
+    : { label: 'Bilheteria', icon: ShoppingCart, cor: ACCENT }
 
   // Achado do usuário (25/08/2026): "Seu caixa" e a ferramenta correspondente
   // (Bilheteria ou Estacionamento) levavam pro MESMO link quando o caixa
@@ -123,26 +131,32 @@ export function TrabalhoClient({
           </div>
         </div>
 
-        {/* Sua função */}
-        <div
-          className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl"
-          style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}18` }}
-        >
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${ACCENT}15` }}>
-            <Shield size={12} style={{ color: ACCENT }} />
+        {/* "Sua função" só aparece sozinha quando ainda não tem caixa
+            designado — com caixa, o tipo já aparece dentro do card único
+            abaixo, repetir os dois virava 2 blocos falando a mesma coisa
+            (achado do usuário, 03/09/2026: "cheias de caixa"). */}
+        {!caixaDesignado && (
+          <div
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl"
+            style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}18` }}
+          >
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${ACCENT}15` }}>
+              <Shield size={12} style={{ color: ACCENT }} />
+            </div>
+            <div>
+              <p className="text-[#666] text-[9px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                Sua função
+              </p>
+              <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                {cargoNome}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-[#666] text-[9px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              Sua função
-            </p>
-            <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              {cargoNome}
-            </p>
-          </div>
-        </div>
+        )}
 
-        {/* Token+PIN de acesso ao caixa (rota /caixa) */}
-        {acessoCaixa && (
+        {/* Token+PIN sozinho só quando não tem caixa designado ainda pra
+            fundir com — ver card único abaixo pro caso mais comum. */}
+        {acessoCaixa && !caixaDesignado && (
           <button
             type="button"
             onClick={() => setVerAcesso(true)}
@@ -163,28 +177,47 @@ export function TrabalhoClient({
           </button>
         )}
 
-        {/* Caixa designado */}
+        {/* Caixa designado — card único fundindo função+token+sessão
+            (03/09/2026). "Ver token/PIN" vira uma ação pequena dentro do
+            mesmo card, não um bloco à parte do mesmo tamanho. */}
         {caixaDesignado && (
-          <a
-            href={caixaHref!}
-            className="flex items-center justify-between px-3 py-3 rounded-xl transition-all hover:brightness-110 active:scale-[0.98]"
-            style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}30` }}
+          <div
+            className="rounded-xl overflow-hidden"
+            style={{ background: `${caixaTipo.cor}08`, border: `1px solid ${caixaTipo.cor}30` }}
           >
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${ACCENT}15` }}>
-                <ShoppingCart size={12} style={{ color: ACCENT }} />
+            <a
+              href={caixaHref!}
+              className="flex items-center justify-between px-3 py-3 transition-all hover:brightness-110 active:scale-[0.98]"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${caixaTipo.cor}15` }}>
+                  <caixaTipo.icon size={12} style={{ color: caixaTipo.cor }} />
+                </div>
+                <div>
+                  <p className="text-[#666] text-[9px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Seu caixa · {caixaTipo.label}
+                  </p>
+                  <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    {caixaDesignado.nome}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-[#666] text-[9px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  Seu caixa
-                </p>
-                <p className="text-white text-xs font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                  {caixaDesignado.nome}
-                </p>
-              </div>
-            </div>
-            <ChevronRight size={13} style={{ color: ACCENT + '70' }} />
-          </a>
+              <ChevronRight size={13} style={{ color: caixaTipo.cor + '70' }} />
+            </a>
+            {acessoCaixa && (
+              <button
+                type="button"
+                onClick={() => setVerAcesso(true)}
+                className="w-full flex items-center gap-1.5 px-3 py-2 text-left transition-colors hover:brightness-110"
+                style={{ borderTop: `1px solid ${caixaTipo.cor}20` }}
+              >
+                <KeyRound size={10} style={{ color: caixaTipo.cor }} />
+                <span className="text-[10px]" style={{ color: caixaTipo.cor + 'cc', fontFamily: 'var(--font-dm-sans)' }}>
+                  Ver token/PIN
+                </span>
+              </button>
+            )}
+          </div>
         )}
 
         {/* Navegação */}
@@ -271,50 +304,70 @@ export function TrabalhoClient({
             </div>
           </div>
 
-          {/* Caixa designado */}
+          {/* Caixa designado — card único fundindo função+token+sessão
+              (03/09/2026, mesma lógica do sidebar desktop acima). */}
           {caixaDesignado && (
-            <a
-              href={caixaHref!}
-              className="flex items-center justify-between px-4 py-4 rounded-2xl transition-all hover:brightness-110 active:scale-[0.98]"
-              style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}35` }}
+            <div
+              className="rounded-2xl overflow-hidden"
+              style={{ background: `${caixaTipo.cor}08`, border: `1px solid ${caixaTipo.cor}35` }}
             >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${ACCENT}15` }}>
-                  <ShoppingCart size={18} style={{ color: ACCENT }} />
+              <a
+                href={caixaHref!}
+                className="flex items-center justify-between px-4 py-4 transition-all hover:brightness-110 active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${caixaTipo.cor}15` }}>
+                    <caixaTipo.icon size={18} style={{ color: caixaTipo.cor }} />
+                  </div>
+                  <div>
+                    <p className="text-[#888] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      Seu caixa designado · {caixaTipo.label}
+                    </p>
+                    <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                      {caixaDesignado.nome}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[#888] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    Seu caixa designado
-                  </p>
-                  <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                    {caixaDesignado.nome}
-                  </p>
-                </div>
-              </div>
-              <ChevronRight size={16} style={{ color: ACCENT + '80' }} />
-            </a>
+                <ChevronRight size={16} style={{ color: caixaTipo.cor + '80' }} />
+              </a>
+              {acessoCaixa && (
+                <button
+                  type="button"
+                  onClick={() => setVerAcesso(true)}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-left transition-colors hover:brightness-110"
+                  style={{ borderTop: `1px solid ${caixaTipo.cor}20` }}
+                >
+                  <KeyRound size={12} style={{ color: caixaTipo.cor }} />
+                  <span className="text-xs" style={{ color: caixaTipo.cor + 'cc', fontFamily: 'var(--font-dm-sans)' }}>
+                    Ver token/PIN
+                  </span>
+                </button>
+              )}
+            </div>
           )}
 
-          {/* Sua função */}
-          <div
-            className="flex items-center gap-3 px-4 py-3 rounded-xl"
-            style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}20` }}
-          >
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${ACCENT}15` }}>
-              <Shield size={14} style={{ color: ACCENT }} />
+          {/* "Sua função" e token/PIN sozinhos só sem caixa designado ainda
+              — com caixa, ver card único acima. */}
+          {!caixaDesignado && (
+            <div
+              className="flex items-center gap-3 px-4 py-3 rounded-xl"
+              style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}20` }}
+            >
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${ACCENT}15` }}>
+                <Shield size={14} style={{ color: ACCENT }} />
+              </div>
+              <div>
+                <p className="text-[#888] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  Sua função
+                </p>
+                <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  {cargoNome}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-[#888] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                Sua função
-              </p>
-              <p className="text-white text-sm font-semibold" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-                {cargoNome}
-              </p>
-            </div>
-          </div>
+          )}
 
-          {/* Token+PIN de acesso ao caixa (rota /caixa, mobile) */}
-          {acessoCaixa && (
+          {acessoCaixa && !caixaDesignado && (
             <button
               type="button"
               onClick={() => setVerAcesso(true)}

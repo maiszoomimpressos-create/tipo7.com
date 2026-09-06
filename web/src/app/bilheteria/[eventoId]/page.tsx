@@ -1,8 +1,9 @@
 import { getAuthUser } from '@/lib/auth/server'
 import { apiFetchServer } from '@/lib/apiFetchServer'
 import { redirect } from 'next/navigation'
-import { ShieldX, ArrowLeft } from 'lucide-react'
+import { ShieldX } from 'lucide-react'
 import { GerenciadorCaixas } from './GerenciadorCaixas'
+import { AtualizarButton } from './AtualizarButton'
 
 interface Props {
   params: Promise<{ eventoId: string }>
@@ -61,14 +62,7 @@ export default async function BilheteriaPage({ params }: Props) {
         <p className="text-[#555] text-sm max-w-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
           O promotor ainda não abriu e designou um caixa para você. Atualize a página em instantes.
         </p>
-        <a
-          href={`/trabalho/${eventoId}`}
-          className="flex items-center gap-2 mt-2 text-sm text-[#444] hover:text-white transition-colors"
-          style={{ fontFamily: 'var(--font-dm-sans)' }}
-        >
-          <ArrowLeft size={14} />
-          Voltar ao evento
-        </a>
+        <AtualizarButton />
       </div>
     )
   }
@@ -76,6 +70,9 @@ export default async function BilheteriaPage({ params }: Props) {
   return <SemPermissao mensagem="Você não tem permissão para acessar a bilheteria deste evento." />
 }
 
+// Mesmo achado de segurança das outras 2 telas "Acesso negado" (ver
+// bilheteria/[eventoId]/caixa/[caixaId]/page.tsx e
+// estacionamento/[eventoId]/page.tsx) — sem link pra home pública.
 function SemPermissao({ mensagem }: { mensagem: string }) {
   return (
     <div className="min-h-dvh bg-[#070707] flex flex-col items-center justify-center px-6 text-center gap-4">
@@ -89,11 +86,6 @@ function SemPermissao({ mensagem }: { mensagem: string }) {
       <p className="text-[#555] text-sm max-w-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
         {mensagem}
       </p>
-      <a href="/" className="mt-2 text-sm hover:underline" style={{ color: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
-        Voltar ao início
-      </a>
     </div>
   )
 }
-
-const ACCENT = '#E8B84B'

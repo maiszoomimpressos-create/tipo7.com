@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Libera http:// (sem TLS) só pro cenário de dev na rede local — o IP da
+     máquina que roda `npm run dev` não tem certificado válido. Em produção
+     o app usa TIPO7_BASE_URL_RELEASE (https://), coberto pela config padrão
+     abaixo, que exige certificado confiável normalmente. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <!-- IP da máquina dev na rede local (Ethernet) — usado quando o
+             app roda no aparelho físico (GPOS780 via Wi-Fi), não no
+             emulador. Mesma sub-rede confirmada 02/09: PC 192.168.18.39,
+             GPOS780 192.168.18.56. Trocar se a rede mudar. -->
+        <domain includeSubdomains="false">192.168.18.39</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

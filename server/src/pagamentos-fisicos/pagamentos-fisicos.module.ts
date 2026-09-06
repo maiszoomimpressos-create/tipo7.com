@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MockPaymentProvider } from './mock-payment.provider';
+import { PagamentosFisicosController } from './pagamentos-fisicos.controller';
 import { PagamentosFisicosService } from './pagamentos-fisicos.service';
 import { PAYMENT_PROVIDER } from './payment-provider.interface';
 
@@ -12,6 +13,7 @@ import { PAYMENT_PROVIDER } from './payment-provider.interface';
 // trocar `useClass: MockPaymentProvider` pela implementação real. Nada nos
 // módulos que já usam PagamentosFisicosService precisa mudar.
 @Module({
+  controllers: [PagamentosFisicosController],
   providers: [
     PagamentosFisicosService,
     { provide: PAYMENT_PROVIDER, useClass: MockPaymentProvider },

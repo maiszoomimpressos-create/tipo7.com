@@ -110,6 +110,11 @@ export default async function EstacionamentoPage({ params }: Props) {
   )
 }
 
+// Achado de segurança (03/09/2026, mesmo achado do equivalente em
+// bilheteria/[eventoId]/caixa/[caixaId]/page.tsx): "Voltar ao início"
+// linkava pra home pública (`href="/"`) — essa tela também aparece no
+// app nativo (terminal público da GPOS780), onde nenhum link deve levar
+// pra fora do escopo do caixa. Removido.
 function SemPermissao({ mensagem }: { mensagem: string }) {
   return (
     <div className="min-h-dvh bg-[#070707] flex flex-col items-center justify-center px-6 text-center gap-4">
@@ -123,9 +128,6 @@ function SemPermissao({ mensagem }: { mensagem: string }) {
       <p className="text-[#555] text-sm max-w-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
         {mensagem}
       </p>
-      <a href="/" className="mt-2 text-sm hover:underline" style={{ color: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
-        Voltar ao início
-      </a>
     </div>
   )
 }

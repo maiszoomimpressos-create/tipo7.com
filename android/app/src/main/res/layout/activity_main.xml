@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FrameLayout em vez de WebView solta: precisamos de um botão nativo por
+     cima da página web (ver MainActivity.kt, botaoMenu) que funcione mesmo
+     se a WebView travar/ficar em branco (rede caiu, erro de carregamento)
+     — só assim dá pra recarregar ou desconectar sem precisar de ADB/cabo.
+     Achado real 06/09/2026: sem isso, o único jeito de tirar o operador de
+     uma tela travada era `adb shell am broadcast` (ver KioskControlReceiver),
+     inviável no campo sem notebook por perto. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <WebView
+        android:id="@+id/webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Pequeno, discreto e semi-transparente de propósito — não deve
+         atrapalhar o uso normal nem parecer "botão de ação" do sistema.
+         Ícone de engrenagem em texto simples (sem depender de nenhum
+         drawable novo). -->
+    <TextView
+        android:id="@+id/botaoMenu"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="8dp"
+        android:background="#33000000"
+        android:text="⚙"
+        android:textColor="#88FFFFFF"
+        android:textSize="18sp"
+        android:gravity="center"
+        android:clickable="true"
+        android:focusable="true" />
+
+</FrameLayout>

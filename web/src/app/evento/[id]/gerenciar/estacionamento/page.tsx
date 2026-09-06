@@ -1,30 +1,13 @@
-import { apiFetchServer } from '@/lib/apiFetchServer'
-import { notFound } from 'next/navigation'
-import { EstacionamentoAtivacaoClient } from './EstacionamentoAtivacaoClient'
+import { redirect } from 'next/navigation'
 
 interface Props {
   params: Promise<{ id: string }>
 }
 
+// Consolidado (03/09/2026, pedido do usuário) dentro do wizard único
+// "Locais e Caixas" — ver /evento/[id]/gerenciar/locais/LocaisWizard.tsx.
+// Redirect em vez de apagar a rota, pra não quebrar link/favorito antigo.
 export default async function GerenciarEstacionamentoPage({ params }: Props) {
   const { id } = await params
-  const [res, acessoRes] = await Promise.all([
-    apiFetchServer(`/api/eventos/${id}`),
-    apiFetchServer(`/api/eventos/${id}/meu-acesso`),
-  ])
-  if (!res.ok) notFound()
-  const evento = await res.json() as { modulo_estacionamento: boolean }
-  const acesso = acessoRes.ok
-    ? await acessoRes.json() as { evento: { title: string | null } | null }
-    : { evento: null }
-
-  return (
-    <div className="p-6 max-w-3xl">
-      <EstacionamentoAtivacaoClient
-        eventoId={id}
-        eventoTitle={acesso.evento?.title ?? 'Evento'}
-        ativoInicial={evento.modulo_estacionamento ?? false}
-      />
-    </div>
-  )
+  redirect(`/evento/${id}/gerenciar/locais`)
 }

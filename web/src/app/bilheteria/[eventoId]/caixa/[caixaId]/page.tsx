@@ -64,6 +64,13 @@ export default async function CaixaPage({ params }: Props) {
   )
 }
 
+// Achado de segurança (03/09/2026): tinha um link "Voltar ao início" pra
+// home pública do site (`href="/"`) — essa tela também aparece no app
+// nativo (terminal público da GPOS780), onde nenhum link deveria levar pra
+// fora do escopo do caixa. Removido — a página é renderizada no servidor
+// (sem 'use client'), então não dá pra checar isNativeCaixaApp() aqui
+// (depende de `window`); mais simples e seguro nos dois contextos é só
+// não ter link nenhum, sempre.
 function SemPermissao({ mensagem }: { mensagem: string }) {
   return (
     <div className="min-h-dvh bg-[#070707] flex flex-col items-center justify-center px-6 text-center gap-4">
@@ -77,9 +84,6 @@ function SemPermissao({ mensagem }: { mensagem: string }) {
       <p className="text-[#555] text-sm max-w-xs" style={{ fontFamily: 'var(--font-dm-sans)' }}>
         {mensagem}
       </p>
-      <a href="/" className="mt-2 text-sm hover:underline" style={{ color: '#E8B84B', fontFamily: 'var(--font-dm-sans)' }}>
-        Voltar ao início
-      </a>
     </div>
   )
 }

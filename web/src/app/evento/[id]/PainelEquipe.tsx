@@ -8,6 +8,7 @@ import {
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { SeletorPermissoesAgrupado, PERMISSOES_ESTACIONAMENTO } from '@/components/PermissaoCard'
+import { TokenParaOperador } from '@/components/TokenParaOperador'
 
 const ACCENT = '#E8B84B'
 
@@ -920,6 +921,13 @@ function AbrirCaixaMembroModal({
   const [estacionamentoId, setEstacionamentoId] = useState(estacionamentos.length === 1 ? estacionamentos[0].id : '')
   const [salvando, setSalvando]             = useState(false)
   const [erro, setErro]                     = useState<string | null>(null)
+  // Achado do usuário (27/08/2026): esse modal fechava sozinho assim que o
+  // caixa abria — a pessoa designada só conseguia acesso depois, sozinha,
+  // catando token em "Meus trabalhos". Abrir caixa é autorização: agora,
+  // em vez de fechar, mostra o token pra repassar (não fecha a janela
+  // automaticamente — só a própria pessoa clicando em "Concluir" decide
+  // que já pegou/mandou o que precisava).
+  const [acesso, setAcesso] = useState<{ token: string | null } | null>(null)
 
   const identificadorOperador = membro.email ?? membro.userCode
 
@@ -940,10 +948,41 @@ function AbrirCaixaMembroModal({
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? 'Erro ao abrir caixa'); return }
-      onAberto()
+      setAcesso({ token: data.operador_acesso?.token ?? null })
     } finally {
       setSalvando(false)
     }
+  }
+
+  // Etapa de sucesso — caixa já abriu, mostra o token em vez de fechar
+  // sozinho (achado do usuário, 27/08/2026: ver comentário no estado
+  // `acesso` acima).
+  if (acesso) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div className="w-full max-w-sm bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <p className="text-white text-sm font-medium flex items-center gap-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <Check size={14} className="text-green-400" /> Caixa aberto
+              </p>
+              <p className="text-[#555] text-xs mt-0.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>pra {nomeMembro}</p>
+            </div>
+            <button onClick={onAberto} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
+          </div>
+
+          <div className="mb-4">
+            <TokenParaOperador nome={nomeMembro} token={acesso.token} />
+          </div>
+
+          <button type="button" onClick={onAberto}
+            className="w-full py-3 rounded-xl text-sm font-semibold text-[#070707]"
+            style={{ background: ACCENT, fontFamily: 'var(--font-dm-sans)' }}>
+            Concluir
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

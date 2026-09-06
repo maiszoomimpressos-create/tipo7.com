@@ -13,6 +13,9 @@
 | [landing-page.md](./landing-page.md) | Página inicial — o que o visitante vê ao entrar no site |
 | [boot-whats-details.md](./boot-whats-details.md) | Documento pro time externo da Boot Whats — novo campo `details` na integração de WhatsApp |
 | [autosave-veiculo-modal.md](./autosave-veiculo-modal.md) | Documento pro time externo da Autosave — campos coletados no modal de Veículo + problema de `type`/`status` encontrado em teste |
+| [maquininha-gpos780-levantamento-requisitos.md](./maquininha-gpos780-levantamento-requisitos.md) | Levantamento de requisitos pra pagamento com cartão físico na maquininha Gertec GPOS780 (Estacionamento + Portaria) — caminhos de integração, arquitetura recomendada, nada implementado ainda |
+| [pesquisa-sitef-integracao.md](./pesquisa-sitef-integracao.md) | Pesquisa externa sobre integração com SiTef/CliSiTef/m-SiTef (Software Express) — vocabulário, caminhos de integração, perguntas pra call de suporte |
+| [perguntas-call-sitef-gertec.md](./perguntas-call-sitef-gertec.md) | Só as perguntas, pra usar durante a ligação com o suporte SiTef/Gertec — versão enxuta de `pesquisa-sitef-integracao.md` |
 
 ---
 

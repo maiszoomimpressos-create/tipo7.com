@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exigido pelo Android pra registrar o AdminReceiver como device admin
+     (pré-requisito de virar Device Owner). Não usamos nenhuma política de
+     senha/bloqueio de conta — só o cadastro em si habilita
+     setLockTaskPackages()/addPersistentPreferredActivity(). -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <limit-password />
+    </uses-policies>
+</device-admin>

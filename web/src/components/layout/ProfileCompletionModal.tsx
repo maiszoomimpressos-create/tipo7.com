@@ -10,6 +10,7 @@ import { useProfileStatus, PROFILE_UPDATED_EVENT } from '@/hooks/useProfileStatu
 import { useLocation } from '@/contexts/LocationContext'
 import { MapPin, X, Loader2, ArrowRight, CheckCircle, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isNativeCaixaApp } from '@/lib/nativeCaixaApp'
 
 interface PlaceSuggestion {
   origem?:        'venue' | 'google'
@@ -76,8 +77,18 @@ export function ProfileCompletionModal() {
   const addrDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Decide se deve mostrar o modal
+  //
+  // Achado de segurança (03/09/2026): esse modal é global (renderizado em
+  // Providers.tsx, aparece em QUALQUER página) — inclusive por cima das
+  // telas de caixa (Estacionamento/Bilheteria) rodando no app nativo da
+  // GPOS780. Pedir endereço pessoal e linkar pra "/perfil" (conta pessoal
+  // completa) num terminal público é exatamente o tipo de vazamento de
+  // escopo que já corrigimos em CaixaLoginClient/páginas de acesso negado —
+  // esse aqui tinha escapado por ser global, não específico de nenhuma
+  // tela de caixa. Nunca mostra dentro do app nativo.
   useEffect(() => {
     if (carregando || !user || !incompleto || dispensado) return
+    if (isNativeCaixaApp()) return
     if (sessionStorage.getItem(SESSION_KEY)) return
 
     const camposBasicos = ['full_name', 'phone', 'cpf', 'birth_date']

@@ -80,4 +80,22 @@ export class EventPermissionsService {
     });
     return caixa?.estacionamentoId ?? null;
   }
+
+  // Bilheteria ao qual esse membro está restrito (null = sem restrição —
+  // dono do evento, ou staff com caixa "geral" não vinculado a um local
+  // específico). Pedido do usuário (27/08/2026): evento com mais de um
+  // local físico de bilheteria precisa da mesma trava que já existe pro
+  // estacionamento — sem isso, staff com vender_ingresso conseguia acessar
+  // (via getCaixaParaOperador) o caixa de QUALQUER local de bilheteria do
+  // evento, mesmo tendo caixa vinculado a só um. Mesmo padrão de
+  // getStaffEstacionamento acima, derivado do caixa aberto do operador.
+  async getStaffBilheteria(userId: string, eventoId: string): Promise<string | null> {
+    if (await this.isEventOwner(userId, eventoId)) return null;
+
+    const caixa = await this.prisma.caixa.findFirst({
+      where: { eventoId, operadorId: userId, status: 'aberto' },
+      select: { bilheteriaId: true },
+    });
+    return caixa?.bilheteriaId ?? null;
+  }
 }
