@@ -13,10 +13,26 @@ import android.util.Log
 // `am broadcast` externo conseguir chamar, igual o PrintTestReceiver).
 //
 // Uso: adb shell am broadcast -a br.com.tipo7.caixa.KIOSK_DESATIVAR -n br.com.tipo7.caixa/.KioskControlReceiver
+//      adb shell am broadcast -a br.com.tipo7.caixa.KIOSK_ATIVAR    -n br.com.tipo7.caixa/.KioskControlReceiver
+//
+// Achado real 06/09/2026: desativar sem persistir não durava — o app
+// reinicia sozinho (watchdog do sistema/BootReceiver relançando a Home) e
+// MainActivity.onCreate() reaplicava o lock task incondicionalmente,
+// prendendo o aparelho de novo poucos segundos depois, mesmo já tendo
+// mandado desativar. Agora a preferência fica salva (Kiosk.prefs) e
+// onCreate() consulta ela antes de rearmar.
 class KioskControlReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != "br.com.tipo7.caixa.KIOSK_DESATIVAR") return
+        when (intent.action) {
+            "br.com.tipo7.caixa.KIOSK_DESATIVAR" -> desativar(context)
+            "br.com.tipo7.caixa.KIOSK_ATIVAR" -> Kiosk.setAtivo(context, true)
+            else -> return
+        }
+    }
+
+    private fun desativar(context: Context) {
         try {
+            Kiosk.setAtivo(context, false)
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val admin = ComponentName(context, AdminReceiver::class.java)
             if (dpm.isDeviceOwnerApp(context.packageName)) {
@@ -27,7 +43,7 @@ class KioskControlReceiver : BroadcastReceiver() {
             // Task (achado real testando) — precisa chamar stopLockTask()
             // na própria Activity travada.
             MainActivity.pararLockTaskSeAtivo()
-            Log.w("Tipo7Kiosk", "Kiosk desativado via ADB (setLockTaskPackages vazio + Home persistente limpa + stopLockTask)")
+            Log.w("Tipo7Kiosk", "Kiosk desativado via ADB (setLockTaskPackages vazio + Home persistente limpa + stopLockTask + flag persistida)")
         } catch (e: Exception) {
             Log.w("Tipo7Kiosk", "Falha ao desativar kiosk: ${e.message}")
         }

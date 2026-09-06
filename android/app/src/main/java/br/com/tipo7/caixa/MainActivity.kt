@@ -120,34 +120,43 @@ class MainActivity : AppCompatActivity() {
         // segurança de NAVEGAÇÃO já feita (login/hub/modal de perfil) —
         // aquele nível trava o que o site permite acessar; este aqui trava
         // a pessoa dentro do APP em si.
-        val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        val admin = ComponentName(this, AdminReceiver::class.java)
-        if (dpm.isDeviceOwnerApp(packageName)) {
-            try {
-                dpm.setLockTaskPackages(admin, arrayOf(packageName))
-                // Nos torna a Home persistente — o aparelho liga e cai
-                // direto aqui, sem precisar de escolha manual do usuário
-                // nem depender só do BootReceiver.
-                val homeFilter = IntentFilter(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    addCategory(Intent.CATEGORY_DEFAULT)
+        // Achado real 06/09/2026: sem essa checagem, uma desativação via ADB
+        // (KioskControlReceiver) só durava até o app reiniciar sozinho — o
+        // onCreate reaplicava o lock task incondicionalmente. Agora só
+        // reativa se a preferência persistida (Kiosk.prefs) continuar
+        // "ativo" — ver KIOSK_ATIVAR/KIOSK_DESATIVAR pra alternar.
+        if (Kiosk.ativo(this)) {
+            val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val admin = ComponentName(this, AdminReceiver::class.java)
+            if (dpm.isDeviceOwnerApp(packageName)) {
+                try {
+                    dpm.setLockTaskPackages(admin, arrayOf(packageName))
+                    // Nos torna a Home persistente — o aparelho liga e cai
+                    // direto aqui, sem precisar de escolha manual do usuário
+                    // nem depender só do BootReceiver.
+                    val homeFilter = IntentFilter(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_HOME)
+                        addCategory(Intent.CATEGORY_DEFAULT)
+                    }
+                    dpm.addPersistentPreferredActivity(admin, homeFilter, ComponentName(this, MainActivity::class.java))
+                } catch (e: Exception) {
+                    Log.w("Tipo7Kiosk", "Configuração de Device Owner falhou: ${e.message}")
                 }
-                dpm.addPersistentPreferredActivity(admin, homeFilter, ComponentName(this, MainActivity::class.java))
+            } else {
+                // Aparelho ainda não foi promovido a Device Owner (falta rodar
+                // `adb shell dpm set-device-owner br.com.tipo7.caixa/.AdminReceiver`
+                // uma vez, só funciona com o aparelho sem nenhuma conta
+                // cadastrada). Cai pro Screen Pinning comum como fallback —
+                // pior que Lock Task de Device Owner, mas melhor que nada.
+                Log.w("Tipo7Kiosk", "App não é Device Owner — usando Screen Pinning comum como fallback")
+            }
+            try {
+                startLockTask()
             } catch (e: Exception) {
-                Log.w("Tipo7Kiosk", "Configuração de Device Owner falhou: ${e.message}")
+                Log.w("Tipo7Kiosk", "startLockTask() falhou: ${e.message}")
             }
         } else {
-            // Aparelho ainda não foi promovido a Device Owner (falta rodar
-            // `adb shell dpm set-device-owner br.com.tipo7.caixa/.AdminReceiver`
-            // uma vez, só funciona com o aparelho sem nenhuma conta
-            // cadastrada). Cai pro Screen Pinning comum como fallback —
-            // pior que Lock Task de Device Owner, mas melhor que nada.
-            Log.w("Tipo7Kiosk", "App não é Device Owner — usando Screen Pinning comum como fallback")
-        }
-        try {
-            startLockTask()
-        } catch (e: Exception) {
-            Log.w("Tipo7Kiosk", "startLockTask() falhou: ${e.message}")
+            Log.w("Tipo7Kiosk", "Kiosk desativado (flag persistida) — não travando a tela desta vez")
         }
     }
 
