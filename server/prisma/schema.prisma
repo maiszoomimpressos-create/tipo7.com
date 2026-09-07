@@ -404,6 +404,12 @@ model EventStaff {
   // ainda não construída).
   token           String?               @unique
   pinHash         String?               @map("pin_hash")
+  // Tamanho real do PIN (4 ou 6) — pinHash é bcrypt, irreversível, não dá
+  // pra saber o comprimento só pelo hash. Guardado à parte (06/09/2026) pra
+  // a tela do /caixa não precisar mais adivinhar por timeout quando esconder
+  // o teclado. Nulo = PIN criado antes dessa coluna existir (cai no
+  // comportamento antigo de adivinhação no frontend).
+  pinLength       Int?                  @map("pin_length")
   pinTentativas   Int                   @default(0) @map("pin_tentativas")
   pinBloqueadoAte DateTime?             @map("pin_bloqueado_ate") @db.Timestamptz(6)
 

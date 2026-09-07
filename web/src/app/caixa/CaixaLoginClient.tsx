@@ -7,7 +7,7 @@
 // MESMA sessão JWT do login normal (POST /auth/entrar-com-pin), então daqui
 // pra frente é sessão normal pro resto do sistema — zero código novo em
 // nenhuma tela existente.
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { KeyRound, Loader2, AlertCircle, ArrowRight } from 'lucide-react'
 import { setSessionFromAccessToken } from '@/lib/auth/session'
@@ -68,12 +68,29 @@ export function CaixaLoginClient() {
   const [pin, setPin]           = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro]         = useState<string | null>(null)
-  // PIN pode ser de 4 OU 6 dígitos (pinHash é bcrypt — não dá pra saber o
-  // comprimento sem guardar isso à parte no banco). Em vez de mudar schema,
-  // detecta pela pausa: ao completar 4 dígitos, espera um instante; se a
-  // pessoa não continuar digitando (não é PIN de 6), assume que terminou e
-  // esconde o teclado sozinha, igual já acontece de cara com 6.
+  // PIN pode ser de 4 OU 6 dígitos. Desde 06/09/2026 o tamanho real fica
+  // salvo no banco (pinLength) e é buscado assim que o token completa 8
+  // dígitos — com ele em mãos, o campo trava no comprimento exato e some o
+  // teclado na hora certa, sem adivinhação. `null` = token ainda não
+  // completo, ou PIN antigo (criado antes dessa coluna existir) — nesses
+  // casos cai no comportamento antigo: espera uma pausa depois do 4º
+  // dígito pra decidir se terminou (PIN de 4) ou se a pessoa vai continuar
+  // até 6.
+  const [pinTamanho, setPinTamanho] = useState<number | null>(null)
   const pinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    setPinTamanho(null)
+    if (token.length !== 8) return
+    let cancelado = false
+    fetch(`/api/auth/pin-tamanho?token=${token}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { tamanho?: number | null } | null) => {
+        if (!cancelado && data?.tamanho) setPinTamanho(data.tamanho)
+      })
+      .catch(() => {})
+    return () => { cancelado = true }
+  }, [token])
 
   async function entrar() {
     setErro(null)
@@ -156,20 +173,24 @@ export function CaixaLoginClient() {
             <input
               type="password"
               inputMode="numeric"
-              placeholder="4 ou 6 dígitos"
+              placeholder={pinTamanho ? `${pinTamanho} dígitos` : '4 ou 6 dígitos'}
               value={pin}
               onChange={(e) => {
-                const next = e.target.value.replace(/\D/g, '').slice(0, 6)
+                const limite = pinTamanho ?? 6
+                const next = e.target.value.replace(/\D/g, '').slice(0, limite)
                 setPin(next)
                 if (pinTimeoutRef.current) clearTimeout(pinTimeoutRef.current)
+                if (pinTamanho) {
+                  // Tamanho real conhecido — some o teclado exatamente
+                  // quando completar, sem adivinhação nenhuma.
+                  if (next.length === pinTamanho) e.target.blur()
+                  return
+                }
+                // Fallback (PIN antigo, sem pinLength salvo): mesma
+                // adivinhação por pausa de antes.
                 if (next.length === 6) {
-                  // Comprimento máximo — sempre terminou, some na hora.
                   e.target.blur()
                 } else if (next.length === 4) {
-                  // Pode ser um PIN de 4 completo, ou a pessoa ainda vai
-                  // continuar até 6 — espera um instante pra decidir. Se
-                  // digitar o 5º dígito antes disso, esse timeout é
-                  // cancelado no próximo onChange (limpo ali em cima).
                   const el = e.target
                   pinTimeoutRef.current = setTimeout(() => el.blur(), 700)
                 }

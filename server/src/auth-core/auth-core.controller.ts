@@ -157,6 +157,18 @@ export class AuthCoreController {
     return toResponseBody(session);
   }
 
+  // GET /auth/pin-tamanho?token=XXXXXXXX — chamado pela tela /caixa assim
+  // que o token completa 8 dígitos, pra saber se o PIN daquela pessoa tem 4
+  // ou 6 dígitos e travar o campo certo (ver AuthCoreService.pinTamanhoPorToken
+  // pro porquê não dá pra saber isso só pelo hash). Mesmo limite da
+  // entrar-com-pin — devolve pouca informação (só um número, nunca o PIN),
+  // mas ainda é uma consulta por token público, não custa manter rate limit.
+  @Get('pin-tamanho')
+  async pinTamanho(@Req() req: Request, @Query('token') token?: string) {
+    await this.rateLimitDb.enforce(getIp(req), 'entrar-com-pin', 10, 5 * 60_000);
+    return this.authCore.pinTamanhoPorToken(token);
+  }
+
   @Post('refresh')
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const session = await this.authCore.refresh(req.cookies?.[REFRESH_COOKIE]);

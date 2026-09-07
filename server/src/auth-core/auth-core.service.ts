@@ -196,6 +196,26 @@ export class AuthCoreService {
   private static readonly PIN_MAX_TENTATIVAS = 5;
   private static readonly PIN_LOCK_MS = 15 * 60 * 1000;
 
+  // Achado real (06/09/2026, terminal GPOS780): a tela de login (/caixa)
+  // não sabia se o PIN tinha 4 ou 6 dígitos, então adivinhava por timeout
+  // (esperava 700ms depois do 4º dígito) — ruim numa maquininha onde o
+  // teclado precisa sumir na hora certa. Devolve só o tamanho (nunca o
+  // hash/PIN em si), pra tela travar o campo no comprimento exato. `null`
+  // pra token inexistente OU PIN criado antes dessa coluna existir — as
+  // duas situações caem no mesmo fallback (adivinhação por timeout no
+  // frontend), sem dar pista de qual é o caso real (mesmo padrão de não
+  // vazar detalhe de loginComTokenPin acima).
+  async pinTamanhoPorToken(tokenRaw: string | undefined): Promise<{ tamanho: number | null }> {
+    const token = tokenRaw?.trim();
+    if (!token) return { tamanho: null };
+    const staff = await this.prisma.eventStaff.findUnique({
+      where: { token },
+      select: { status: true, pinLength: true },
+    });
+    if (!staff || staff.status !== 'active') return { tamanho: null };
+    return { tamanho: staff.pinLength ?? null };
+  }
+
   async loginComTokenPin(tokenRaw: string | undefined, pin: string | undefined): Promise<PinLoginResult> {
     const token = tokenRaw?.trim();
     if (!token || !pin) throw new UnauthorizedException('Token ou PIN inválido.');
