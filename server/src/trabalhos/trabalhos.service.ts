@@ -151,7 +151,7 @@ export class TrabalhosService {
     const pinHash = await bcrypt.hash(pin, BCRYPT_COST);
     await this.prisma.eventStaff.update({
       where: { id: staffId },
-      data: { pinHash, pinTentativas: 0, pinBloqueadoAte: null },
+      data: { pinHash, pinLength: pin.length, pinTentativas: 0, pinBloqueadoAte: null },
     });
     return { ok: true };
   }
