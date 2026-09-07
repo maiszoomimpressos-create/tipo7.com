@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -9,7 +9,7 @@ import {
   Smartphone, CreditCard as CardIcon, ChevronUp, Copy, CheckCircle2,
   Clock, Monitor, Settings, Download, FileText, MonitorOff,
   ArrowRightLeft, X, Calculator, Zap, Eye, RotateCcw,
-  Bluetooth, Cable, Wifi, Sparkles, Globe,
+  Bluetooth, Cable, Wifi, Sparkles, Globe, Menu, LogOut, Wallet,
 } from 'lucide-react'
 import { CalculadoraDinheiro } from '@/components/CalculadoraDinheiro'
 import { CaixaSidebar }       from './CaixaSidebar'
@@ -18,6 +18,8 @@ import { gerarComandosMultiplos, imprimirViaTipPrint, type IngressoParaImprimir 
 import { imprimirTicketPrintServer } from '@/lib/printServerClient'
 import { PrintServerPanel } from '@/components/PrintServerPanel'
 import { conectarImpressoraSerial, reconectarImpressoraSerial, imprimirViaSerial } from '@/lib/webSerialPrint'
+import { isNativeCaixaApp } from '@/lib/nativeCaixaApp'
+import { clearSession } from '@/lib/auth/session'
 import QRCode from 'react-qr-code'
 
 const ACCENT = '#E8B84B'
@@ -158,6 +160,28 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   const [modalMonitor,       setModalMonitor]       = useState(false)
   const [modalReimprimir,    setModalReimprimir]    = useState(false)
 
+  // Cabeçalho compacto pra tela pequena da GPOS780 (04/09/2026) — mesmo
+  // padrão já aplicado em AtendenteClient.tsx: os botões de ação que antes
+  // ficavam soltos numa linha só (8 ícones + título, estourava/esmagava em
+  // ~360-400px de largura) viram 1 botão "Menu" que abre um bottom-sheet.
+  // Dentro do app nativo, "Configurar impressora" e "Abrir site" somem (a
+  // GPOS780 tem impressora térmica embutida e não faz sentido abrir outra
+  // aba dentro da WebView do kiosk).
+  const [menuFuncoesAberto, setMenuFuncoesAberto] = useState(false)
+  // "Ver meu caixa" (mesmo motivo do Estacionamento) — a CaixaSidebar já
+  // existente só aparece em telas md+ (`hidden md:flex`), então na GPOS780
+  // não havia nenhum jeito de consultar o resumo do caixa. Reaproveita o
+  // mesmo componente (já é auto-contido, busca os próprios dados) dentro
+  // de um modal em vez de duplicar a lógica.
+  const [verCaixaAberto, setVerCaixaAberto] = useState(false)
+  const [nativeApp, setNativeApp] = useState(false)
+  useEffect(() => { setNativeApp(isNativeCaixaApp()) }, [])
+  async function sair() {
+    setMenuFuncoesAberto(false)
+    await clearSession()
+    router.push('/caixa')
+  }
+
   const [formato,      setFormato]      = useState<PrintFormat | null>(null)
   const [setupAberto,  setSetupAberto]  = useState(false)
   const [formatoSel,   setFormatoSel]   = useState<PrintFormat>('a4')
@@ -194,8 +218,24 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
 
   const ingressoSelecionado = ingressos.find(i => i.id === ticketId)
 
-  // Lê formato salvo ao montar
-  useEffect(() => {
+  // Lê formato salvo ao montar. Dentro do app nativo (GPOS780) força
+  // 'nenhuma' direto, sem nem olhar o localStorage — mesmo raciocínio do
+  // AtendenteClient.tsx: nenhum dos formatos (A4/PrintServer/RawBT/
+  // TipPrint) faz sentido pra impressora térmica embutida do aparelho
+  // (impressão por ela é trabalho futuro separado, ver GEDI no
+  // docs/maquininha-gpos780-levantamento-requisitos.md). Achado real
+  // (04/09/2026): sem isso, a tela "Configurar impressão" — que só some
+  // depois que `formato` deixa de ser null — travava o operador antes
+  // dele sequer conseguir abrir o caixa, porque nenhuma opção listada lá
+  // se aplica dentro do app nativo.
+  //
+  // Achado real #2 (07/09/2026, testado na GPOS780 física): useEffect roda
+  // DEPOIS do navegador pintar a tela — o operador via um flash real da
+  // tela "Configurar impressão" antes dela sumir sozinha. useLayoutEffect
+  // roda antes da pintura (mesmo raciocínio de corrigir FOUC), a correção
+  // acontece antes de qualquer frame errado aparecer.
+  useLayoutEffect(() => {
+    if (isNativeCaixaApp()) { setFormato('nenhuma'); setFormatoSel('nenhuma'); return }
     const saved = localStorage.getItem(`tipo7-impressora-${eventoId}`) as PrintFormat | null
     if (saved) { setFormato(saved); setFormatoSel(saved) }
   }, [eventoId])
@@ -1378,17 +1418,23 @@ if exist "%CHROME%" (
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setModalSegundaTela(true)}
-              title="Abrir segunda tela para o cliente"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
-              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
-            >
-              <Monitor size={13} />
-              Segunda tela
-            </button>
-            {caixaId && (
+            {/* Não faz sentido dentro do app nativo — na prática essa tela
+                inteira não deveria nem aparecer lá (formato já entra
+                'nenhuma' via useLayoutEffect acima), guarda de qualquer
+                jeito por segurança. */}
+            {!nativeApp && (
+              <button
+                type="button"
+                onClick={() => setModalSegundaTela(true)}
+                title="Abrir segunda tela para o cliente"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-colors hover:border-[#333]"
+                style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}
+              >
+                <Monitor size={13} />
+                Segunda tela
+              </button>
+            )}
+            {!nativeApp && caixaId && (
               <button
                 type="button"
                 onClick={() => setModalMonitor(true)}
@@ -1698,106 +1744,169 @@ if exist "%CHROME%" (
   return (
     <div className="min-h-dvh bg-[#070707] flex flex-col">
 
-      {/* Header */}
-      <div className="px-4 py-4 border-b border-[#111] flex items-center gap-3 shrink-0">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-             style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}30` }}>
-          <ShoppingBag size={16} style={{ color: ACCENT }} />
+      {/* Header compacto (04/09/2026, pensado pra caber na tela pequena da
+          GPOS780) — mesmo padrão do AtendenteClient.tsx: 2 linhas (marca+
+          caixa, evento+operador) + badges de status que cabem, e 1 botão
+          "Menu" abrindo um bottom-sheet com as ações que antes eram 8
+          ícones soltos numa linha só (estourava em ~360-400px). */}
+      <div className="px-4 py-3 border-b border-[#111] flex flex-col gap-1.5 shrink-0">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                 style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}30` }}>
+              <ShoppingBag size={14} style={{ color: ACCENT }} />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-white text-sm font-semibold truncate" style={{ fontFamily: 'var(--font-outfit)' }}>
+                {caixaNome ?? 'Bilheteria'}
+              </h1>
+              <p className="text-[#555] text-[11px] truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                {eventoTitle} • {operadorName}
+              </p>
+            </div>
+          </div>
+          <button type="button" onClick={() => setMenuFuncoesAberto(true)}
+            className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl transition-colors"
+            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#888' }}
+            aria-label="Funções da bilheteria">
+            <Menu size={16} />
+          </button>
         </div>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-white text-sm font-semibold truncate" style={{ fontFamily: 'var(--font-outfit)' }}>
-            {caixaNome ?? 'Bilheteria'}
-          </h1>
-          <p className="text-[#555] text-[11px] truncate" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-            {eventoTitle} <span className="text-[#3a3a3a] font-mono">#{eventoId}</span> • {operadorName}
-          </p>
-        </div>
-        {/* Indicador de conexão do TipPrint — só aparece quando está de
-            fato conectado (não quando só o formato está selecionado, ver
-            achado real 14/08/2026 sobre esses dois estados desincronizarem). */}
-        {formato === 'tipprint' && tipPrintConectado && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl shrink-0"
-               style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)' }}>
-            <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
-            <span className="text-[11px] font-semibold text-green-400" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-              TipPrint conectado
-            </span>
+        {/* Badges de status — só aparecem quando têm algo a dizer, ficam
+            numa linha própria que quebra sozinha (flex-wrap) em vez de
+            competir por espaço com o título. */}
+        {((formato === 'tipprint' && tipPrintConectado) || (caixaId && controlaIngressosFisicos)) && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {formato === 'tipprint' && tipPrintConectado && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg"
+                   style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)' }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+                <span className="text-[10px] font-semibold text-green-400" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                  TipPrint conectado
+                </span>
+              </div>
+            )}
+            {caixaId && controlaIngressosFisicos && (
+              <div className="flex items-center gap-1 px-2 py-1 rounded-lg"
+                   style={{ background: saldoAtual <= 5 ? 'rgba(248,113,113,0.08)' : '#0d0d0d', border: `1px solid ${saldoAtual <= 5 ? 'rgba(248,113,113,0.2)' : '#1e1e1e'}` }}>
+                <Ticket size={11} style={{ color: saldoAtual <= 5 ? '#f87171' : '#555' }} />
+                <span className="text-[10px] font-semibold" style={{ color: saldoAtual <= 5 ? '#f87171' : '#888', fontFamily: 'var(--font-dm-sans)' }}>
+                  {saldoAtual} ingressos físicos
+                </span>
+              </div>
+            )}
           </div>
         )}
-        {/* Saldo de ingressos físicos — só existe com o controle ligado */}
-        {caixaId && controlaIngressosFisicos && (
-          <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl shrink-0"
-               style={{ background: saldoAtual <= 5 ? 'rgba(248,113,113,0.08)' : '#0d0d0d', border: `1px solid ${saldoAtual <= 5 ? 'rgba(248,113,113,0.2)' : '#1e1e1e'}` }}>
-            <Ticket size={11} style={{ color: saldoAtual <= 5 ? '#f87171' : '#555' }} />
-            <span className="text-xs font-semibold" style={{ color: saldoAtual <= 5 ? '#f87171' : '#888', fontFamily: 'var(--font-dm-sans)' }}>
-              {saldoAtual}
-            </span>
-          </div>
-        )}
-        <div className="flex items-center gap-1.5">
-          <button type="button" onClick={() => setModalCalculadora(true)}
-            title="Calculadora de dinheiro"
-            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
-            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
-            <Calculator size={13} />
-          </button>
-          {caixaId && controlaIngressosFisicos && (
-            <button type="button" onClick={() => setModalTransferencia(true)}
-              title="Transferir ingressos"
-              className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
-              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
-              <ArrowRightLeft size={13} />
-            </button>
-          )}
-          <button type="button" onClick={() => setModalSegundaTela(true)}
-            title="Segunda tela"
-            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
-            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
-            <Monitor size={13} />
-          </button>
-          <button type="button" onClick={() => setModalMonitor(true)}
-            title="Monitorar a Segunda Tela ao vivo"
-            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
-            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
-            <Eye size={13} />
-          </button>
-          <button type="button" onClick={abrirSite}
-            title="Abrir o site em outra aba, já logado"
-            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
-            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
-            <Globe size={13} />
-          </button>
-          {caixaId && (
-            <button type="button" onClick={() => setModalReimprimir(true)}
-              title="Reimprimir venda já feita"
-              className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
-              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
-              <RotateCcw size={13} />
-            </button>
-          )}
-          <button type="button" onClick={() => { setSetupAberto(true); setFormatoSel(formato ?? 'a4') }}
-            title="Configurar impressora"
-            className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors hover:border-[#333]"
-            style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555' }}>
-            <Settings size={13} />
-          </button>
-          {caixaId ? (
-            <button type="button" onClick={() => setModalFechamento(true)}
-              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs transition-colors hover:border-red-400/30 hover:text-red-400"
-              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
-              <X size={12} />
-              Fechar
-            </button>
-          ) : (
-            <button type="button" onClick={() => router.back()}
-              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs transition-colors hover:border-[#333] hover:text-white"
-              style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', color: '#555', fontFamily: 'var(--font-dm-sans)' }}>
-              <ArrowLeft size={12} />
-              Voltar
-            </button>
-          )}
-        </div>
       </div>
+
+      {/* Menu "Funções da bilheteria" — reúne o que antes eram 8 ícones
+          soltos no cabeçalho. "Configurar impressora" e "Abrir site" somem
+          dentro do app nativo (GPOS780 já tem impressora térmica embutida e
+          não existe "outra aba" dentro da WebView do kiosk). */}
+      {menuFuncoesAberto && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setMenuFuncoesAberto(false)}>
+          <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5 max-h-[85dvh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Funções da bilheteria</p>
+              <button onClick={() => setMenuFuncoesAberto(false)} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
+            </div>
+            <div className="flex flex-col gap-2">
+              {caixaId && (
+                <button type="button" onClick={() => { setMenuFuncoesAberto(false); setVerCaixaAberto(true) }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}>
+                  <Wallet size={14} className="text-[#E8B84B]" /> Ver meu caixa
+                </button>
+              )}
+              <button type="button" onClick={() => { setMenuFuncoesAberto(false); setModalCalculadora(true) }}
+                className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                style={{ background: '#111', border: '1px solid #1e1e1e', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}>
+                <Calculator size={14} className="text-[#888]" /> Calculadora de dinheiro
+              </button>
+              {caixaId && controlaIngressosFisicos && (
+                <button type="button" onClick={() => { setMenuFuncoesAberto(false); setModalTransferencia(true) }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}>
+                  <ArrowRightLeft size={14} className="text-[#888]" /> Transferir ingressos
+                </button>
+              )}
+              {/* Segunda tela roda em outro aparelho (celular/tablet do
+                  cliente) — não faz sentido abrir/monitorar de dentro do
+                  próprio terminal nativo (pedido do usuário, 07/09/2026). */}
+              {!nativeApp && (
+                <button type="button" onClick={() => { setMenuFuncoesAberto(false); setModalSegundaTela(true) }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}>
+                  <Monitor size={14} className="text-[#888]" /> Segunda tela
+                </button>
+              )}
+              {!nativeApp && (
+                <button type="button" onClick={() => { setMenuFuncoesAberto(false); setModalMonitor(true) }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}>
+                  <Eye size={14} className="text-[#888]" /> Monitorar Segunda Tela
+                </button>
+              )}
+              {caixaId && (
+                <button type="button" onClick={() => { setMenuFuncoesAberto(false); setModalReimprimir(true) }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}>
+                  <RotateCcw size={14} className="text-[#888]" /> Reimprimir venda
+                </button>
+              )}
+              {!nativeApp && (
+                <button type="button" onClick={() => { setMenuFuncoesAberto(false); setSetupAberto(true); setFormatoSel(formato ?? 'a4') }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}>
+                  <Settings size={14} className="text-[#888]" /> Configurar impressora
+                </button>
+              )}
+              {!nativeApp && (
+                <button type="button" onClick={() => { setMenuFuncoesAberto(false); abrirSite() }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', color: '#ccc', fontFamily: 'var(--font-dm-sans)' }}>
+                  <Globe size={14} className="text-[#888]" /> Abrir o site em outra aba
+                </button>
+              )}
+              {caixaId ? (
+                <button type="button" onClick={() => { setMenuFuncoesAberto(false); setModalFechamento(true) }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', color: '#f87171', fontFamily: 'var(--font-dm-sans)' }}>
+                  <X size={14} /> Fechar caixa
+                </button>
+              ) : !nativeApp && (
+                <button type="button" onClick={() => { setMenuFuncoesAberto(false); router.back() }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                  style={{ background: '#111', border: '1px solid #1e1e1e', color: '#888', fontFamily: 'var(--font-dm-sans)' }}>
+                  <ArrowLeft size={14} /> Voltar
+                </button>
+              )}
+              <button type="button" onClick={sair}
+                className="w-full flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm transition-colors"
+                style={{ background: '#111', border: '1px solid #2a1414', color: '#f87171', fontFamily: 'var(--font-dm-sans)' }}>
+                <LogOut size={14} /> Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* "Ver meu caixa" — reaproveita a CaixaSidebar já existente (busca os
+          próprios dados, inclui sangria), só que dentro de um modal em vez
+          da <aside> que só aparece em telas md+. */}
+      {verCaixaAberto && caixaId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setVerCaixaAberto(false)}>
+          <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5 max-h-[85dvh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-white text-sm font-medium flex items-center gap-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                <Wallet size={14} style={{ color: ACCENT }} /> Meu caixa
+              </p>
+              <button onClick={() => setVerCaixaAberto(false)} className="text-[#444] hover:text-[#777]"><X size={16} /></button>
+            </div>
+            <CaixaSidebar caixaId={caixaId} />
+          </div>
+        </div>
+      )}
 
       {/* Modais */}
       {modalCalculadora && (
