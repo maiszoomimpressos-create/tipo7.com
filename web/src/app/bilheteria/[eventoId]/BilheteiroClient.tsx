@@ -186,6 +186,15 @@ export function BilheteiroClient({ eventoId, caixaId, caixaNome, saldoIngressos,
   const [formato,      setFormato]      = useState<PrintFormat | null>(null)
   const [setupAberto,  setSetupAberto]  = useState(false)
   const [formatoSel,   setFormatoSel]   = useState<PrintFormat>('a4')
+  // Achado real (07/09/2026, testado na GPOS780): o disparo automático (600ms
+  // depois de chegar na tela de impressão) e o botão manual "Imprimir" podiam
+  // disparar quase juntos — o botão continuava clicável durante a espera do
+  // automático. Duas chamadas concorrentes de imprimirTickets() na mesma
+  // impressora física (GEDI não é reentrante — 2 threads chamando Init()/
+  // Output() ao mesmo tempo) deixavam uma delas travada sem nunca resolver,
+  // por isso o app "imprimia mas não voltava pra tela de venda". Ref (não
+  // state) porque precisa ser lido/escrito síncrono, sem esperar re-render.
+  const imprimindoRef = useRef(false)
 
   // Modal "Tipo de conexão" do TipPrint — abre ao clicar no card em
   // destaque, não seleciona nada até o usuário escolher Bluetooth de fato
@@ -835,53 +844,64 @@ if exist "%CHROME%" (
   // por um motivo que não tinha nada a ver com ela.
   async function imprimirTickets() {
     if (!resultado) return
-    if (isNativeCaixaApp()) {
-      // Impressora térmica embutida da GPOS780, via GEDI — ver PrinterBridge
-      // (android/) e gediPrint.ts. Sempre o lote inteiro de uma vez (é
-      // hardware local, não Bluetooth de terceiro sujeito a engasgar como
-      // RawBT/TipPrint) — sem toque manual por lote.
-      const tickets = montarTicketsParaImprimir(resultado.tickets)
-      await imprimirViaGEDI(tickets).catch(e => {
-        console.error(e)
-        setErr(e instanceof Error ? e.message : 'Erro ao imprimir no terminal.')
-        throw e
-      })
-      return
-    }
-    if (formato === 'rawbt') {
-      // >BATCH_SIZE_IMPRESSAO não chama isso sozinho (ver efeito de
-      // auto-print acima) — só chega aqui pelo clique manual do botão
-      // "Imprimir" com poucos ingressos, ou pelo primeiro lote.
-      const tickets = montarTicketsParaImprimir(resultado.tickets.slice(0, BATCH_SIZE_IMPRESSAO))
-      imprimirViaTipPrint(gerarComandosMultiplos(tickets))
-      setLoteImpresso(Math.min(BATCH_SIZE_IMPRESSAO, resultado.tickets.length))
-    } else if (formato === 'printserver') {
-      // PrintServer roda local sem popup/bloqueio de navegador (diferente do
-      // RawBT no Android) — não precisa de toque manual por lote, imprime
-      // tudo em sequência sozinho.
-      await imprimirViaPrintServerEmSequencia(resultado.tickets).catch(e => {
-        console.error(e)
-        setErr(e instanceof Error ? e.message : 'Erro ao imprimir via PrintServer')
-        throw e
-      })
-    } else if (formato === 'tipprint') {
-      // Web Serial: porta já autorizada não exige gesto do usuário pra
-      // escrever nela (diferente do intent:// do RawBT), então dá pra
-      // mandar o lote inteiro de uma vez, sem chunk por BATCH_SIZE_IMPRESSAO
-      // nem toque manual — gerarComandosMultiplos já intercala linhas em
-      // branco entre vias pra dar folga da impressora processar cada QR.
-      const tickets = montarTicketsParaImprimir(resultado.tickets)
-      await imprimirViaSerial(gerarComandosMultiplos(tickets)).catch(e => {
-        console.error(e)
-        setErr(e instanceof Error ? e.message : 'Erro ao imprimir via TipPrint (Bluetooth) — confira se a impressora ainda está pareada.')
-        throw e
-      })
-    } else if (formato !== 'nenhuma') {
-      // 'nenhuma' ("Sem impressão", só tela) nunca deve abrir o diálogo do
-      // navegador — achado real (14/08/2026): o botão manual "Imprimir"
-      // caía direto nesse `else` sem checar isso (o auto-print já tinha a
-      // guarda certa, esse aqui não).
-      window.print()
+    // Achado real (07/09/2026): o disparo automático (600ms) e o botão
+    // manual "Imprimir" podiam disparar quase juntos — 2 chamadas
+    // concorrentes de imprimirTickets() na mesma impressora física (GEDI
+    // não é reentrante) deixavam uma travada sem nunca resolver. Guard
+    // evita rodar 2 jobs de impressão ao mesmo tempo, em qualquer formato.
+    if (imprimindoRef.current) return
+    imprimindoRef.current = true
+    try {
+      if (isNativeCaixaApp()) {
+        // Impressora térmica embutida da GPOS780, via GEDI — ver PrinterBridge
+        // (android/) e gediPrint.ts. Sempre o lote inteiro de uma vez (é
+        // hardware local, não Bluetooth de terceiro sujeito a engasgar como
+        // RawBT/TipPrint) — sem toque manual por lote.
+        const tickets = montarTicketsParaImprimir(resultado.tickets)
+        await imprimirViaGEDI(tickets).catch(e => {
+          console.error(e)
+          setErr(e instanceof Error ? e.message : 'Erro ao imprimir no terminal.')
+          throw e
+        })
+        return
+      }
+      if (formato === 'rawbt') {
+        // >BATCH_SIZE_IMPRESSAO não chama isso sozinho (ver efeito de
+        // auto-print acima) — só chega aqui pelo clique manual do botão
+        // "Imprimir" com poucos ingressos, ou pelo primeiro lote.
+        const tickets = montarTicketsParaImprimir(resultado.tickets.slice(0, BATCH_SIZE_IMPRESSAO))
+        imprimirViaTipPrint(gerarComandosMultiplos(tickets))
+        setLoteImpresso(Math.min(BATCH_SIZE_IMPRESSAO, resultado.tickets.length))
+      } else if (formato === 'printserver') {
+        // PrintServer roda local sem popup/bloqueio de navegador (diferente do
+        // RawBT no Android) — não precisa de toque manual por lote, imprime
+        // tudo em sequência sozinho.
+        await imprimirViaPrintServerEmSequencia(resultado.tickets).catch(e => {
+          console.error(e)
+          setErr(e instanceof Error ? e.message : 'Erro ao imprimir via PrintServer')
+          throw e
+        })
+      } else if (formato === 'tipprint') {
+        // Web Serial: porta já autorizada não exige gesto do usuário pra
+        // escrever nela (diferente do intent:// do RawBT), então dá pra
+        // mandar o lote inteiro de uma vez, sem chunk por BATCH_SIZE_IMPRESSAO
+        // nem toque manual — gerarComandosMultiplos já intercala linhas em
+        // branco entre vias pra dar folga da impressora processar cada QR.
+        const tickets = montarTicketsParaImprimir(resultado.tickets)
+        await imprimirViaSerial(gerarComandosMultiplos(tickets)).catch(e => {
+          console.error(e)
+          setErr(e instanceof Error ? e.message : 'Erro ao imprimir via TipPrint (Bluetooth) — confira se a impressora ainda está pareada.')
+          throw e
+        })
+      } else if (formato !== 'nenhuma') {
+        // 'nenhuma' ("Sem impressão", só tela) nunca deve abrir o diálogo do
+        // navegador — achado real (14/08/2026): o botão manual "Imprimir"
+        // caía direto nesse `else` sem checar isso (o auto-print já tinha a
+        // guarda certa, esse aqui não).
+        window.print()
+      }
+    } finally {
+      imprimindoRef.current = false
     }
   }
 
