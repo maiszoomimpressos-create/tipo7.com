@@ -50,12 +50,28 @@ function registrarCallbackGlobal() {
   }
 }
 
+// Achado real (07/09/2026): se o callback nativo nunca chegar por algum
+// motivo (app trava no meio, exceção não prevista escapa da thread), a
+// Promise ficava pendurada pra sempre — o operador ficava preso na tela de
+// impressão indefinidamente, sem erro nem próxima venda. Timeout garante
+// que sempre volta um resultado (erro, nesse caso) pro chamador em no
+// máximo 10s, mesmo no pior cenário.
+const TIMEOUT_MS = 10_000
+
 export function imprimirViaGEDI(tickets: IngressoParaImprimir[]): Promise<void> {
   if (!gediDisponivel()) return Promise.reject(new Error('Impressora do terminal não disponível (app desatualizado?)'))
   registrarCallbackGlobal()
   const callbackId = `print-${Date.now()}-${Math.random().toString(36).slice(2)}`
   return new Promise((resolve, reject) => {
-    pendentes.set(callbackId, { resolve, reject })
+    const timeout = setTimeout(() => {
+      if (!pendentes.has(callbackId)) return
+      pendentes.delete(callbackId)
+      reject(new Error('Tempo esgotado aguardando a impressora do terminal.'))
+    }, TIMEOUT_MS)
+    pendentes.set(callbackId, {
+      resolve: () => { clearTimeout(timeout); resolve() },
+      reject: (e) => { clearTimeout(timeout); reject(e) },
+    })
     window.PrinterBridge!.imprimirIngressos(JSON.stringify(tickets), callbackId)
   })
 }

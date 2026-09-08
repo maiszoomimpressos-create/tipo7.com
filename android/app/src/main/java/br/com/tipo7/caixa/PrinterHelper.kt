@@ -89,8 +89,12 @@ object PrinterHelper {
             )
             desenharTexto(printer, "tipo7.com", 20f, alinhamento = Paint.Align.CENTER)
 
-            // Espaço extra entre vias (rasgar à mão) — última via menor.
-            printer.DrawBlankLine(if (i == tickets.length() - 1) 40 else 120)
+            // Espaço extra entre vias (rasgar à mão). Achado real
+            // (07/09/2026, teste físico na GPOS780): 40 não bastava — o
+            // ponto de rasgar ficava em cima do próprio QR, cortando ele.
+            // Aumentado bastante pra garantir folga de verdade abaixo do QR
+            // antes do ponto de rasgo.
+            printer.DrawBlankLine(if (i == tickets.length() - 1) 200 else 220)
         }
 
         printer.Output()
