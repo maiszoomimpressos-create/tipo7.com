@@ -1357,6 +1357,17 @@ if exist "%CHROME%" (
           </div>
         )}
 
+        {/* Achado real (07/09/2026): essa tela nunca mostrava `err` — quando
+            a impressão falhava/dava timeout, o operador ficava olhando pra
+            essa mesma tela sem nenhuma pista do que aconteceu, achando que
+            estava "travado". */}
+        {err && (
+          <div className="no-print mx-6 mt-4 flex items-center gap-2 text-red-400 text-sm py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/10">
+            <AlertTriangle size={14} className="shrink-0" />
+            {err}
+          </div>
+        )}
+
         {/* Um card por ingresso — cada um com seu próprio QR */}
         <div ref={printRef} className="p-6 flex flex-col gap-6 max-w-md mx-auto">
           {resultado.tickets.map(t => (

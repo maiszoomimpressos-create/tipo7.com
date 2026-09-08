@@ -54,9 +54,16 @@ function registrarCallbackGlobal() {
 // motivo (app trava no meio, exceção não prevista escapa da thread), a
 // Promise ficava pendurada pra sempre — o operador ficava preso na tela de
 // impressão indefinidamente, sem erro nem próxima venda. Timeout garante
-// que sempre volta um resultado (erro, nesse caso) pro chamador em no
-// máximo 10s, mesmo no pior cenário.
-const TIMEOUT_MS = 10_000
+// que sempre volta um resultado (erro, nesse caso) pro chamador, mesmo no
+// pior cenário.
+//
+// Achado real #2 (mesma sessão): 10s inicial era curto demais — o ajuste
+// pra não cortar o QR no rasgo (mais linhas em branco) faz o Output() da
+// GEDI (que bloqueia até o papel sair de verdade) demorar mais que isso
+// pra vias com vários ingressos. O app desistia (timeout) ANTES da
+// impressão física terminar — o papel saía, mas o app já tinha desistido
+// silenciosamente. Subido bem acima da folga real esperada.
+const TIMEOUT_MS = 30_000
 
 export function imprimirViaGEDI(tickets: IngressoParaImprimir[]): Promise<void> {
   if (!gediDisponivel()) return Promise.reject(new Error('Impressora do terminal não disponível (app desatualizado?)'))
