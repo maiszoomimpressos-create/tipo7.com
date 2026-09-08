@@ -42,7 +42,17 @@ async function decidirDestino(eventId: string, native: boolean): Promise<string 
   try {
     const resCaixa = await apiFetchAuth(`/api/eventos/${eventId}/meu-caixa`)
     if (resCaixa.ok) {
-      const caixa = await resCaixa.json() as { id: string; estacionamentoId: string | null } | null
+      // Achado real (07/09/2026, confirmado testando direto contra o
+      // servidor): NestJS devolve corpo TOTALMENTE VAZIO (200, sem nenhum
+      // byte) quando o handler retorna `null` — que é exatamente o caso
+      // "sem caixa aberto ainda" (o mais comum, primeiro login do dia).
+      // `.json()` direto num corpo vazio lança SyntaxError, cai no catch
+      // GERAL lá embaixo, e pula inteiro o fallback de "só tem 1
+      // ferramenta possível" (linhas abaixo) — o operador via o erro
+      // genérico mesmo com token+PIN e permissão corretos. Lendo como
+      // texto primeiro e só parseando se não vier vazio.
+      const texto = await resCaixa.text()
+      const caixa = texto ? (JSON.parse(texto) as { id: string; estacionamentoId: string | null } | null) : null
       if (caixa) {
         return caixa.estacionamentoId ? `/estacionamento/${eventId}` : `/bilheteria/${eventId}/caixa/${caixa.id}`
       }
