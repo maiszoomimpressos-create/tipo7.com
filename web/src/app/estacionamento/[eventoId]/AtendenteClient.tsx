@@ -94,16 +94,13 @@ const inp = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-whi
 //   Mercosul: L L L N L N N   (posição 5 = LETRA)
 //   Antiga:   L L L N N N N   (posição 5 = NÚMERO)
 //
-// Achado real (07/09/2026, testado fisicamente na GPOS780): trocar o
-// inputMode de um campo FOCADO enquanto a pessoa digita faz o teclado
-// virtual do Android reconectar — e nessa troca o WebView descarta o que
-// já tinha sido digitado (reproduzido exatamente na posição 4→5: digitar
-// "BCP1" e o campo esvaziava sozinho ao trocar de volta pra texto).
-// Trocar teclado sem perder dado real digitado é mais importante que a
-// conveniência do teclado numérico automático — desativado, sempre texto.
-// `comprimento` mantido sem uso pra não precisar mexer no call site.
-function inputModePlaca(_comprimento: number): 'text' | 'numeric' {
-  return 'text'
+// `comprimento` = quantos caracteres já foram digitados (0 a 6) — o valor
+// devolvido é o inputMode pro PRÓXIMO caractere (a posição comprimento+1).
+function inputModePlaca(comprimento: number): 'text' | 'numeric' {
+  if (comprimento === 3) return 'numeric' // posição 4 — número nos dois formatos
+  if (comprimento === 4) return 'text'    // posição 5 — ambíguo (letra OU número), mantém texto
+  if (comprimento >= 5)  return 'numeric' // posições 6-7 — número nos dois formatos
+  return 'text'                            // posições 1-3 — sempre letra
 }
 
 function formatBRL(v: number) {
@@ -130,6 +127,33 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const router = useRouter()
   const [estacionamentoId, setEstacionamentoId] = useState(estacionamentos[0]?.id ?? '')
   const [placa, setPlaca] = useState('')
+  // Achado real (07/09/2026, testado fisicamente na GPOS780): trocar o
+  // inputMode de um campo FOCADO enquanto a pessoa ainda está digitando faz
+  // o teclado virtual do Android reconectar — e nessa troca o WebView às
+  // vezes descarta o que já tinha sido digitado (reproduzido na posição
+  // 4→5, a ambígua entre Mercosul/antiga: digitar "BCP1" esvaziava o campo
+  // sozinho). Usuário confirmou que quer MANTER a troca automática (evita
+  // atraso no terminal), só sem perder dado real — duas camadas de defesa:
+  // 1) atrasa a troca do inputMode em vez de aplicar no mesmo ciclo síncrono
+  //    da tecla que acabou de ser digitada (dá tempo do Android confirmar
+  //    o caractere antes de reconectar o teclado);
+  // 2) enquanto essa troca está "em voo", ignora qualquer onChange que
+  //    esvazie o campo inteiro sozinho (nunca é uma edição real do
+  //    usuário nesse instante específico — backspace apagando tudo de
+  //    propósito é raríssimo bater exatamente nessa janela de <300ms).
+  const [modoTecladoPlaca, setModoTecladoPlaca] = useState<'text' | 'numeric'>('text')
+  const trocandoTecladoPlacaRef = useRef(false)
+  useEffect(() => {
+    const modoIdeal = inputModePlaca(placa.length)
+    if (modoIdeal === modoTecladoPlaca) return
+    trocandoTecladoPlacaRef.current = true
+    const t = setTimeout(() => {
+      setModoTecladoPlaca(modoIdeal)
+      setTimeout(() => { trocandoTecladoPlacaRef.current = false }, 300)
+    }, 120)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placa.length])
   const [nomeCondutor, setNomeCondutor] = useState('')
   const [telefoneCondutor, setTelefoneCondutor] = useState('')
   const [modelo, setModelo] = useState('')
@@ -785,9 +809,13 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               <div className="relative">
                 <input type="text" placeholder="Placa *" value={placa} disabled={lotado}
                   autoCapitalize="characters"
-                  inputMode={inputModePlaca(placa.length)}
+                  inputMode={modoTecladoPlaca}
                   onChange={e => {
                     const next = e.target.value.toUpperCase()
+                    // Limpeza espúria do WebView durante a troca de teclado
+                    // (ver comentário perto de modoTecladoPlaca acima) —
+                    // ignora, mantém o que já estava digitado.
+                    if (trocandoTecladoPlacaRef.current && next === '' && placa !== '') return
                     setPlaca(next)
                     setPlacaAutopreenchida(false)
                     setVeiculoJaCadastrado(false)
