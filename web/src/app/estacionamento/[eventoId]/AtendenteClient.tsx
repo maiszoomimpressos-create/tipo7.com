@@ -137,12 +137,13 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   // 1) atrasa a troca do inputMode em vez de aplicar no mesmo ciclo síncrono
   //    da tecla que acabou de ser digitada (dá tempo do Android confirmar
   //    o caractere antes de reconectar o teclado);
-  // 2) enquanto essa troca está "em voo", ignora qualquer onChange que
-  //    esvazie o campo inteiro sozinho (nunca é uma edição real do
-  //    usuário nesse instante específico — backspace apagando tudo de
-  //    propósito é raríssimo bater exatamente nessa janela de <300ms).
+  // 2) enquanto essa troca está "em voo", só aceita onChange que pareça
+  //    digitação normal (1 caractere a mais/menos no fim) — a corrupção
+  //    real observada não era só "campo vazio", também embaralhava o meio
+  //    do texto (ex: "BCP1" + F virava "F1"). Ver o onChange do campo.
   const [modoTecladoPlaca, setModoTecladoPlaca] = useState<'text' | 'numeric'>('text')
   const trocandoTecladoPlacaRef = useRef(false)
+  const placaInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const modoIdeal = inputModePlaca(placa.length)
     if (modoIdeal === modoTecladoPlaca) return
@@ -808,14 +809,36 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               )}
               <div className="relative">
                 <input type="text" placeholder="Placa *" value={placa} disabled={lotado}
+                  ref={placaInputRef}
                   autoCapitalize="characters"
                   inputMode={modoTecladoPlaca}
                   onChange={e => {
                     const next = e.target.value.toUpperCase()
-                    // Limpeza espúria do WebView durante a troca de teclado
-                    // (ver comentário perto de modoTecladoPlaca acima) —
-                    // ignora, mantém o que já estava digitado.
-                    if (trocandoTecladoPlacaRef.current && next === '' && placa !== '') return
+                    // Achado real (08/09/2026): a corrupção da troca de
+                    // teclado não é só "campo fica vazio" — também aparece
+                    // embaralhada (ex: digitar "F" depois de "BCP1" virava
+                    // "F1", perdendo pedaço do meio). Em vez de tentar
+                    // reconhecer cada padrão de corrupção possível, só
+                    // ACEITA o que uma digitação normal faria: 1 caractere
+                    // a mais no fim (`next` = `placa` + 1 letra) ou 1 a
+                    // menos no fim (apagar). Qualquer outra coisa durante a
+                    // janela da troca é descartada — mantém o valor de
+                    // antes, o operador só digita de novo.
+                    if (trocandoTecladoPlacaRef.current) {
+                      const digitouUmCaractere = next.length === placa.length + 1 && next.startsWith(placa)
+                      const apagouUmCaractere  = next.length === placa.length - 1 && placa.startsWith(next)
+                      if (!digitouUmCaractere && !apagouUmCaractere) {
+                        // React só reescreve o DOM em cima de um re-render
+                        // — sem chamar setPlaca aqui, a caixa de texto na
+                        // TELA continuaria mostrando o valor corrompido
+                        // (embora o estado React interno tenha ficado
+                        // certo), confundindo o operador e desalinhando o
+                        // próximo e.target.value. Força o valor visível de
+                        // volta na hora.
+                        if (placaInputRef.current) placaInputRef.current.value = placa
+                        return
+                      }
+                    }
                     setPlaca(next)
                     setPlacaAutopreenchida(false)
                     setVeiculoJaCadastrado(false)
