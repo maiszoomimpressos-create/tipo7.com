@@ -879,6 +879,41 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
                   <Loader2 size={14} className="animate-spin absolute right-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
                 )}
               </div>
+              {/* 5ª posição é a única ambígua entre os 2 formatos de placa —
+                  Mercosul (LETRA) e antiga (NÚMERO) — não dá pra saber com
+                  certeza qual é até a pessoa digitar (achado real,
+                  08/09/2026: adivinhar sempre "letra" nessa posição confundia
+                  0 com O em quem tinha placa do formato antigo, tipo
+                  "NRI8000"). Em vez de adivinhar, oferece escolha manual só
+                  nesse instante — o operador sabe de cabeça o que vem, é 1
+                  toque só, sem depender de troca automática nenhuma. */}
+              {placa.length === 4 && (
+                <div className="flex items-center gap-2 -mt-1">
+                  <span className="text-[#555] text-[10px] uppercase tracking-wider" style={{ fontFamily: 'var(--font-dm-sans)' }}>
+                    Próximo dígito é:
+                  </span>
+                  <button type="button" onClick={() => setModoTecladoPlaca('text')}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                    style={{
+                      background: modoTecladoPlaca === 'text' ? `${ACCENT}18` : '#111',
+                      border: `1px solid ${modoTecladoPlaca === 'text' ? ACCENT + '55' : '#222'}`,
+                      color: modoTecladoPlaca === 'text' ? ACCENT : '#888',
+                      fontFamily: 'var(--font-dm-sans)',
+                    }}>
+                    Letra (Mercosul)
+                  </button>
+                  <button type="button" onClick={() => setModoTecladoPlaca('numeric')}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                    style={{
+                      background: modoTecladoPlaca === 'numeric' ? `${ACCENT}18` : '#111',
+                      border: `1px solid ${modoTecladoPlaca === 'numeric' ? ACCENT + '55' : '#222'}`,
+                      color: modoTecladoPlaca === 'numeric' ? ACCENT : '#888',
+                      fontFamily: 'var(--font-dm-sans)',
+                    }}>
+                    Número (antiga)
+                  </button>
+                </div>
+              )}
 
               {/* Resto do formulário — vira o "fundo" desfocado quando o
                   aviso de placa duplicada cobre tudo por cima. */}
