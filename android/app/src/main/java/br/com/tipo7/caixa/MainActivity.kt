@@ -109,6 +109,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.addJavascriptInterface(CobrancaBridge(webView, baseUrl()), "CobrancaBridge")
+        // Impressão térmica real via GEDI (ver PrinterHelper.kt/PrinterBridge.kt
+        // e web/src/lib/gediPrint.ts) — achado real 07/09/2026: até aqui só
+        // existia um teste manual via ADB (PrintTestReceiver), a venda de
+        // ingresso de verdade nunca chamava a impressora física.
+        webView.addJavascriptInterface(PrinterBridge(applicationContext, webView), "PrinterBridge")
 
         webView.loadUrl(baseUrl() + "/caixa")
 

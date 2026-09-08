@@ -19,6 +19,7 @@ import { imprimirTicketPrintServer } from '@/lib/printServerClient'
 import { PrintServerPanel } from '@/components/PrintServerPanel'
 import { conectarImpressoraSerial, reconectarImpressoraSerial, imprimirViaSerial } from '@/lib/webSerialPrint'
 import { isNativeCaixaApp } from '@/lib/nativeCaixaApp'
+import { imprimirViaGEDI } from '@/lib/gediPrint'
 import { clearSession } from '@/lib/auth/session'
 import QRCode from 'react-qr-code'
 
@@ -405,7 +406,15 @@ if exist "%CHROME%" (
 
   // Imprime automaticamente ao chegar na tela de impressão
   useEffect(() => {
-    if (etapa !== 'impressao' || !resultado || !formato || formato === 'nenhuma') return
+    if (etapa !== 'impressao' || !resultado) return
+    // Achado real (07/09/2026): dentro do app nativo `formato` é sempre
+    // forçado pra 'nenhuma' (esconde o seletor genérico — impressora
+    // embutida não usa nenhum desses formatos), mas isso fazia esse efeito
+    // pular a impressão de vez — venda concluía sem imprimir nada, sem
+    // erro nenhum aparecer. A impressão nativa (GEDI) é tratada à parte
+    // dentro de imprimirTickets(), então aqui só precisa deixar passar
+    // quando for nativo.
+    if (!isNativeCaixaApp() && (!formato || formato === 'nenhuma')) return
     // RawBT com mais ingressos que um lote — precisa de toque manual por
     // lote (ver BATCH_SIZE_IMPRESSAO), não dispara sozinho.
     if (formato === 'rawbt' && resultado.tickets.length > BATCH_SIZE_IMPRESSAO) return
@@ -826,6 +835,19 @@ if exist "%CHROME%" (
   // por um motivo que não tinha nada a ver com ela.
   async function imprimirTickets() {
     if (!resultado) return
+    if (isNativeCaixaApp()) {
+      // Impressora térmica embutida da GPOS780, via GEDI — ver PrinterBridge
+      // (android/) e gediPrint.ts. Sempre o lote inteiro de uma vez (é
+      // hardware local, não Bluetooth de terceiro sujeito a engasgar como
+      // RawBT/TipPrint) — sem toque manual por lote.
+      const tickets = montarTicketsParaImprimir(resultado.tickets)
+      await imprimirViaGEDI(tickets).catch(e => {
+        console.error(e)
+        setErr(e instanceof Error ? e.message : 'Erro ao imprimir no terminal.')
+        throw e
+      })
+      return
+    }
     if (formato === 'rawbt') {
       // >BATCH_SIZE_IMPRESSAO não chama isso sozinho (ver efeito de
       // auto-print acima) — só chega aqui pelo clique manual do botão
