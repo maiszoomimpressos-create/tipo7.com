@@ -93,13 +93,17 @@ const inp = 'w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-whi
 // 5ª posição — todo o resto é previsível:
 //   Mercosul: L L L N L N N   (posição 5 = LETRA)
 //   Antiga:   L L L N N N N   (posição 5 = NÚMERO)
-// `comprimento` = quantos caracteres já foram digitados (0 a 6) — o valor
-// devolvido é o inputMode pro PRÓXIMO caractere (a posição comprimento+1).
-function inputModePlaca(comprimento: number): 'text' | 'numeric' {
-  if (comprimento === 3) return 'numeric' // posição 4 — número nos dois formatos
-  if (comprimento === 4) return 'text'    // posição 5 — ambíguo (letra OU número), mantém texto
-  if (comprimento >= 5)  return 'numeric' // posições 6-7 — número nos dois formatos
-  return 'text'                            // posições 1-3 — sempre letra
+//
+// Achado real (07/09/2026, testado fisicamente na GPOS780): trocar o
+// inputMode de um campo FOCADO enquanto a pessoa digita faz o teclado
+// virtual do Android reconectar — e nessa troca o WebView descarta o que
+// já tinha sido digitado (reproduzido exatamente na posição 4→5: digitar
+// "BCP1" e o campo esvaziava sozinho ao trocar de volta pra texto).
+// Trocar teclado sem perder dado real digitado é mais importante que a
+// conveniência do teclado numérico automático — desativado, sempre texto.
+// `comprimento` mantido sem uso pra não precisar mexer no call site.
+function inputModePlaca(_comprimento: number): 'text' | 'numeric' {
+  return 'text'
 }
 
 function formatBRL(v: number) {
@@ -1342,7 +1346,7 @@ function ModalSelecionarPagamento({ selecionado, onSelecionar, onFechar }: {
   onFechar: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onFechar}>
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onFechar}>
       <div className="w-full max-w-xs bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <p className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-dm-sans)' }}>Forma de pagamento</p>
