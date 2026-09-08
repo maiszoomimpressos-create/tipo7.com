@@ -16,6 +16,7 @@ import { gerarComandosMultiplos, imprimirViaTipPrint } from '@/lib/rawbtPrint'
 import { apiFetchAuth } from '@/lib/apiFetch'
 import { ModalSangria } from '@/components/ModalSangria'
 import { isNativeCaixaApp } from '@/lib/nativeCaixaApp'
+import { imprimirViaGEDI } from '@/lib/gediPrint'
 import { clearSession } from '@/lib/auth/session'
 
 const ACCENT = '#E8B84B'
@@ -499,7 +500,14 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
       // Falha de impressão não deve travar a entrada — o carro já está
       // registrado no banco nesse ponto, o comprovante físico é só um
       // reforço (o WhatsApp, se enviado, já cobre o caso de perda do papel).
-      if (data.sessaoId && formatoImpressao !== 'nenhuma') {
+      //
+      // Achado real (08/09/2026): dentro do app nativo, `formatoImpressao`
+      // fica sempre 'nenhuma' (esconde o seletor genérico — impressora
+      // embutida não usa nenhum desses formatos) — isso fazia a entrada
+      // nunca imprimir nada na GPOS780, mesma lacuna que a Bilheteria
+      // tinha antes de ligar a ponte GEDI. `isNativeCaixaApp()` reabre a
+      // porta pro ramo nativo dentro de imprimirTicketEstacionamento().
+      if (data.sessaoId && (formatoImpressao !== 'nenhuma' || isNativeCaixaApp())) {
         imprimirTicketEstacionamento(data.sessaoId).catch(e => {
           console.error(e)
           setErroImpressao(e instanceof Error ? e.message : 'Erro ao imprimir o ticket')
@@ -528,6 +536,23 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
     const agora = new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     const detalhesVeiculo = `${placa.trim().toUpperCase()} - ${modelo.trim()} ${cor.trim()}`.trim()
 
+    if (isNativeCaixaApp()) {
+      // Impressora térmica embutida da GPOS780, via GEDI — mesma ponte já
+      // usada pela Bilheteria (PrinterBridge/gediPrint.ts). Mesmo shape de
+      // dados do ramo 'rawbt' logo abaixo, só trocando o transporte.
+      setErroImpressao(null)
+      await imprimirViaGEDI([{
+        slotNumber:    1,
+        totalSlots:    1,
+        qrToken:       sessaoId,
+        eventoTitle:   'TICKET ESTACIONAMENTO',
+        dataFormatada: agora,
+        eventoLocal:   nomeLocal,
+        ticketName:    detalhesVeiculo,
+        portador:      nomeCondutor.trim() || 'Estacionamento',
+      }])
+      return
+    }
     if (formatoImpressao === 'printserver') {
       setErroImpressao(null)
       await imprimirTicketPrintServer({
