@@ -1493,7 +1493,13 @@ function ModalTrocoDinheiro({ preco, onConfirmar, onFechar }: {
   // atrasa o atendimento. Guardado como DÍGITOS PUROS (ex.: "5000"),
   // interpretados como centavos (últimos 2 dígitos = centavos) — mesmo
   // padrão de maquininha de cartão/caixa eletrônico: digita só números,
-  // a vírgula "anda sozinha". Prévia formatada abaixo confirma o valor.
+  // a vírgula "anda sozinha". O campo mostra o valor JÁ formatado em
+  // moeda (não só uma prévia embaixo) — seguro de fazer aqui porque esse
+  // campo nunca troca de tipo de teclado (sempre numérico, diferente do
+  // campo de placa), então não tem o risco de reconexão "ao vivo" que
+  // corrompia digitação em outro lugar. Extrai os dígitos do valor
+  // formatado a cada troca (ignora R$/vírgula) — funciona pra digitar no
+  // fim e pra apagar (backspace tira o dígito mais à direita igual).
   const [valorRecebidoDigitos, setValorRecebidoDigitos] = useState('')
   const recebido = (parseInt(valorRecebidoDigitos || '0', 10)) / 100
   const troco = recebido - preco
@@ -1518,15 +1524,13 @@ function ModalTrocoDinheiro({ preco, onConfirmar, onFechar }: {
           Cliente entregou — só os números, sem vírgula
         </label>
         <input
-          type="text" inputMode="numeric" placeholder="0" value={valorRecebidoDigitos}
+          type="text" inputMode="numeric" placeholder="R$ 0,00"
+          value={valorRecebidoDigitos ? formatBRL(recebido) : ''}
           onChange={e => setValorRecebidoDigitos(e.target.value.replace(/\D/g, '').slice(0, 9))}
           autoFocus
-          className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-base outline-none focus:border-[#E8B84B]/40"
+          className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-base outline-none focus:border-[#E8B84B]/40 mb-4"
           style={{ fontFamily: 'var(--font-dm-sans)' }}
         />
-        <p className="text-right text-xs mt-1 mb-4" style={{ fontFamily: 'var(--font-dm-sans)', color: recebido > 0 ? ACCENT : '#444' }}>
-          = {formatBRL(recebido)}
-        </p>
 
         <div className="flex items-center justify-between mb-5 px-3 py-2.5 rounded-xl"
           style={{ background: troco > 0 ? '#4ade8010' : '#111', border: `1px solid ${troco > 0 ? '#4ade8030' : '#1c1c1c'}` }}>
