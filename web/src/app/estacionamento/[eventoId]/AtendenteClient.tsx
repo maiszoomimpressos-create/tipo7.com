@@ -127,34 +127,52 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
   const router = useRouter()
   const [estacionamentoId, setEstacionamentoId] = useState(estacionamentos[0]?.id ?? '')
   const [placa, setPlaca] = useState('')
-  // Achado real (07/09/2026, testado fisicamente na GPOS780): trocar o
-  // inputMode de um campo FOCADO enquanto a pessoa ainda está digitando faz
-  // o teclado virtual do Android reconectar — e nessa troca o WebView às
-  // vezes descarta o que já tinha sido digitado (reproduzido na posição
-  // 4→5, a ambígua entre Mercosul/antiga: digitar "BCP1" esvaziava o campo
-  // sozinho). Usuário confirmou que quer MANTER a troca automática (evita
-  // atraso no terminal), só sem perder dado real — duas camadas de defesa:
-  // 1) atrasa a troca do inputMode em vez de aplicar no mesmo ciclo síncrono
-  //    da tecla que acabou de ser digitada (dá tempo do Android confirmar
-  //    o caractere antes de reconectar o teclado);
-  // 2) enquanto essa troca está "em voo", só aceita onChange que pareça
-  //    digitação normal (1 caractere a mais/menos no fim) — a corrupção
-  //    real observada não era só "campo vazio", também embaralhava o meio
-  //    do texto (ex: "BCP1" + F virava "F1"). Ver o onChange do campo.
+  // Achado real (07-08/09/2026, testado fisicamente na GPOS780 — 3
+  // tentativas): trocar o inputMode de um campo FOCADO enquanto a pessoa
+  // ainda está digitando faz o teclado virtual do Android reconectar "ao
+  // vivo" no MESMO elemento — e nessa reconexão o WebView corrompe o texto
+  // de formas variadas (campo inteiro vazio, ou embaralhado tipo "BCP1"+F
+  // virando "F1"/"F"). Duas tentativas anteriores tentaram DETECTAR e
+  // desfazer a corrupção depois de acontecer (atrasar a troca, rejeitar
+  // onChange que não parecesse digitação normal) — nenhuma resolveu de
+  // vez, a corrupção sempre voltava de um jeito novo.
+  //
+  // Abordagem diferente agora: em vez de mutar o inputMode do MESMO
+  // elemento (o que dispara a reconexão ao vivo problemática), o campo
+  // usa `key={modoTecladoPlaca}` — toda vez que o modo muda, o React
+  // DESTRÓI o elemento antigo e CRIA um elemento NOVO do zero, já nascendo
+  // com o inputMode certo. Um elemento novo nunca teve sessão de teclado
+  // "ao vivo" pra reconectar, então não tem o que corromper. O preço: o
+  // elemento novo nasce sem foco/cursor, por isso o efeito abaixo devolve
+  // foco + cursor no fim assim que o novo campo existe (só se o campo já
+  // estava em uso — não força foco em quem nem estava mexendo na placa).
   const [modoTecladoPlaca, setModoTecladoPlaca] = useState<'text' | 'numeric'>('text')
-  const trocandoTecladoPlacaRef = useRef(false)
+  const placaFocadaRef = useRef(false)
   const placaInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const modoIdeal = inputModePlaca(placa.length)
     if (modoIdeal === modoTecladoPlaca) return
-    trocandoTecladoPlacaRef.current = true
+    // Pequeno atraso antes de sequer decidir trocar — dá tempo do Android
+    // confirmar o caractere que acabou de ser digitado antes do remount,
+    // evitando recriar o campo bem no meio de uma tecla ainda em voo.
     const t = setTimeout(() => {
+      // Captura se o campo estava mesmo focado ANTES de trocar a key
+      // (nesse exato instante, direto do DOM) — não dá pra confiar num
+      // onBlur pra isso: o próprio remount dispara um blur no elemento
+      // antigo, que bagunçaria essa informação se ela viesse de lá.
+      placaFocadaRef.current = document.activeElement === placaInputRef.current
       setModoTecladoPlaca(modoIdeal)
-      setTimeout(() => { trocandoTecladoPlacaRef.current = false }, 300)
     }, 120)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placa.length])
+  useEffect(() => {
+    if (!placaFocadaRef.current) return
+    const el = placaInputRef.current
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  }, [modoTecladoPlaca])
   const [nomeCondutor, setNomeCondutor] = useState('')
   const [telefoneCondutor, setTelefoneCondutor] = useState('')
   const [modelo, setModelo] = useState('')
@@ -809,36 +827,12 @@ export function AtendenteClient({ eventoId, eventoTitle, estacionamentos, caixaI
               )}
               <div className="relative">
                 <input type="text" placeholder="Placa *" value={placa} disabled={lotado}
+                  key={modoTecladoPlaca}
                   ref={placaInputRef}
                   autoCapitalize="characters"
                   inputMode={modoTecladoPlaca}
                   onChange={e => {
                     const next = e.target.value.toUpperCase()
-                    // Achado real (08/09/2026): a corrupção da troca de
-                    // teclado não é só "campo fica vazio" — também aparece
-                    // embaralhada (ex: digitar "F" depois de "BCP1" virava
-                    // "F1", perdendo pedaço do meio). Em vez de tentar
-                    // reconhecer cada padrão de corrupção possível, só
-                    // ACEITA o que uma digitação normal faria: 1 caractere
-                    // a mais no fim (`next` = `placa` + 1 letra) ou 1 a
-                    // menos no fim (apagar). Qualquer outra coisa durante a
-                    // janela da troca é descartada — mantém o valor de
-                    // antes, o operador só digita de novo.
-                    if (trocandoTecladoPlacaRef.current) {
-                      const digitouUmCaractere = next.length === placa.length + 1 && next.startsWith(placa)
-                      const apagouUmCaractere  = next.length === placa.length - 1 && placa.startsWith(next)
-                      if (!digitouUmCaractere && !apagouUmCaractere) {
-                        // React só reescreve o DOM em cima de um re-render
-                        // — sem chamar setPlaca aqui, a caixa de texto na
-                        // TELA continuaria mostrando o valor corrompido
-                        // (embora o estado React interno tenha ficado
-                        // certo), confundindo o operador e desalinhando o
-                        // próximo e.target.value. Força o valor visível de
-                        // volta na hora.
-                        if (placaInputRef.current) placaInputRef.current.value = placa
-                        return
-                      }
-                    }
                     setPlaca(next)
                     setPlacaAutopreenchida(false)
                     setVeiculoJaCadastrado(false)
