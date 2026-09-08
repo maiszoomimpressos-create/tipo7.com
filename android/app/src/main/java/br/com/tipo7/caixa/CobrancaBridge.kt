@@ -98,9 +98,16 @@ class CobrancaBridge(private val webView: WebView, private val baseUrl: String) 
     private fun respond(callbackId: String, resultJson: JSONObject) {
         // evaluateJavascript só pode ser chamado na UI thread; o callback do
         // OkHttp roda numa thread própria.
+        //
+        // Achado real (07/09/2026, mesmo bug achado em PrinterBridge.kt):
+        // resultJson.toString() cru vira um OBJETO JS literal quando
+        // injetado direto no evaluateJavascript, não uma string — quem
+        // consumir esse callback do lado web esperando dar JSON.parse()
+        // no segundo argumento vai sempre falhar. quote() aqui garante que
+        // chega como string JSON de verdade, igual ao callbackId.
         webView.post {
             val js = "window.Tipo7CobrancaCallback && window.Tipo7CobrancaCallback(" +
-                JSONObject.quote(callbackId) + "," + resultJson.toString() + ");"
+                JSONObject.quote(callbackId) + "," + JSONObject.quote(resultJson.toString()) + ");"
             webView.evaluateJavascript(js, null)
         }
     }

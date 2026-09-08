@@ -211,10 +211,20 @@ class MainActivity : AppCompatActivity() {
         recarregar()
     }
 
-    // Terminal de caixa não deve "sair" do app com o botão voltar do Android
-    // — só navega pra trás dentro da própria WebView, se der.
+    // Terminal de caixa nunca navega "pra trás" pelo histórico do WebView —
+    // só pelos próprios botões da tela (ex: "Nova venda").
+    //
+    // Achado real (07/09/2026): a versão antiga chamava webView.goBack()
+    // quando havia histórico — o site troca de tela inteiramente por
+    // ESTADO do React (etapa), não por navegação de URL de verdade, mas
+    // ainda empurra entradas no histórico em alguns pontos (router.push do
+    // Next.js). Resultado real visto pelo usuário: apertar voltar
+    // reabria a TELA DE IMPRESSÃO de uma venda já finalizada — nenhum
+    // fluxo esperava isso, deixava o operador confuso e podia reimprimir
+    // sem querer. Kiosk nunca deveria expor navegação de histórico pro
+    // botão físico de qualquer forma — sempre no-op agora.
     override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else { /* não faz nada — kiosk */ }
+        // Propositalmente vazio.
     }
 
     override fun onDestroy() {
