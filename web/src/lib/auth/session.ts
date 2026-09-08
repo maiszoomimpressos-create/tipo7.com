@@ -17,6 +17,20 @@ let initialized = false;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<Listener>();
 
+// Achado real (07/09/2026, terminal token+PIN da GPOS780): initSession()
+// pode disparar um doRefresh() assíncrono (refresh via cookie httpOnly) da
+// sessão ANTERIOR ainda ativa no aparelho (ex: operador anterior não
+// desconectou, só recarregou a página). Se esse refresh demorar e só
+// resolver DEPOIS de um novo login por token+PIN já ter chamado
+// setSessionFromAccessToken(), o `persist()` do refresh tardio sobrescrevia
+// a sessão nova pela antiga silenciosamente — o operador via a tela de erro
+// de "sem caixa"/permissão errada mesmo com token+PIN corretos, porque as
+// chamadas seguintes (meu-caixa/meu-acesso) iam com o Bearer de outra
+// pessoa. Contador de geração: cada persist() incrementa; doRefresh()
+// captura a geração no início e só aplica o próprio resultado se ninguém
+// mudou a sessão enquanto ele esperava a rede.
+let sessionGeneration = 0;
+
 function readCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
@@ -51,6 +65,7 @@ function sessionFromAccessToken(token: string): Session | null {
 }
 
 function persist(session: Session | null) {
+  sessionGeneration++;
   currentSession = session;
   try {
     if (session) localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
@@ -71,15 +86,21 @@ function scheduleRefresh() {
 }
 
 async function doRefresh(): Promise<Session | null> {
+  const geracaoAoIniciar = sessionGeneration;
   try {
     const res = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
     if (!res.ok) {
-      persist(null);
+      if (sessionGeneration === geracaoAoIniciar) persist(null);
       return null;
     }
     const data = (await res.json()) as { accessToken: string };
     const session = sessionFromAccessToken(data.accessToken);
-    persist(session);
+    // Se a sessão mudou enquanto essa chamada de rede estava em voo (ex:
+    // login por token+PIN novo aconteceu nesse meio-tempo), essa resposta
+    // é de uma identidade que não existe mais — descarta em vez de
+    // sobrescrever a sessão atual (ver comentário na declaração de
+    // sessionGeneration).
+    if (sessionGeneration === geracaoAoIniciar) persist(session);
     return session;
   } catch {
     return null;
