@@ -1452,8 +1452,15 @@ function ModalTrocoDinheiro({ preco, onConfirmar, onFechar }: {
   onConfirmar: () => void
   onFechar: () => void
 }) {
-  const [valorRecebido, setValorRecebido] = useState('')
-  const recebido = parseFloat(valorRecebido.replace(',', '.')) || 0
+  // Achado real (08/09/2026, pedido do usuário): campo de "quanto o
+  // cliente entregou" pedia digitar o valor com ponto/vírgula decimal —
+  // no terminal, alternar entre teclado numérico e o símbolo de vírgula
+  // atrasa o atendimento. Guardado como DÍGITOS PUROS (ex.: "5000"),
+  // interpretados como centavos (últimos 2 dígitos = centavos) — mesmo
+  // padrão de maquininha de cartão/caixa eletrônico: digita só números,
+  // a vírgula "anda sozinha". Prévia formatada abaixo confirma o valor.
+  const [valorRecebidoDigitos, setValorRecebidoDigitos] = useState('')
+  const recebido = (parseInt(valorRecebidoDigitos || '0', 10)) / 100
   const troco = recebido - preco
   const suficiente = recebido >= preco
 
@@ -1473,14 +1480,18 @@ function ModalTrocoDinheiro({ preco, onConfirmar, onFechar }: {
         </div>
 
         <label className="text-[#555] text-[10px] uppercase tracking-wider block mb-1.5" style={{ fontFamily: 'var(--font-dm-sans)' }}>
-          Cliente entregou
+          Cliente entregou — só os números, sem vírgula
         </label>
         <input
-          type="number" inputMode="decimal" placeholder="R$ 0,00" value={valorRecebido}
-          onChange={e => setValorRecebido(e.target.value)} min="0" step="0.01" autoFocus
-          className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-base outline-none focus:border-[#E8B84B]/40 mb-4"
+          type="text" inputMode="numeric" placeholder="0" value={valorRecebidoDigitos}
+          onChange={e => setValorRecebidoDigitos(e.target.value.replace(/\D/g, '').slice(0, 9))}
+          autoFocus
+          className="w-full bg-[#111] border border-[#222] rounded-xl px-4 py-3 text-white text-base outline-none focus:border-[#E8B84B]/40"
           style={{ fontFamily: 'var(--font-dm-sans)' }}
         />
+        <p className="text-right text-xs mt-1 mb-4" style={{ fontFamily: 'var(--font-dm-sans)', color: recebido > 0 ? ACCENT : '#444' }}>
+          = {formatBRL(recebido)}
+        </p>
 
         <div className="flex items-center justify-between mb-5 px-3 py-2.5 rounded-xl"
           style={{ background: troco > 0 ? '#4ade8010' : '#111', border: `1px solid ${troco > 0 ? '#4ade8030' : '#1c1c1c'}` }}>
@@ -1490,7 +1501,7 @@ function ModalTrocoDinheiro({ preco, onConfirmar, onFechar }: {
           </span>
         </div>
 
-        {valorRecebido && !suficiente && (
+        {valorRecebidoDigitos && !suficiente && (
           <p className="text-red-400 text-xs text-center mb-3" style={{ fontFamily: 'var(--font-dm-sans)' }}>
             Valor entregue é menor que o preço.
           </p>
