@@ -48,17 +48,25 @@ async function decidirDestino(eventId: string, native: boolean): Promise<string 
       }
     }
 
-    if (native) return null // nunca cai em "é dono"/hub/lista de ferramentas dentro do app nativo
-
+    // Achado real (07/09/2026, testado na GPOS780): sem caixa ABERTO ainda
+    // (primeiro login do dia, ninguém abriu nenhum caixa), o app nativo
+    // desistia na hora com um erro genérico — mesmo pra quem só tem UMA
+    // ferramenta possível (ex: staff só de Estacionamento), que deveria cair
+    // direto na tela certa (que tem sua própria UI pra abrir o caixa de lá).
+    // `native` continua nunca caindo no hub (`/trabalho/[eventoId]`, expõe
+    // "Meus trabalhos"/conta pessoal) nem no painel completo de dono — só
+    // muda o fallback final de "hub" pra "null" (mesma mensagem de erro de
+    // sempre) quando for ambíguo ou owner.
     const resAcesso = await apiFetchAuth(`/api/eventos/${eventId}/meu-acesso`)
-    if (!resAcesso.ok) return hub
+    if (!resAcesso.ok) return native ? null : hub
     const acesso = await resAcesso.json() as { isOwner: boolean; staff: { permissions: string[] } | null }
-    if (acesso.isOwner) return hub
+    if (acesso.isOwner) return native ? null : hub
 
     const acessos = buildAcessos(eventId, acesso.staff?.permissions ?? [], false)
-    return acessos.length === 1 ? acessos[0].href : hub
+    if (acessos.length === 1) return acessos[0].href
+    return native ? null : hub
   } catch {
-    return hub
+    return native ? null : hub
   }
 }
 
